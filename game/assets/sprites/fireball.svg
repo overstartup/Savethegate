@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Crystal shard bolt: the Guardian's projectile — a faceted icy-blue -->
+  <!-- shard that points up (direction of travel), trailing a cold glow. -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="60%" r="55%">
+      <stop offset="0%" stop-color="#eafcff"/>
+      <stop offset="55%" stop-color="#9ae6ff"/>
+      <stop offset="100%" stop-color="#4aa8d8"/>
+    </radialGradient>
+  </defs>
+  <!-- faceted shard body -->
+  <path d="M50 8 L64 42 L58 62 L50 86 L42 62 L36 42 Z"
+        fill="url(#glow)" stroke="#1c3a52" stroke-width="3" stroke-linejoin="round"/>
+  <!-- inner facet line -->
+  <path d="M50 8 L50 86" stroke="#ffffff" stroke-width="2" stroke-opacity="0.7" stroke-linecap="round"/>
+  <!-- hot core / glint -->
+  <ellipse cx="47" cy="40" rx="5" ry="9" fill="#ffffff" opacity="0.85"/>
+</svg>

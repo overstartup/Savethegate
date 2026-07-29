@@ -1,0 +1,9 @@
+// DO NOT EDIT — generated equivalent of `npx cap sync`, wires plugin deps into :app.
+// (capacitor-android and capacitor-cordova-android-plugins are already declared in build.gradle)
+dependencies {
+    implementation project(':capacitor-community-admob')
+}
+
+if (hasProperty('postBuildExtras')) {
+    postBuildExtras()
+}

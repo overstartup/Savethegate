@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Shatterling (ooze-kind): a crystal ooze — glassy icy-blue body with a
+       visible crack fissure, splits into two smaller shards when hit. -->
+  <g stroke="#1c3a52" stroke-width="3" stroke-linejoin="round">
+    <path d="M18 72 Q14 40 38 30 Q50 24 62 30 Q86 40 82 72 Q84 80 74 80 L26 80 Q16 80 18 72 Z" fill="#5cc8e8"/>
+    <!-- shine -->
+    <ellipse cx="36" cy="42" rx="7" ry="10" fill="#bdeeff" stroke="none" transform="rotate(-20 36 42)"/>
+  </g>
+  <!-- crack fissure -->
+  <path d="M50 30 L46 46 L54 58 L48 74" stroke="#12405c" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- face -->
+  <circle cx="42" cy="56" r="5" fill="#fff"/>
+  <circle cx="60" cy="56" r="5" fill="#fff"/>
+  <circle cx="43" cy="57" r="2.5" fill="#1c3a52"/>
+  <circle cx="59" cy="57" r="2.5" fill="#1c3a52"/>
+  <path d="M46 68 Q51 72 56 68" stroke="#1c3a52" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- glowing drip -->
+  <path d="M70 78 q3 6 0 9 q-3 -3 0 -9" fill="#9ae6ff" stroke="#1c3a52" stroke-width="2"/>
+</svg>

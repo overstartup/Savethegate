@@ -1,0 +1,9 @@
+{
+  "appId": "com.spellstorm.lanes",
+  "appName": "Landgate",
+  "webDir": "www",
+  "backgroundColor": "#0d0820",
+  "android": {
+    "backgroundColor": "#0d0820"
+  }
+}

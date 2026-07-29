@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    The source lives on a mounted Windows folder that doesn't support the
+    atomic temp-file-then-rename writes MSBuild/NuGet use for obj/bin —
+    every restore/build fails with "Access to the path ... is denied".
+    Redirecting intermediate/output paths to a real Linux filesystem (/tmp)
+    fixes this. Source control / editing is unaffected since only build
+    artifacts move; re-point this at a normal path (or delete this file) once
+    building on a real filesystem instead of this mount.
+  -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>/tmp/crystalgate-build/$(MSBuildProjectName)/obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>/tmp/crystalgate-build/$(MSBuildProjectName)/bin/</BaseOutputPath>
+  </PropertyGroup>
+</Project>
