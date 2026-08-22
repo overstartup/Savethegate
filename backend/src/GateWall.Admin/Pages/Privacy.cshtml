@@ -1,0 +1,245 @@
+@page
+@model PrivacyModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Save the gate — Privacy Policy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky:#8ed6fe; --grass:#8fcE8f; --grass2:#7bc47f;
+    --ink:#2b2b2b; --muted:#6b6f66; --card:#ffffff;
+    --accent:#3aa06a; --accent-dark:#237a4d;
+    --font-display:'Baloo 2', -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin:0; padding:0; color:var(--ink); line-height:1.65;
+    background:linear-gradient(180deg,#eaf7ff 0%, #f4faf1 340px, #fbfbf8 100%);
+  }
+  .hero{
+    background:linear-gradient(180deg, var(--sky) 0%, var(--grass) 100%);
+    padding:38px 20px 54px; text-align:center; position:relative; overflow:hidden;
+  }
+  .hero::before, .hero::after{
+    content:''; position:absolute; border-radius:50%; background:rgba(255,255,255,.35);
+  }
+  .hero::before{ width:90px; height:90px; top:-20px; left:-20px; }
+  .hero::after{ width:140px; height:140px; bottom:-60px; right:-30px; }
+  .badge{
+    width:84px; height:84px; margin:0 auto 14px; border-radius:50%;
+    background:#fff; box-shadow:0 6px 18px rgba(0,0,0,.12);
+    display:flex; align-items:center; justify-content:center; position:relative; z-index:1;
+  }
+  .badge svg{ width:64px; height:64px; }
+  .hero h1{
+    font-family:var(--font-display); font-weight:800; font-size:28px; margin:0 0 6px;
+    color:#1f3d2a; position:relative; z-index:1;
+  }
+  .hero .tag{
+    font-size:14px; color:#2f4f3a; opacity:.85; margin:0; position:relative; z-index:1;
+  }
+  .updated{
+    display:inline-block; margin-top:14px; background:rgba(255,255,255,.75);
+    border-radius:999px; padding:5px 14px; font-size:12.5px; color:#2f4f3a;
+    position:relative; z-index:1; font-weight:600;
+  }
+  .wrap{ max-width:720px; margin:-28px auto 60px; padding:0 18px; position:relative; z-index:2; }
+  .card{
+    background:var(--card); border-radius:16px; padding:22px 22px 6px;
+    box-shadow:0 10px 30px rgba(20,50,30,.08); margin-bottom:18px;
+  }
+  .intro-card p{ margin:0 0 16px; color:#3a3a3a; }
+  .company-box{
+    background:#f4f8ee; border-radius:12px; padding:16px 18px; font-size:14px; margin:16px 0;
+  }
+  .company-box p{ margin:4px 0; }
+  h2{
+    font-family:var(--font-display); font-weight:700; font-size:18px; margin:0 0 10px;
+    color:var(--accent-dark); display:flex; align-items:center; gap:8px;
+  }
+  h2 .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:24px; height:24px; border-radius:50%; background:var(--accent);
+    color:#fff; font-size:12px; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    font-weight:700; flex:none;
+  }
+  section p, section ul{ font-size:14.5px; color:#3d3d3d; margin:0 0 16px; }
+  ul{ padding-left:20px; }
+  li{ margin-bottom:4px; }
+  a{ color:var(--accent-dark); text-decoration:none; border-bottom:1px solid rgba(35,122,77,.3); }
+  a:hover{ border-bottom-color:var(--accent-dark); }
+  .toc{
+    display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;
+  }
+  .toc a{
+    border:none; background:#f0f6ea; color:var(--accent-dark); font-weight:600;
+    font-size:12.5px; padding:6px 12px; border-radius:999px;
+  }
+  .toc a:hover{ background:#e2edd7; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; margin:0 0 16px; }
+  th, td{ text-align:left; padding:8px 10px; border-bottom:1px solid #eee; vertical-align:top; }
+  th{ color:#5c5c5c; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.02em; }
+  .pill{
+    display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700;
+  }
+  .pill.no{ background:#e9f6ec; color:var(--accent-dark); }
+  .pill.yes{ background:#fdeee0; color:#a15a12; }
+  .platform-note{
+    background:#fbf6e6; border-left:3px solid #e0b23a; border-radius:8px;
+    padding:10px 14px; font-size:13px; color:#5c4a13; margin:0 0 16px;
+  }
+  footer{ text-align:center; font-size:12px; color:#8a8a8a; padding:0 18px 30px; }
+  footer a{ color:#8a8a8a; }
+</style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="badge">
+      <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="skyGrad" cx="50%" cy="38%" r="72%">
+            <stop offset="0%" stop-color="#c9f2ff"/><stop offset="55%" stop-color="#d9f2d7"/><stop offset="100%" stop-color="#a9dcae"/>
+          </radialGradient>
+          <linearGradient id="earOuter" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fffaf0"/><stop offset="100%" stop-color="#f2e4c9"/></linearGradient>
+          <linearGradient id="earInner" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffdde6"/><stop offset="100%" stop-color="#f0a3b9"/></linearGradient>
+          <radialGradient id="bodyGrad" cx="38%" cy="30%" r="75%"><stop offset="0%" stop-color="#fffdf9"/><stop offset="65%" stop-color="#fbf3e3"/><stop offset="100%" stop-color="#eeddc1"/></radialGradient>
+          <radialGradient id="cheekGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffc9d6" stop-opacity=".85"/><stop offset="100%" stop-color="#ffc9d6" stop-opacity="0"/></radialGradient>
+        </defs>
+        <circle cx="100" cy="100" r="96" fill="url(#skyGrad)"/>
+        <g transform="rotate(-15 85 96)"><ellipse cx="78" cy="57" rx="13.5" ry="34" fill="url(#earOuter)" stroke="#e3d2b2" stroke-width="1.6"/><ellipse cx="78" cy="60" rx="6.6" ry="23" fill="url(#earInner)"/></g>
+        <g transform="rotate(15 115 96)"><ellipse cx="122" cy="57" rx="13.5" ry="34" fill="url(#earOuter)" stroke="#e3d2b2" stroke-width="1.6"/><ellipse cx="122" cy="60" rx="6.6" ry="23" fill="url(#earInner)"/></g>
+        <circle cx="100" cy="120" r="40" fill="url(#bodyGrad)" stroke="#e3d2b2" stroke-width="1.6"/>
+        <ellipse cx="78" cy="130" rx="9" ry="6.5" fill="url(#cheekGrad)"/><ellipse cx="122" cy="130" rx="9" ry="6.5" fill="url(#cheekGrad)"/>
+        <circle cx="85" cy="114" r="4.6" fill="#3a2b22"/><circle cx="115" cy="114" r="4.6" fill="#3a2b22"/>
+        <circle cx="83.2" cy="111.8" r="1.5" fill="#ffffff"/><circle cx="113.2" cy="111.8" r="1.5" fill="#ffffff"/>
+        <ellipse cx="100" cy="126" rx="3.6" ry="2.6" fill="#d98a86"/>
+        <path d="M92,132.5 Q100,140 108,132.5" stroke="#b06b53" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <h1>Privacy Policy</h1>
+    <p class="tag">Save the gate, published under the Turtoo brand</p>
+    <span class="updated">Last updated: July 29, 2026</span>
+  </div>
+
+  <div class="wrap">
+
+    <div class="card intro-card">
+      <p>Save the gate ("the app") is a mobile game published under the Turtoo brand. This page explains what information the app collects, why, and how it's used — in plain language, not legalese. The app does not require account sign-up and does not collect your real name, email address, or any other directly identifying information. Save the gate is a general-audience, family-friendly game; it is not primarily directed at or exclusively marketed to children under 13.</p>
+      <div class="toc">
+        <a href="#publisher">Publisher</a>
+        <a href="#collect">What we collect</a>
+        <a href="#safety">Data safety at a glance</a>
+        <a href="#not-collect">What we don't collect</a>
+        <a href="#third-party">Third parties</a>
+        <a href="#retention">Retention</a>
+        <a href="#children">Children</a>
+        <a href="#rights">Your rights</a>
+        <a href="#choices">Your choices</a>
+        <a href="#contact">Contact</a>
+      </div>
+    </div>
+
+    <div class="card" id="publisher">
+      <h2><span class="num">1</span>Who publishes this app</h2>
+      <div class="company-box">
+        <p><strong>OverStartup GmbH</strong> (operating the Turtoo brand)</p>
+        <p>SportPlatzWeg 19, 87471 Durach, Germany</p>
+        <p>Managing Director: Ahmad Aghili Zadeh</p>
+        <p>Commercial Register: Amtsgericht Kempten, HRB-18262</p>
+        <p>VAT ID: DE365853189</p>
+        <p>Phone: <a href="tel:+4983152715082">+49 831 52 71 50 82</a></p>
+        <p>Email: <a href="mailto:contact@overstartup.com">contact@overstartup.com</a></p>
+      </div>
+    </div>
+
+    <div class="card" id="collect">
+      <h2><span class="num">2</span>Information the app collects</h2>
+      <p><strong>Player nickname.</strong> On first launch, you're asked to choose a display name (up to 16 characters). This is used only to label your progress and leaderboard entry — it is not verified and does not need to be your real name.</p>
+      <p><strong>Gameplay progress.</strong> Stage unlock status, scores, coin balance, and upgrades are saved to your device and, if you're connected to the internet, synced to our cloud database so your progress can follow you if you reinstall the app or play on another device.</p>
+      <p><strong>Device identifier (Android app only).</strong> To recognize you as the same player if you uninstall and reinstall the app on the same device, the Android app reads a stable, non-resettable device identifier (Android's <code>ANDROID_ID</code>) and sends it, one-way hashed, to our server to look up your saved progress. This value cannot be used to determine your name, location, or any other personal detail — it only lets your saved game find its way back to you on the same device.</p>
+      <div class="platform-note">
+        <strong>iOS and web:</strong> neither platform uses a persistent device identifier for this purpose. Both rely solely on an anonymous, randomly-generated cloud identifier, which means progress recovery after an app reinstall isn't guaranteed on iOS or web the way it is on Android.
+      </div>
+      <p><strong>Advertising identifiers.</strong> The app shows ads through Google AdMob (and, on the web version, Google AdSense / H5 Games Ads). These services may collect your device's advertising ID and related technical data — device type, general location such as country/region, and app usage in connection with ads — to select and measure ads. This is standard for any free, ad-supported app. On iOS, this only happens if you grant permission via Apple's App Tracking Transparency prompt; declining still lets you play with non-personalized ads. See Google's own policy for details on what AdMob/AdSense collect: <a href="https://policies.google.com/technologies/ads">policies.google.com/technologies/ads</a>.</p>
+    </div>
+
+    <div class="card" id="safety">
+      <h2><span class="num">3</span>Data safety at a glance</h2>
+      <p>A quick-reference summary matching the categories app stores ask about. Full detail is in the sections above.</p>
+      <table>
+        <tr><th>Data type</th><th>Collected?</th><th>Linked to you?</th><th>Purpose</th></tr>
+        <tr><td>Player nickname</td><td><span class="pill yes">Yes</span></td><td>Anonymous ID only</td><td>Leaderboard display</td></tr>
+        <tr><td>Gameplay progress / scores</td><td><span class="pill yes">Yes</span></td><td>Anonymous ID only</td><td>Save & sync progress</td></tr>
+        <tr><td>Device identifier (Android)</td><td><span class="pill yes">Yes</span></td><td>Hashed, one-way</td><td>Reinstall recognition</td></tr>
+        <tr><td>Advertising ID</td><td><span class="pill yes">Yes</span></td><td>Not by us — by AdMob/AdSense</td><td>Ad delivery & measurement</td></tr>
+        <tr><td>Name, email, phone</td><td><span class="pill no">No</span></td><td>—</td><td>—</td></tr>
+        <tr><td>Precise location</td><td><span class="pill no">No</span></td><td>—</td><td>—</td></tr>
+        <tr><td>Contacts / photos / files</td><td><span class="pill no">No</span></td><td>—</td><td>—</td></tr>
+        <tr><td>Payment info</td><td><span class="pill no">No</span></td><td>—</td><td>—</td></tr>
+      </table>
+    </div>
+
+    <div class="card" id="not-collect">
+      <h2><span class="num">4</span>What the app does not collect</h2>
+      <ul>
+        <li>Real name, email address, or phone number</li>
+        <li>Precise (GPS) location</li>
+        <li>Contacts, photos, or files on your device</li>
+        <li>Payment or financial information</li>
+      </ul>
+    </div>
+
+    <div class="card" id="third-party">
+      <h2><span class="num">5</span>Third-party services used</h2>
+      <ul>
+        <li><strong>Google AdMob</strong> — displays in-app ads on Android and iOS. See Google's privacy policy: <a href="https://policies.google.com/privacy">policies.google.com/privacy</a></li>
+        <li><strong>Google AdSense / H5 Games Ads</strong> — displays ads on the web version of the game. Same Google privacy policy applies.</li>
+        <li><strong>Cloud Provider</strong> — stores gameplay progress and leaderboard data under an anonymous identifier, and hosts this policy and the web version of the game.</li>
+      </ul>
+    </div>
+
+    <div class="card" id="retention">
+      <h2><span class="num">6</span>How long we keep data</h2>
+      <p>Gameplay progress tied to your anonymous identifier is kept for as long as the app remains available, so your progress stays recoverable. You can request deletion at any time — see "Your rights" below.</p>
+    </div>
+
+    <div class="card" id="children">
+      <h2><span class="num">7</span>Children's privacy</h2>
+      <p>Save the gate is a general-audience casual game and is not directed specifically at children under 13. It does not knowingly collect personal information from children. If you believe a child has provided information through the app that shouldn't have been collected, contact us using the details above and we'll remove it.</p>
+    </div>
+
+    <div class="card" id="rights">
+      <h2><span class="num">8</span>Your rights</h2>
+      <p>Depending on where you live, you may have the right to access, correct, delete, or export the data associated with your anonymous player identifier, or to object to or restrict its processing. Since the app doesn't collect a name or email tied to your identity, we can only act on requests that include enough detail (e.g. your in-app player name and approximate last-played date) for us to locate the right record. Contact us at the email above to make a request. If you're in the EU/EEA, you also have the right to lodge a complaint with your local data protection supervisory authority.</p>
+    </div>
+
+    <div class="card" id="choices">
+      <h2><span class="num">9</span>Your choices</h2>
+      <p>You can reset all locally saved progress at any time from the app's Settings tab. You can also limit ad personalization through your device's OS-level ad settings (Android: Settings → Google → Ads; iOS: Settings → Privacy & Security → Tracking, or respond "Ask App Not to Track" when prompted).</p>
+    </div>
+
+    <div class="card">
+      <h2><span class="num">10</span>Changes to this policy</h2>
+      <p>If this policy changes, the updated version will be posted at this same URL with a new "Last updated" date.</p>
+    </div>
+
+    <div class="card" id="contact">
+      <h2><span class="num">11</span>Contact</h2>
+      <p>Questions about this policy or your data: <a href="mailto:contact@overstartup.com">contact@overstartup.com</a></p>
+    </div>
+
+  </div>
+
+  <footer>© 2026 OverStartup GmbH. Save the gate is published under the Turtoo brand.</footer>
+</body>
+</html>

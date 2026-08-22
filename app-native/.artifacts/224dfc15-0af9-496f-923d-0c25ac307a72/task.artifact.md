@@ -1,0 +1,4 @@
+- `[/]` Start the Android Emulator (`medium_phone`)
+- `[ ]` Build the Android project
+- `[ ]` Install and Launch the app on the emulator
+- `[ ]` Verify the app is running via screenshot

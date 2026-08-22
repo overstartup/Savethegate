@@ -1,0 +1,134 @@
+@page
+@model GateWall.Admin.Pages.UserDetailModel
+@{
+    ViewData["Title"] = "Player Details";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Player: @Model.Player!.Name</h2>
+    <a class="btn btn-outline-secondary" asp-page="./Users">Back to Players</a>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Overview</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm borderless">
+                    <tbody>
+                        <tr><th>ID</th><td>@Model.Player.Id</td></tr>
+                        <tr><th>Device ID</th><td><code>@Model.Player.DeviceId</code></td></tr>
+                        <tr><th>Email</th><td>@(Model.Player.Email ?? "—")</td></tr>
+                        <tr><th>Recovery Code</th><td><code>@Model.Player.RecoveryCode</code></td></tr>
+                        <tr><th>Coins</th><td><span class="badge bg-warning text-dark fs-6">@Model.Player.Coins</span></td></tr>
+                        <tr><th>Created At</th><td>@Model.Player.CreatedAt.ToString("g")</td></tr>
+                        <tr><th>Last Seen</th><td>@Model.Player.LastSeenAt.ToString("g")</td></tr>
+                        <tr>
+                            <th>Status</th>
+                            <td>
+                                @if (Model.Player.IsBanned) { <span class="badge bg-danger">Banned</span> }
+                                else { <span class="badge bg-success">Active</span> }
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Permanent Upgrades</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm borderless">
+                    <tbody>
+                        <tr><th>Power Level (Strength)</th><td>@Model.Player.PowerLevel</td></tr>
+                        <tr><th>Speed Level</th><td>@Model.Player.SpeedLevel</td></tr>
+                        <tr><th>Haste Level (Fire Rate)</th><td>@Model.Player.FireRateLevel</td></tr>
+                        <tr><th>Max Stage Reached</th><td>@Model.Player.CurrentStage</td></tr>
+                        <tr><th>Ads Removed</th><td>@(Model.Player.AdsRemoved ? "Yes" : "No")</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Actors & Objects (Stickers)</h5>
+    </div>
+    <div class="card-body">
+        @if (Model.Stickers.Any())
+        {
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Life Time (Blood / HP)</th>
+                        <th>Strength (Damage)</th>
+                        <th>Equipped</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in Model.Stickers)
+                    {
+                        <tr class="@(s.equipped ? "table-success" : "")">
+                            <td><code>@s.id</code></td>
+                            <td><strong>@s.name</strong></td>
+                            <td><span class="badge bg-danger">@s.blood HP</span></td>
+                            <td><span class="badge bg-dark">@s.damage DMG</span></td>
+                            <td>
+                                @if (s.equipped) { <span>Yes ⭐</span> }
+                                else { <span class="text-muted">No</span> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div class="alert alert-info">This player has no stickers yet.</div>
+        }
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0">Recent Scores (@Model.Scores.Count)</h5>
+    </div>
+    <div class="card-body">
+        @if (Model.Scores.Any())
+        {
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Score</th>
+                        <th>Stage Reached</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in Model.Scores)
+                    {
+                        <tr>
+                            <td>@s.CreatedAt.ToString("g")</td>
+                            <td><strong>@s.Score</strong></td>
+                            <td>@s.StageReached</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div class="text-muted">No scores recorded yet.</div>
+        }
+    </div>
+</div>

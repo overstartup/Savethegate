@@ -7,25 +7,25 @@ one device" to a real "top ranking for all players."
 
 ## Projects
 
-- **CrystalGate.Data** — shared EF Core models (`Player`, `ScoreEntry`) and `CrystalGateDbContext`. SQLite by default (zero-config, one file).
-- **CrystalGate.Api** — the public Web API the game calls.
-- **CrystalGate.Admin** — a password-gated Razor Pages panel to view/rename/ban/delete players and moderate leaderboard entries.
+- **GateWall.Data** — shared EF Core models (`Player`, `ScoreEntry`) and `GateWallDbContext`. SQLite by default (zero-config, one file).
+- **GateWall.Api** — the public Web API the game calls.
+- **GateWall.Admin** — a password-gated Razor Pages panel to view/rename/ban/delete players and moderate leaderboard entries.
 
 ## Running locally
 
 ```bash
 dotnet restore
-dotnet run --project src/CrystalGate.Api    # http://localhost:5080 (Swagger at /swagger in dev)
-dotnet run --project src/CrystalGate.Admin  # http://localhost:5090 (login: admin / ChangeMe123!)
+dotnet run --project src/GateWall.Api    # http://localhost:5080 (Swagger at /swagger in dev)
+dotnet run --project src/GateWall.Admin  # http://localhost:5090 (login: admin / ChangeMe123!)
 ```
 
 Both projects point at the same SQLite file via `ConnectionStrings:Default` in
-their `appsettings.json` (defaults to `/tmp/crystalgate-data/crystalgate.db` —
+their `appsettings.json` (defaults to `/tmp/GateWall-data/GateWall.db` —
 change this to a real path, or swap the provider to SQL Server/PostgreSQL,
 before deploying anywhere real).
 
 **Change the admin password** (`Admin:Username` / `Admin:Password` in
-`CrystalGate.Admin/appsettings.json`) before deploying this anywhere reachable
+`GateWall.Admin/appsettings.json`) before deploying this anywhere reachable
 from the internet. The login is a simple hardcoded-credential cookie check —
 fine for an internal tool on a private network, not real security. Swap in
 ASP.NET Identity, Azure AD, or similar before exposing this publicly.

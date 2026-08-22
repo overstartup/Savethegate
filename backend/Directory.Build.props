@@ -9,7 +9,7 @@
     building on a real filesystem instead of this mount.
   -->
   <PropertyGroup>
-    <BaseIntermediateOutputPath>/tmp/crystalgate-build/$(MSBuildProjectName)/obj/</BaseIntermediateOutputPath>
-    <BaseOutputPath>/tmp/crystalgate-build/$(MSBuildProjectName)/bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>/tmp/GateWall-build/$(MSBuildProjectName)/obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>/tmp/GateWall-build/$(MSBuildProjectName)/bin/</BaseOutputPath>
   </PropertyGroup>
 </Project>

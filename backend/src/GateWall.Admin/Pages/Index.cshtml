@@ -1,0 +1,337 @@
+@page
+@model IndexModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n="page_title">Save the gate — Play Online & Download</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky:#8ed6fe; --grass:#8fcE8f; --grass2:#7bc47f;
+    --ink:#2b2b2b; --muted:#6b6f66; --card:#ffffff;
+    --accent:#3aa06a; --accent-dark:#237a4d;
+    --font-display:'Baloo 2', -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin:0; padding:0; color:var(--ink); line-height:1.65;
+    background:linear-gradient(180deg,#eaf7ff 0%, #f4faf1 340px, #fbfbf8 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Lang selector */
+  .lang-selector {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+  }
+  html[dir="rtl"] .lang-selector {
+    right: auto;
+    left: 20px;
+  }
+  .lang-selector select {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(0,0,0,0.1);
+    background: rgba(255,255,255,0.8);
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--accent-dark);
+    cursor: pointer;
+    outline: none;
+  }
+  
+  .hero{
+    background:linear-gradient(180deg, var(--sky) 0%, var(--grass) 100%);
+    padding:60px 20px 80px; text-align:center; position:relative; overflow:hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .hero::before, .hero::after{
+    content:''; position:absolute; border-radius:50%; background:rgba(255,255,255,.35);
+  }
+  .hero::before{ width:120px; height:120px; top:-20px; left:-20px; }
+  .hero::after{ width:180px; height:180px; bottom:-60px; right:-30px; }
+  
+  .badge{
+    width:120px; height:120px; margin:0 auto 20px; border-radius:50%;
+    background:#fff; box-shadow:0 8px 24px rgba(0,0,0,.15);
+    display:flex; align-items:center; justify-content:center; position:relative; z-index:1;
+    font-size: 50px;
+  }
+  
+  .hero h1{
+    font-family:var(--font-display); font-weight:800; font-size:42px; margin:0 0 10px;
+    color:#1f3d2a; position:relative; z-index:1;
+  }
+  .hero .tag{
+    font-size:18px; color:#2f4f3a; opacity:.9; margin:0 0 30px; position:relative; z-index:1;
+    max-width: 500px;
+  }
+  
+  .actions {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 24px;
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .btn:hover {
+    transform: translateY(-2px);
+  }
+  
+  .btn-primary {
+    background: #fff;
+    color: var(--accent-dark);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  }
+  
+  .btn-store {
+    background: #111;
+    color: #fff;
+  }
+
+  .features {
+    padding: 60px 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 30px;
+    flex: 1;
+  }
+  .feature-card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 10px 30px rgba(20,50,30,.08);
+    text-align: center;
+  }
+  .feature-card .icon {
+    font-size: 40px;
+    margin-bottom: 15px;
+  }
+  .feature-card h3 {
+    font-family: var(--font-display);
+    font-size: 22px;
+    color: var(--accent-dark);
+    margin: 0 0 10px;
+  }
+  .feature-card p {
+    font-size: 15px;
+    color: #555;
+    margin: 0;
+  }
+  
+  footer{ text-align:center; font-size:13px; color:#8a8a8a; padding:20px 18px 30px; background: #fbfbf8; }
+  footer a{ color:var(--accent-dark); text-decoration: none; font-weight: 600; margin: 0 10px; }
+  footer a:hover { text-decoration: underline; }
+  .footer-links { margin-bottom: 15px; }
+</style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="lang-selector">
+      <select id="langSelect" onchange="changeLang(this.value)">
+        <option value="en">English</option>
+        <option value="de">Deutsch</option>
+        <option value="ar">العربية</option>
+        <option value="fa">فارسی</option>
+      </select>
+    </div>
+
+    <div class="badge">🛡️</div>
+    <h1>Save the gate</h1>
+    <p class="tag" data-i18n="subtitle">The ultimate action-defense game. Upgrade your wizard, equip magical stickers, and defend the crystal gate from endless waves of monsters.</p>
+    
+    <div class="actions">
+      <a href="/game/index.html" class="btn btn-primary" data-i18n="play_btn">🎮 Play Online</a>
+      <a href="#" class="btn btn-store" data-i18n="app_store">🍎 App Store</a>
+      <a href="#" class="btn btn-store" data-i18n="google_play">🤖 Google Play</a>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="feature-card">
+        <div class="icon">🪄</div>
+        <h3 data-i18n="feat1_title">Epic Upgrades</h3>
+        <p data-i18n="feat1_desc">Level up your wizard's power, speed, and fire rate to obliterate tougher waves.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">✨</div>
+        <h3 data-i18n="feat2_title">Magical Stickers</h3>
+        <p data-i18n="feat2_desc">Collect and equip unique stickers to dynamically boost your health and damage output.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🏆</div>
+        <h3 data-i18n="feat3_title">Global Leaderboards</h3>
+        <p data-i18n="feat3_desc">Compete against players worldwide. Sync your progress to the cloud and defend your rank!</p>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-links">
+        <a href="/Privacy" data-i18n="privacy">Privacy Policy</a>
+        <a href="/Legal" data-i18n="legal">Legal Notice</a>
+    </div>
+    <div data-i18n="copyright">© 2026 OverStartup GmbH. Save the gate is published under the Turtoo brand.</div>
+  </footer>
+
+  <script>
+    const translations = {
+      en: {
+        page_title: "Save the gate — Play Online & Download",
+        subtitle: "The ultimate action-defense game. Upgrade your wizard, equip magical stickers, and defend the crystal gate from endless waves of monsters.",
+        play_btn: "🎮 Play Online",
+        app_store: "🍎 App Store",
+        google_play: "🤖 Google Play",
+        feat1_title: "Epic Upgrades",
+        feat1_desc: "Level up your wizard's power, speed, and fire rate to obliterate tougher waves.",
+        feat2_title: "Magical Stickers",
+        feat2_desc: "Collect and equip unique stickers to dynamically boost your health and damage output.",
+        feat3_title: "Global Leaderboards",
+        feat3_desc: "Compete against players worldwide. Sync your progress to the cloud and defend your rank!",
+        privacy: "Privacy Policy",
+        legal: "Legal Notice",
+        copyright: "© 2026 OverStartup GmbH. Save the gate is published under the Turtoo brand."
+      },
+      de: {
+        page_title: "Save the gate — Online spielen & Herunterladen",
+        subtitle: "Das ultimative Action-Defense-Spiel. Verbessere deinen Zauberer, rüste magische Aufkleber aus und verteidige das Kristalltor vor endlosen Monsterwellen.",
+        play_btn: "🎮 Online spielen",
+        app_store: "🍎 App Store",
+        google_play: "🤖 Google Play",
+        feat1_title: "Epische Upgrades",
+        feat1_desc: "Verbessere die Kraft, Geschwindigkeit und Feuerrate deines Zauberers, um härtere Wellen zu vernichten.",
+        feat2_title: "Magische Aufkleber",
+        feat2_desc: "Sammle und rüste einzigartige Aufkleber aus, um deine Gesundheit und deinen Schaden dynamisch zu erhöhen.",
+        feat3_title: "Globale Bestenlisten",
+        feat3_desc: "Tritt weltweit gegen Spieler an. Synchronisiere deinen Fortschritt mit der Cloud und verteidige deinen Rang!",
+        privacy: "Datenschutzrichtlinie",
+        legal: "Impressum",
+        copyright: "© 2026 OverStartup GmbH. Save the gate wird unter der Marke Turtoo veröffentlicht."
+      },
+      ar: {
+        page_title: "Save the gate — العب على الإنترنت وحمل اللعبة",
+        subtitle: "لعبة الدفاع والحركة المطلقة. قم بترقية ساحرك، وجهز ملصقات سحرية، ودافع عن البوابة الكريستالية من موجات الوحوش التي لا تنتهي.",
+        play_btn: "🎮 العب على الإنترنت",
+        app_store: "🍎 App Store",
+        google_play: "🤖 Google Play",
+        feat1_title: "ترقيات ملحمية",
+        feat1_desc: "ارفع مستوى قوة ساحرك وسرعته ومعدل إطلاق النار لسحق الموجات الأصعب.",
+        feat2_title: "ملصقات سحرية",
+        feat2_desc: "اجمع وجهز ملصقات فريدة لتعزيز صحتك وضرر هجماتك ديناميكيًا.",
+        feat3_title: "لوحات الصدارة العالمية",
+        feat3_desc: "تنافس ضد لاعبين من جميع أنحاء العالم. زامن تقدمك مع السحابة ودافع عن تصنيفك!",
+        privacy: "سياسة الخصوصية",
+        legal: "إشعار قانوني",
+        copyright: "© 2026 OverStartup GmbH. يتم نشر Save the gate تحت العلامة التجارية Turtoo."
+      },
+      fa: {
+        page_title: "Save the gate — بازی آنلاین و دانلود",
+        subtitle: "نهایی‌ترین بازی اکشن و دفاعی. جادوگر خود را ارتقا دهید، برچسب‌های جادویی تجهیز کنید و از دروازه کریستالی در برابر موج‌های بی‌پایان هیولاها دفاع کنید.",
+        play_btn: "🎮 بازی آنلاین",
+        app_store: "🍎 App Store",
+        google_play: "🤖 Google Play",
+        feat1_title: "ارتقاهای حماسی",
+        feat1_desc: "قدرت، سرعت و نرخ شلیک جادوگر خود را افزایش دهید تا موج‌های سخت‌تر را نابود کنید.",
+        feat2_title: "برچسب‌های جادویی",
+        feat2_desc: "برچسب‌های منحصر به فرد را جمع‌آوری و تجهیز کنید تا به صورت پویا سلامتی و آسیب خود را افزایش دهید.",
+        feat3_title: "جدول امتیازات جهانی",
+        feat3_desc: "با بازیکنان در سراسر جهان رقابت کنید. پیشرفت خود را با فضای ابری همگام‌سازی کنید و از رتبه خود دفاع کنید!",
+        privacy: "سیاست حفظ حریم خصوصی",
+        legal: "اطلاعیه حقوقی",
+        copyright: "© 2026 OverStartup GmbH. Save the gate تحت برند Turtoo منتشر شده است."
+      }
+    };
+
+    function changeLang(lang) {
+      // Update select element if triggered by hash
+      document.getElementById('langSelect').value = lang;
+
+      // Update URL hash safely
+      window.history.replaceState(null, null, '#/' + lang + '/');
+      
+      // Save to localStorage for Privacy/Legal pages
+      localStorage.setItem('prefLang', lang);
+
+      // Set document direction for Arabic and Farsi
+      if (lang === 'ar' || lang === 'fa') {
+        document.documentElement.setAttribute('dir', 'rtl');
+        document.documentElement.setAttribute('lang', lang);
+      } else {
+        document.documentElement.setAttribute('dir', 'ltr');
+        document.documentElement.setAttribute('lang', lang);
+      }
+
+      // Update all translatable elements
+      const dict = translations[lang] || translations['en'];
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (dict[key]) {
+          if (el.tagName === 'TITLE') {
+            document.title = dict[key];
+          } else {
+            el.innerText = dict[key];
+          }
+        }
+      });
+    }
+
+    // Auto-detect lang on load
+    window.addEventListener('DOMContentLoaded', () => {
+      let lang = 'en';
+      const hash = window.location.hash;
+      
+      if (hash.includes('/de/')) lang = 'de';
+      else if (hash.includes('/ar/')) lang = 'ar';
+      else if (hash.includes('/fa/')) lang = 'fa';
+      else {
+        const stored = localStorage.getItem('prefLang');
+        if (stored && translations[stored]) {
+          lang = stored;
+        } else {
+          // Fallback to browser lang
+          const browserLang = navigator.language.slice(0, 2);
+          if (translations[browserLang]) {
+            lang = browserLang;
+          }
+        }
+      }
+      
+      changeLang(lang);
+    });
+  </script>
+</body>
+</html>

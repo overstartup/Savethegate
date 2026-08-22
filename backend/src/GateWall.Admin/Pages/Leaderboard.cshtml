@@ -1,0 +1,45 @@
+@page
+@model GateWall.Admin.Pages.LeaderboardModel
+@{
+    ViewData["Title"] = "Leaderboard";
+}
+
+<h2>Top Runs <small class="text-muted">(all-time, top 100 shown)</small></h2>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success py-2">@Model.StatusMessage</div>
+}
+
+<table class="table table-striped table-sm align-middle">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Score</th>
+            <th>Stage reached</th>
+            <th>Date (UTC)</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    @{ int rank = 1; }
+    @foreach (var s in Model.Entries)
+    {
+        <tr>
+            <td>@rank</td>
+            <td>@(s.Player?.Name ?? "(deleted player)")</td>
+            <td><strong>@s.Score</strong></td>
+            <td>@s.StageReached</td>
+            <td class="small">@s.CreatedAt.ToString("u")</td>
+            <td>
+                <form method="post" asp-page-handler="Delete" onsubmit="return confirm('Remove this score entry?');">
+                    <input type="hidden" name="id" value="@s.Id" />
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+                </form>
+            </td>
+        </tr>
+        rank++;
+    }
+    </tbody>
+</table>
