@@ -2,8 +2,17 @@
 **/bin/
 **/obj/
 **/.vs/
+app-native/.gradle_home/
+app-native/wrapper/dists/
+**/.gradle/
+**/build/
 *.db
 *.db-shm
 *.db-wal
 *.csproj.user
 *.pubxml.user
+$null
+extract_gunner.py
+extract_icons.py
+place_icons.py
+app-native/android/build_release.bat

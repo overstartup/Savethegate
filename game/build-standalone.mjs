@@ -39,8 +39,15 @@ for (const n of names) {
   const svg = readFileSync(`assets/sprites/${n}.svg`, 'utf8');
   spriteData += `  ${JSON.stringify(n)}: "data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}",\n`;
 }
+// Inline gunner PNGs
+for (let i = 0; i < 21; i++) {
+  const name = `gunner_${String(i).padStart(2, '0')}`;
+  const png = readFileSync(`assets/sprites/gunner/${name}.png`);
+  spriteData += `  ${JSON.stringify(name)}: "data:image/png;base64,${png.toString('base64')}",\n`;
+}
 spriteData += '};\n';
 code = code.replace('img.src = `assets/sprites/${name}.svg`;', 'img.src = SPRITE_DATA[name];');
+code = code.replace("img.src = `assets/sprites/gunner/${name}.png`;", 'img.src = SPRITE_DATA[name];');
 
 // Inline per-theme environment art (tall background photos for live
 // gameplay, plus the single continuous world-map image for the road map)
@@ -186,9 +193,14 @@ for (const f in fonts) {
   fonts[f] = `data:font/woff2;base64,${readFileSync(f).toString('base64')}`;
 }
 
+// Inline favicon as a data URI so the standalone play.html has an icon in the browser tab
+const faviconPng = readFileSync('favicon.png');
+const faviconDataUri = `data:image/png;base64,${faviconPng.toString('base64')}`;
+
 const html = readFileSync('index-dev.html', 'utf8')
   .replace("url('assets/fonts/luckiest-guy.woff2')", `url('${fonts["assets/fonts/luckiest-guy.woff2"]}')`)
   .replace("url('assets/fonts/fredoka.woff2')", `url('${fonts["assets/fonts/fredoka.woff2"]}')`)
+  .replace('href="favicon.png"', `href="${faviconDataUri}"`)
   .replace('<script type="module" src="src/main.js"></script>',
            `<script>\n"use strict";\n${spriteData}${code}\n</script>`);
 writeFileSync('play.html', html); writeFileSync('index.html', html);

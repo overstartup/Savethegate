@@ -49,58 +49,64 @@ export class Announcer {
       alpha = 1;
     }
 
-    const cy = AH * 0.34 + rise;
+    // Kept small and see-through — these fire constantly during play (every
+    // weapon use, combo, heart lost, ...) so they read as a quick corner-of-
+    // the-eye confirmation, not a big banner blocking the lane the player is
+    // actually watching. Capped well under full alpha even at its most
+    // "solid" moment, and sized down a lot from the old big-banner look.
+    const cy = AH * 0.22 + rise;
     ctx.save();
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * 0.7;
     ctx.translate(AW / 2, cy);
     ctx.scale(scale, scale);
 
-    // sunburst rays behind the text
+    // sunburst rays behind the text — faint, just a hint of color/motion
     ctx.save();
     ctx.rotate(t * 0.35);
     ctx.fillStyle = a.color;
-    ctx.globalAlpha = alpha * 0.16;
+    ctx.globalAlpha = alpha * 0.08;
     for (let i = 0; i < 10; i++) {
       ctx.rotate(Math.PI / 5);
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(-26, -190);
-      ctx.lineTo(26, -190);
+      ctx.lineTo(-16, -110);
+      ctx.lineTo(16, -110);
       ctx.closePath();
       ctx.fill();
     }
     ctx.restore();
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * 0.7;
 
-    // dark pill behind text for readability
-    const wPill = Math.max(240, a.title.length * 22 + 60);
-    ctx.fillStyle = 'rgba(15,8,35,0.72)';
+    // dark pill behind text for readability — much more transparent than
+    // before so the gameplay behind it stays visible.
+    const wPill = Math.max(150, a.title.length * 13 + 36);
+    ctx.fillStyle = 'rgba(15,8,35,0.4)';
     ctx.beginPath();
-    ctx.roundRect(-wPill / 2, -46, wPill, a.sub ? 96 : 68, 24);
+    ctx.roundRect(-wPill / 2, -28, wPill, a.sub ? 58 : 42, 16);
     ctx.fill();
     ctx.strokeStyle = a.color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.roundRect(-wPill / 2, -46, wPill, a.sub ? 96 : 68, 24);
+    ctx.roundRect(-wPill / 2, -28, wPill, a.sub ? 58 : 42, 16);
     ctx.stroke();
 
     // title with glow
     ctx.textAlign = 'center';
-    ctx.font = `40px ${F_TITLE}`;
+    ctx.font = `22px ${F_TITLE}`;
     ctx.shadowColor = a.color;
-    ctx.shadowBlur = 22;
+    ctx.shadowBlur = 12;
     ctx.strokeStyle = '#2a1f4d';
-    ctx.lineWidth = 8;
-    ctx.strokeText(a.title, 0, 2);
+    ctx.lineWidth = 4;
+    ctx.strokeText(a.title, 0, 0);
     ctx.fillStyle = a.color;
-    ctx.fillText(a.title, 0, 2);
+    ctx.fillText(a.title, 0, 0);
     ctx.shadowBlur = 0;
 
     // subtitle
     if (a.sub) {
-      ctx.font = `19px ${F_BODY}`;
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.fillText(a.sub, 0, 34);
+      ctx.font = `12px ${F_BODY}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(a.sub, 0, 20);
     }
     ctx.restore();
   }

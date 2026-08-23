@@ -1,41 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#1a1030" />
-  <title>Landgate</title>
+  <title>GateWall</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="manifest" href="manifest.json" />
   <style>
     @font-face {
       font-family: 'Luckiest Guy';
       src: url('assets/fonts/luckiest-guy.woff2') format('woff2');
       font-display: swap;
     }
+
     @font-face {
       font-family: 'Fredoka';
       src: url('assets/fonts/fredoka.woff2') format('woff2');
       font-display: swap;
     }
-    html, body {
-      margin: 0; padding: 0;
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
       background: #0d0820;
       height: 100%;
       overflow: hidden;
-      overscroll-behavior: none;   /* no pull-to-refresh */
-      touch-action: none;          /* no pinch zoom / scroll */
-      -webkit-user-select: none; user-select: none;
+      overscroll-behavior: none;
+      /* no pull-to-refresh */
+      touch-action: none;
+      /* no pinch zoom / scroll */
+      -webkit-user-select: none;
+      user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
+
     #wrap {
-      position: fixed; inset: 0;
-      display: flex; align-items: center; justify-content: center;
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    #game { display: block; touch-action: none; }
+
+    #game {
+      display: block;
+      touch-action: none;
+    }
   </style>
 </head>
+
 <body>
   <div id="wrap"><canvas id="game"></canvas></div>
 
@@ -44,16 +65,23 @@
        src/main.js on first launch, or when the player taps the name pill on
        the main menu. The name entered here is what shows on the Top
        Guardians leaderboard. -->
-  <div id="nameOverlay" style="display:none; position:fixed; inset:0; z-index:10; align-items:center; justify-content:center; background:rgba(8,4,20,0.85); flex-direction:column; font-family:'Fredoka','Trebuchet MS',Arial,sans-serif;">
-    <div style="background:linear-gradient(#332457,#1c1238); border:3px solid #7fd8ff; border-radius:20px; padding:28px 24px; width:280px; max-width:80vw; text-align:center; box-shadow:0 0 30px rgba(127,216,255,0.5);">
+  <div id="nameOverlay"
+    style="display:none; position:fixed; inset:0; z-index:10; align-items:center; justify-content:center; background:rgba(8,4,20,0.85); flex-direction:column; font-family:'Fredoka','Trebuchet MS',Arial,sans-serif;">
+    <div
+      style="background:linear-gradient(#332457,#1c1238); border:3px solid #7fd8ff; border-radius:20px; padding:28px 24px; width:280px; max-width:80vw; text-align:center; box-shadow:0 0 30px rgba(127,216,255,0.5);">
       <div style="color:#7fd8ff; font-size:20px; font-weight:700; margin-bottom:6px;">Name your Guardian</div>
-      <div style="color:rgba(255,255,255,0.7); font-size:13px; margin-bottom:16px;">Shown on the Top Guardians leaderboard</div>
-      <input id="nameInput" maxlength="14" placeholder="Guardian" style="width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:2px solid #7fd8ff; background:#0d0820; color:#fff; font-size:16px; text-align:center; outline:none;" />
-      <button id="nameSubmit" style="margin-top:14px; width:100%; padding:12px; border:none; border-radius:24px; background:linear-gradient(#6ef598,#38b85f); color:#fff; font-size:16px; font-weight:700; box-shadow:0 0 10px rgba(56,184,95,0.6);">Let's Go</button>
+      <div style="color:rgba(255,255,255,0.7); font-size:13px; margin-bottom:16px;">Shown on the Top Guardians
+        leaderboard</div>
+      <input id="nameInput" maxlength="14" placeholder="Guardian"
+        style="width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:2px solid #7fd8ff; background:#0d0820; color:#fff; font-size:16px; text-align:center; outline:none;" />
+      <button id="nameSubmit"
+        style="margin-top:14px; width:100%; padding:12px; border:none; border-radius:24px; background:linear-gradient(#6ef598,#38b85f); color:#fff; font-size:16px; font-weight:700; box-shadow:0 0 10px rgba(56,184,95,0.6);">Let's
+        Go</button>
     </div>
   </div>
 
   <script type="module" src="src/main.js"></script>
 
 </body>
+
 </html>

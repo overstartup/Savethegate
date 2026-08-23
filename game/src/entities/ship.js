@@ -1,7 +1,7 @@
 // Ship — Sea War only. Patrols horizontally along the water surface line
 // (left→right or right→left), firing bullets down at the Guardian, and can
 // be shot down for score/coins just like a regular monster. It never falls
-// and never reaches the Landgate directly — its bullets are the threat.
+// and never reaches the GateWall directly — its bullets are the threat.
 import { CONFIG } from '../config.js';
 
 export class Ship {
@@ -21,8 +21,11 @@ export class Ship {
     const hp = Math.max(2, Math.round(baseHp * hpMult));
     this.hp = hp;
     this.maxHp = hp;
-    this.score = CONFIG.ship.score;
+    // Raised alongside monster bullet damage (was 15) so ship cannonballs
+    // hurt proportionally more too.
+    this.damage = Math.max(5, Math.round(24 * hpMult));
     this.hitFlash = 0;
+    this.score = CONFIG.ship.score;
     this.bobPhase = Math.random() * Math.PI * 2;
     this.dead = false;
 

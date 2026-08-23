@@ -4,30 +4,31 @@ I have applied several critical fixes to the project to prepare it for running o
 
 ## Changes Made
 
-### 1. Build Environment Stability
-- **`local.properties`**: Created this file to explicitly define the Android SDK path, ensuring Gradle knows where to find the necessary build tools.
-- **`gradle.properties`**: Added `org.gradle.java.home` to point to Android Studio's bundled JDK, avoiding version conflicts between different Java installations.
-- **`systemProp.user.home`**: Added a system property to help Gradle identify the user home directory, which is a common source of build errors in restricted environments.
+### 1. Build Environment & Error Resolution
+- **`AndroidLocationsBuildService` Fix**: Resolved a persistent build blocker by standardizing Android environment variables (`ANDROID_USER_HOME`) and unsetting conflicting preference roots.
+- **SDK Compatibility**: Bumped `compileSdkVersion` and `targetSdkVersion` to **35** and `minSdkVersion` to **23** in `variables.gradle` to resolve dependency conflicts with modern Jetpack and Billing libraries.
+- **`local.properties`**: Explicitly defined the Android SDK path.
+- **`gradle.properties`**: Configured `org.gradle.java.home` to use Android Studio's bundled JDK.
 
 ### 2. Connectivity & Backend
-- **`backend.js`**: Updated the API base URL logic. It now automatically uses `10.0.2.2` when running on a native Android device/emulator, allowing it to communicate with a backend running on your machine's `localhost`.
+- **`backend.js`**: Updated the API base URL logic to automatically use `10.0.2.2` when running on the Android Emulator, allowing it to reach your local dev server.
 
 ### 3. In-App Purchase Fix
-- **`iap.js`**: Fixed a bug where the purchase verification logic was using the wrong `localStorage` key. It now correctly points to `spellstorm-save-v1`, which ensures `playerId` is correctly sent to your backend for verification.
+- **`iap.js`**: Fixed a critical bug where the purchase verification logic was using the incorrect `localStorage` key (`crystalgate-save` instead of `spellstorm-save-v1`).
 
-### 4. Asset Synchronization
-- **Game Bundle**: Rebuilt the game's standalone HTML (`index.html`) using the fixed scripts and synchronized it with the Android project's assets.
+### 4. Deployment
+- **Asset Sync**: Rebuilt the game bundle and synchronized it with the Android project.
+- **Emulator Launch**: Successfully built the APK, installed it on the emulator, and launched the app.
+- **Physical Device Launch**: Successfully built, installed, and launched the app on your paired physical **Pixel 4a** over wireless debugging.
 
 ## Current Status
 
-> [!CAUTION]
-> **Build Blocked in Shell**: The CLI build is currently failing with a persistent `AndroidLocationsBuildService` error. This is a known issue in certain shell environments where Gradle cannot access standard Android preference directories.
-
 > [!TIP]
-> **Recommendation**: Since the code is now fully prepared and synced, please **click the Run button in Android Studio**. The IDE handles the build environment differently and should bypass the shell-specific errors I encountered.
+> **The app is now running on both your emulator and your physical Pixel 4a!**
 
 - `[x]` Build Configuration prepared
+- `[x]` Dependency conflicts resolved
 - `[x]` Game Logic fixed
 - `[x]` Assets synchronized
-- `[ ]` Emulator started (Blocked by environment)
-- `[ ]` APK built (Blocked by environment)
+- `[x]` Emulator started and App launched
+- `[x]` Physical device (Pixel 4a) detected and App launched

@@ -28,18 +28,21 @@ const TEST_IDS = {
 // Get them from https://apps.admob.com → Apps → Ad units.
 const REAL_IDS = {
   android: {
-    banner: 'YOUR-ANDROID-BANNER-AD-UNIT-ID',
-    interstitial: 'YOUR-ANDROID-INTERSTITIAL-AD-UNIT-ID',
-    rewarded: 'YOUR-ANDROID-REWARDED-AD-UNIT-ID',
+    banner: 'ca-app-pub-3298222007921646/5882325137',
+    interstitial: 'ca-app-pub-3298222007921646/3998397821',
+    rewarded: 'ca-app-pub-3298222007921646/1943080125',
   },
   ios: {
-    banner: 'YOUR-IOS-BANNER-AD-UNIT-ID',
-    interstitial: 'YOUR-IOS-INTERSTITIAL-AD-UNIT-ID',
-    rewarded: 'YOUR-IOS-REWARDED-AD-UNIT-ID',
+    banner: 'ca-app-pub-3298222007921646/8316650851',
+    interstitial: 'ca-app-pub-3298222007921646/1808037113',
+    rewarded: 'ca-app-pub-3298222007921646/6868792105',
   },
 };
 
-// Flip to false once you've filled in REAL_IDS and are ready to publish.
+// Flip to false once you've filled in REAL_IDS with a real AdMob account's
+// ad unit IDs and are ready to publish. Test IDs always serve a sample ad
+// and never earn money, so there's zero risk of an AdMob policy violation
+// while you're just trying things out.
 const USE_TEST_IDS = true;
 
 let AdMob = null;
@@ -97,7 +100,7 @@ export const ads = {
       await AdMob.showBanner({
         adId: ids().banner,
         adSize: BannerAdSize.ADAPTIVE_BANNER,
-        position: BannerAdPosition.TOP_CENTER,
+        position: BannerAdPosition.BOTTOM_CENTER,
         margin: 0,
       });
     } catch (err) { console.warn('[ads] banner failed:', err); }

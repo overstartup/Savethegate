@@ -1,0 +1,22 @@
+{
+  "name": "GateWall",
+  "short_name": "GateWall",
+  "description": "Defend the gate! A fast-paced fantasy tower defense action game.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0820",
+  "theme_color": "#1a1030",
+  "icons": [
+    {
+      "src": "favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

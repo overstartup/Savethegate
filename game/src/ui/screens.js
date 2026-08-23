@@ -5,7 +5,7 @@ import { COIN_PACKS } from '../data/shop.js';
 import { LEVELS, STAGE_SIZE, STAGE_COUNT, STAGE_THEMES } from '../data/levels.js';
 import { UPGRADES, UPGRADE_MAX, upgradeCost } from '../data/upgrades.js';
 
-export const GAME_VERSION = 'v3.1 — Landgate';
+export const GAME_VERSION = 'v3.1 — GateWall';
 export const F_TITLE = '"Luckiest Guy", "Arial Black", Arial';
 export const F_BODY = '"Fredoka", "Trebuchet MS", Arial';
 
@@ -23,7 +23,7 @@ const W = CONFIG.width, H = CONFIG.height;
 // STAGE_THEMES in data/levels.js. No bg_*.jpg exists for these yet, so
 // renderBackground() in main.js falls back to the sky gradient — expected.
 const ENV_THEMES = [
-  'glacial_peak', 'oasis_citadel', 'abyssal_rift', 'crystallized_forest',
+  'abyssal_rift', 'glacial_peak', 'oasis_citadel', 'crystallized_forest',
   'draconic_peaks', 'gilded_aviary', 'abyssal_forest', 'aetherial_gardens',
   'clockwork_city', 'spectral_jungle', 'crown_mountain_king', 'the_deepwood',
 ];
@@ -162,7 +162,7 @@ function star(ctx, x, y, r, fill = '#ffd23d', rot = 0) {
   ctx.restore();
 }
 
-// Faceted crystal shard — the brand motif for Landgate. Used as menu/
+// Faceted crystal shard — the brand motif for GateWall. Used as menu/
 // panel decoration in place of the old plain stars, with an inner facet
 // line and a small glint highlight so it reads as a cut gem, not a diamond
 // playing-card suit.
@@ -409,14 +409,12 @@ function panel(ctx, title, lines, footer, accent = '#ffd23d', stars = -1) {
 export const NAV_H = 72;
 export const NAV_Y = H - NAV_H;
 
-// Bottom nav is 3 regular tabs (Upgrades / Settings on the left, Ranks on
-// the right) plus a big circular PLAY button floating dead-center, elevated
-// above the bar — the main call-to-action, not just another tab. FAB_GAP is
-// the width reserved in the middle of the bar for it (so the two side
-// groups don't overlap it); the FAB itself sits at exactly W/2 regardless
-// of how the side groups are split.
-const FAB_GAP = 100;
-const NAV_SIDE_W = (W - FAB_GAP) / 2;
+// Bottom nav is 4 equal-width tabs (Upgrades / Settings / Play / Ranks) — Play
+// is just another tab now, not a specially-elevated floating FAB. Whichever
+// tab is the CURRENTLY ACTIVE page gets raised a bit above the other three
+// (see navItem()) so "selected" reads as elevation, not just a color change —
+// and that applies the same way no matter which of the 4 tabs is active.
+const NAV_SEG_W = W / 4;
 export const MENU_BUTTONS = {
   // Header bar layout rect (avatar + name area) — no longer tappable itself;
   // renaming now happens from the Settings screen. Kept for header sizing.
@@ -425,87 +423,213 @@ export const MENU_BUTTONS = {
   // the header, opens the buy-coins shop. Sized generously to always cover
   // the pill regardless of how many digits the coin balance has.
   coins:       { x: W - 160, y: 0, w: 160, h: 58 },
-  upgrades:    { x: 0,                    y: NAV_Y, w: NAV_SIDE_W / 2, h: NAV_H },
-  settings:    { x: NAV_SIDE_W / 2,       y: NAV_Y, w: NAV_SIDE_W / 2, h: NAV_H },
-  leaderboard: { x: NAV_SIDE_W + FAB_GAP, y: NAV_Y, w: NAV_SIDE_W,     h: NAV_H },
-  // Elevated hit area — taller than the bar itself so the part of the FAB
-  // that pokes up above NAV_Y is still tappable.
-  play:        { x: W / 2 - 36, y: NAV_Y - 36, w: 72, h: 72 },
+  upgrades:    { x: 0,              y: NAV_Y, w: NAV_SEG_W, h: NAV_H },
+  settings:    { x: NAV_SEG_W,      y: NAV_Y, w: NAV_SEG_W, h: NAV_H },
+  play:        { x: NAV_SEG_W * 2,  y: NAV_Y, w: NAV_SEG_W, h: NAV_H },
+  leaderboard: { x: NAV_SEG_W * 3,  y: NAV_Y, w: NAV_SEG_W, h: NAV_H },
 };
+// Custom vector icons (replace the old system-emoji glyphs — those render
+// inconsistently across devices and read as flat/generic against the rest
+// of the game's hand-drawn fantasy-UI look). Each takes a center point +
+// radius-ish size and a fill color, and draws with a matching dark stroke
+// so they sit on the nav bar the same way weapon/HUD icons do.
+function drawBoltIcon(ctx, cx, cy, s, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.beginPath();
+  ctx.moveTo(s * 0.12, -s * 0.85);
+  ctx.lineTo(-s * 0.55, s * 0.12);
+  ctx.lineTo(-s * 0.05, s * 0.12);
+  ctx.lineTo(-s * 0.18, s * 0.85);
+  ctx.lineTo(s * 0.55, -s * 0.12);
+  ctx.lineTo(s * 0.02, -s * 0.12);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#1c3a5c';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGearIcon(ctx, cx, cy, s, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const teeth = 8, rOuter = s * 0.85, rInner = s * 0.6, rHole = s * 0.32;
+  ctx.beginPath();
+  for (let i = 0; i < teeth * 2; i++) {
+    const a = (Math.PI * 2 * i) / (teeth * 2);
+    const r = i % 2 === 0 ? rOuter : rInner;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#1c3a5c';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = '#140c28';
+  ctx.beginPath(); ctx.arc(0, 0, rHole, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawTrophyIcon(ctx, cx, cy, s, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#1c3a5c';
+  ctx.lineWidth = 1.4;
+  // cup
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.5, -s * 0.75);
+  ctx.lineTo(s * 0.5, -s * 0.75);
+  ctx.quadraticCurveTo(s * 0.5, s * 0.05, 0, s * 0.15);
+  ctx.quadraticCurveTo(-s * 0.5, s * 0.05, -s * 0.5, -s * 0.75);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // handles
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.5, -s * 0.6);
+  ctx.quadraticCurveTo(-s * 0.95, -s * 0.55, -s * 0.55, -s * 0.1);
+  ctx.moveTo(s * 0.5, -s * 0.6);
+  ctx.quadraticCurveTo(s * 0.95, -s * 0.55, s * 0.55, -s * 0.1);
+  ctx.stroke();
+  // stem + base
+  ctx.beginPath(); ctx.rect(-s * 0.08, s * 0.15, s * 0.16, s * 0.22); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(-s * 0.32, s * 0.37, s * 0.64, s * 0.14, 2); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlayIcon(ctx, cx, cy, s, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#1c3a5c';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.5, -s * 0.75);
+  ctx.lineTo(-s * 0.5, s * 0.75);
+  ctx.lineTo(s * 0.75, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 const NAV_ITEMS = [
-  { key: 'upgrades', icon: '⚡', label: 'UPGRADES', accent: '#ff8a3d' },
-  { key: 'settings', icon: '⚙️', label: 'SETTINGS', accent: '#9ae6ff' },
-  { key: 'leaderboard', icon: '🏆', label: 'RANKS', accent: '#ffd23d' },
+  { key: 'upgrades', draw: drawBoltIcon, label: 'UPGRADES', accent: '#ff8a3d' },
+  { key: 'settings', draw: drawGearIcon, label: 'SETTINGS', accent: '#9ae6ff' },
+  { key: 'play', draw: drawPlayIcon, label: 'PLAY', accent: '#7fd8ff' },
+  { key: 'leaderboard', draw: drawTrophyIcon, label: 'RANKS', accent: '#ffd23d' },
 ];
 
-// One tab-bar segment: icon glyph on top, small label underneath, a thin
-// divider on the left edge (skipped for the first segment). The active tab
-// gets a brighter underline so it's clear which page you're on.
-function navItem(ctx, b, icon, label, accent, active, first) {
-  if (!first) {
+// One tab-bar segment. Inactive tabs are flat: small vector icon + label,
+// thin divider on the left edge (skipped for the first segment). The
+// CURRENTLY ACTIVE tab — whichever of the 4 that is, including PLAY — gets
+// raised above the bar as a glowing gem-bezel medallion instead of just a
+// color change, so "selected" reads as genuine elevation no matter which
+// page you're on.
+function navItem(ctx, b, item, active, first, t) {
+  const cx = b.x + b.w / 2;
+  if (!first && !active) {
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(b.x, b.y + 8); ctx.lineTo(b.x, b.y + b.h - 8); ctx.stroke();
   }
-  if (active) {
-    ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = accent;
-    ctx.fillRect(b.x + b.w * 0.2, b.y, b.w * 0.6, 3);
+  if (!active) {
+    item.draw(ctx, cx, b.y + 29, 13, 'rgba(255,255,255,0.6)');
+    ctx.textAlign = 'center';
+    ctx.font = `10px ${F_BODY}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(item.label, cx, b.y + 50);
+    return;
   }
+
+  // Raised gem-bezel medallion — same treatment for whichever tab is active,
+  // sitting mostly inside the bar with just a small lift above the top edge
+  // (not a big circle floating way above it).
+  const r = 20 + Math.sin(t * 3) * 1;
+  const cy = NAV_Y + 12;
+
+  ctx.save();
+  ctx.shadowColor = item.accent;
+  ctx.shadowBlur = 24;
+  const grad = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+  grad.addColorStop(0, '#eaf9ff');
+  grad.addColorStop(1, item.accent);
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = '#e8f9ff';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r - 5, 0, Math.PI * 2); ctx.stroke();
+
+  item.draw(ctx, cx, cy, 13, '#0d1b2a');
+
+  crystal(ctx, cx - r - 10, cy, 4, item.accent, t * 0.8);
+  crystal(ctx, cx + r + 10, cy, 4, item.accent, -t * 0.8);
+
   ctx.textAlign = 'center';
-  ctx.font = `20px ${F_TITLE}`;
-  ctx.fillStyle = active ? accent : 'rgba(255,255,255,0.65)';
-  ctx.fillText(icon, b.x + b.w / 2, b.y + 30);
   ctx.font = `10px ${F_BODY}`;
-  ctx.fillStyle = active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.55)';
-  ctx.fillText(label, b.x + b.w / 2, b.y + 50);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.fillText(item.label, cx, NAV_Y + 50);
 }
 
 // The full bottom nav bar: 3 side tabs + the central elevated PLAY fab.
 // `activeKey` matches one of NAV_ITEMS[].key, or 'play', so the current
-// page's tab can be highlighted.
+// page's tab can be highlighted. Background is now a themed gradient with a
+// faint diamond-facet texture instead of flat near-black, to match the rest
+// of the game's crystal/gem-toned UI instead of reading as generic app chrome.
 export function drawBottomNav(ctx, activeKey) {
+  const t = performance.now() / 1000;
+
   ctx.save();
   ctx.shadowColor = '#000';
   ctx.shadowBlur = 14;
-  ctx.fillStyle = 'rgba(16,10,32,0.96)';
+  const barGrad = ctx.createLinearGradient(0, NAV_Y, 0, H);
+  barGrad.addColorStop(0, 'rgba(34,22,64,0.97)');
+  barGrad.addColorStop(1, 'rgba(14,9,28,0.98)');
+  ctx.fillStyle = barGrad;
   ctx.fillRect(0, NAV_Y, W, NAV_H);
   ctx.restore();
-  ctx.strokeStyle = 'rgba(127,216,255,0.35)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(0, NAV_Y); ctx.lineTo(W, NAV_Y); ctx.stroke();
 
-  NAV_ITEMS.forEach((item, i) => {
-    navItem(ctx, MENU_BUTTONS[item.key], item.icon, item.label, item.accent, item.key === activeKey, i === 0);
-  });
+  // Faint repeating diamond-facet texture across the bar — subtle, reads as
+  // cut-crystal/gem material rather than a plain flat panel.
+  ctx.save();
+  ctx.globalAlpha = 0.05;
+  ctx.strokeStyle = '#9ae6ff';
+  ctx.lineWidth = 1;
+  const step = 26;
+  for (let x = -NAV_H; x < W + NAV_H; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, NAV_Y);
+    ctx.lineTo(x + NAV_H, H);
+    ctx.stroke();
+  }
+  ctx.restore();
 
-  // Central PLAY fab — circular, elevated above the bar line.
-  const active = activeKey === 'play';
-  const cx = W / 2, cy = NAV_Y;
-  const t = performance.now() / 1000;
-  const r = 30 + (active ? Math.sin(t * 3) * 1.5 : 0);
   ctx.save();
   ctx.shadowColor = '#7fd8ff';
-  ctx.shadowBlur = active ? 22 : 14;
-  const grad = ctx.createLinearGradient(0, cy - r, 0, cy + r);
-  grad.addColorStop(0, active ? '#9ae6ff' : '#3fa8d6');
-  grad.addColorStop(1, active ? '#4fb0e0' : '#1c6a94');
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 6;
+  ctx.strokeStyle = 'rgba(127,216,255,0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, NAV_Y); ctx.lineTo(W, NAV_Y); ctx.stroke();
   ctx.restore();
-  ctx.strokeStyle = '#e8f9ff';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-  // play triangle
-  ctx.fillStyle = '#0d1b2a';
-  ctx.beginPath();
-  ctx.moveTo(cx - 8, cy - 12); ctx.lineTo(cx - 8, cy + 12); ctx.lineTo(cx + 12, cy);
-  ctx.closePath(); ctx.fill();
-  ctx.textAlign = 'center';
-  ctx.font = `10px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.fillText('PLAY', cx, cy + r + 14);
+
+  // Draw inactive tabs first, then the active one last so its raised
+  // medallion (which pokes up and slightly overlaps its neighbors) always
+  // renders on top of the flat tabs beside it.
+  NAV_ITEMS.forEach((item, i) => {
+    if (item.key !== activeKey) navItem(ctx, MENU_BUTTONS[item.key], item, false, i === 0, t);
+  });
+  NAV_ITEMS.forEach((item, i) => {
+    if (item.key === activeKey) navItem(ctx, MENU_BUTTONS[item.key], item, true, i === 0, t);
+  });
 }
 
 // Shared full-page background + header for the four nav-bar destinations
@@ -539,16 +663,21 @@ export function pageShell(ctx, title, accent) {
 // exact same node rects for tap hit-testing.
 const HOME_LOGO_BOTTOM = 92;
 const HOME_STAGE_TOP = 148;
-// Wide left/right stagger (like a chain of floating islands on a diagonal
-// route) instead of a near-straight vertical stack — this is most of what
-// makes the map read as "spaced out" rather than a pile of overlapping tiles.
-const NODE_ZIGZAG = 108;
+// Gentle left/right stagger (like a chain of floating islands on a lazy
+// diagonal route) instead of a sharp switchback — was 108, which combined
+// with the old tighter vertical spacing made the path zigzag hard enough to
+// feel cluttered. A softer amplitude reads calmer without losing the "wide
+// chain of islands" feel.
+const NODE_ZIGZAG = 68;
 
-// Node spacing/size is fixed to what looks good for a ~5-stage viewport,
+// Node spacing/size is fixed to what looks good for a reference viewport,
 // regardless of how many stages actually exist — this is what makes
 // scrolling necessary (and correct) once a 6th+ stage is added, instead of
 // silently cramming every node into the same box until they're unreadable.
-const REFERENCE_VIEWPORT_STAGES = 5;
+// Was 5 (too many stages crammed into one screen, cramped/cluttered feel) —
+// fewer stages per screenful means each one gets noticeably more breathing
+// room, at the cost of a bit more scrolling to see the whole map.
+const REFERENCE_VIEWPORT_STAGES = 3.6;
 
 export function homeLayout(scrollY = 0) {
   const stageTop = HOME_STAGE_TOP;
@@ -587,6 +716,12 @@ const PANEL_CARD = { x: 28, y: 160, w: W - 56, h: 380 };
 export const CONTINUE_CARD_RECT = PANEL_CARD;
 export const CONTINUE_CLOSE_BUTTON = {
   x: PANEL_CARD.x + PANEL_CARD.w - 42, y: PANEL_CARD.y + 10, w: 32, h: 32,
+};
+// The pulsing "CONTINUE"/"TAP TO PLAY" pill drawn by panel() — geometry
+// matches its base (non-pulsing) size/position exactly so main.js can
+// hit-test taps against the actual button instead of the whole card.
+export const CONTINUE_PLAY_BUTTON = {
+  x: W / 2 - 110, y: PANEL_CARD.y + PANEL_CARD.h - 44 - 27, w: 220, h: 54,
 };
 
 // A single flat stepping-stone — a chunky rounded-hexagon rock (matching
@@ -631,16 +766,23 @@ function drawStone(ctx, cx, cy, r, reached, seed) {
 }
 
 // The route between islands — a little path of stepping stones (like the
-// reference) instead of a plain dotted line or rope bridge.
-function drawStonePath(ctx, x0, y0, x1, y1, reached, pathIdx) {
+// reference) instead of a plain dotted line or rope bridge. The name/stars
+// are now plain arced text with no background plaque (see drawStageNode),
+// so there's nothing left for the stones to collide with — the path runs
+// straight through, unbroken, stage to stage.
+function drawStonePath(ctx, a, b, reached, pathIdx) {
+  const x0 = a.cx, y0 = a.cy, x1 = b.cx, y1 = b.cy;
   const dx = x1 - x0, dy = y1 - y0;
   const len = Math.hypot(dx, dy);
   const px = -dy / len, py = dx / len; // perpendicular, for a little zigzag
-  const step = 30;
+  // Fewer stones spaced further apart, with a gentler wobble (was step 30 /
+  // amplitude 7) — the denser path was a big part of what made the map read
+  // as cluttered, especially with the sharper zigzag it used to sit inside.
+  const step = 42;
   const count = Math.max(2, Math.round(len / step));
   for (let i = 1; i < count; i++) {
     const t = i / count;
-    const wobble = Math.sin(t * Math.PI * 3 + pathIdx) * 7;
+    const wobble = Math.sin(t * Math.PI * 2 + pathIdx) * 5;
     const x = x0 + dx * t + px * wobble;
     const y = y0 + dy * t + py * wobble;
     const r = 8 + ((i + pathIdx) % 2) * 2;
@@ -652,7 +794,7 @@ function drawStagePath(ctx, nodes, furthestLevelIndex) {
   const furthestStage = Math.min(STAGE_COUNT - 1, Math.floor(furthestLevelIndex / STAGE_SIZE));
   for (let i = 0; i < nodes.length - 1; i++) {
     const a = nodes[i], b = nodes[i + 1];
-    drawStonePath(ctx, a.cx, a.cy, b.cx, b.cy, i < furthestStage, i);
+    drawStonePath(ctx, a, b, i < furthestStage, i);
   }
 }
 
@@ -666,13 +808,16 @@ function drawOceanBackdrop(ctx, top, bottom, t) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, top, W, bottom - top);
 
-  for (let i = 0; i < 10; i++) {
+  // Fewer, softer clouds than before (was 10 at 0.85 alpha) — this is sky
+  // dressing behind the islands/path, not the focal point, so it should
+  // stay quiet instead of competing for attention.
+  for (let i = 0; i < 6; i++) {
     const h1 = Math.sin(i * 12.9898) * 43758.5453; const rx = h1 - Math.floor(h1);
     const h2 = Math.sin(i * 78.233) * 12543.789; const ry = h2 - Math.floor(h2);
     const x = ((rx * W + t * 6 * (1 + (i % 3))) % (W + 80)) - 40;
     const y = top + ry * (bottom - top);
-    const s = 16 + (i % 3) * 6;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    const s = 15 + (i % 3) * 5;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.beginPath();
     ctx.ellipse(x, y, s, s * 0.55, 0, 0, Math.PI * 2);
     ctx.ellipse(x - s * 0.7, y + s * 0.15, s * 0.65, s * 0.42, 0, 0, Math.PI * 2);
@@ -965,12 +1110,51 @@ function drawGargoyleCreature(ctx, cx, cy, s, t) {
 
 const STAGE_CREATURES = [drawFishCreature, drawGargoyleCreature, drawParrotCreature, drawScorpionCreature, drawPenguinCreature, drawDragonCreature];
 
-// A 5-point gold star medal with the stage number in the center — replaces
-// the old black rounded-square plaque, echoing the star-medal badges in the
-// reference layout.
-function drawStarMedal(ctx, cx, cy, r, label, locked, complete) {
-  const spikes = 5;
-  const outer = r, inner = r * 0.46;
+// The stage name, set along a downward-curving arc (a "half circle") that
+// peaks at (cx, peakY) — no plaque/box behind it, just the lettering, bold
+// outline + soft drop shadow so it still reads clearly over any background.
+function drawStageNameBanner(ctx, cx, peakY, radius, name, locked) {
+  ctx.save();
+  ctx.font = `bold ${Math.round(radius * 0.19)}px ${F_TITLE}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const arcCenterY = peakY + radius;
+
+  const chars = [...name];
+  const widths = chars.map((c) => ctx.measureText(c).width);
+  const totalWidth = widths.reduce((a, b) => a + b, 0);
+  // Cap the span so a long name never wraps more than a true half-circle.
+  const totalAngle = Math.min(Math.PI * 0.85, totalWidth / radius);
+  let angle = -totalAngle / 2;
+
+  for (let i = 0; i < chars.length; i++) {
+    const w = widths[i];
+    angle += w / 2 / radius;
+    const a = -Math.PI / 2 + angle;
+    const x = cx + Math.cos(a) * radius;
+    const y = arcCenterY + Math.sin(a) * radius;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a + Math.PI / 2);
+    ctx.shadowColor = 'rgba(0,0,0,0.65)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 1.2;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = locked ? 'rgba(30,26,40,0.85)' : 'rgba(36,20,10,0.85)';
+    ctx.strokeText(chars[i], 0, 0);
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = locked ? 'rgba(255,255,255,0.75)' : '#ffe9a8';
+    ctx.fillText(chars[i], 0, 0);
+    ctx.restore();
+    angle += w / 2 / radius;
+  }
+  ctx.restore();
+}
+
+// A single small carved star for the 5-star rating row.
+function drawTinyStar(ctx, cx, cy, r, filled) {
+  const spikes = 5, outer = r, inner = r * 0.45;
   ctx.beginPath();
   for (let i = 0; i < spikes * 2; i++) {
     const rad = i % 2 === 0 ? outer : inner;
@@ -979,19 +1163,40 @@ function drawStarMedal(ctx, cx, cy, r, label, locked, complete) {
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.closePath();
-  const grad = ctx.createLinearGradient(cx, cy - outer, cx, cy + outer);
-  if (locked) { grad.addColorStop(0, '#8a8a96'); grad.addColorStop(1, '#5c5c68'); }
-  else if (complete) { grad.addColorStop(0, '#8ff0ae'); grad.addColorStop(1, '#3fbf6f'); }
-  else { grad.addColorStop(0, '#ffe98a'); grad.addColorStop(1, '#e8a53d'); }
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.strokeStyle = locked ? '#3a3a44' : '#a8781a';
-  ctx.lineWidth = 2;
+  if (filled) {
+    ctx.save();
+    ctx.shadowColor = '#ffd23d'; ctx.shadowBlur = 4;
+    ctx.fillStyle = '#ffd23d';
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = '#a8781a';
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  }
+  ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.textAlign = 'center';
-  ctx.font = `bold ${Math.round(r * 0.85)}px ${F_TITLE}`;
-  ctx.fillStyle = locked ? 'rgba(255,255,255,0.7)' : '#3a2408';
-  ctx.fillText(label, cx, cy + r * 0.32);
+}
+
+// The 5-star rating row, set along the same kind of downward-curving arc as
+// the name (peaking at (cx, peakY)) — filled left-to-right based on how
+// much of the stage the player has cleared so far.
+function drawStageStars(ctx, cx, peakY, radius, filled) {
+  const n = 5;
+  // Was 0.56 — tighter span packs the 5 stars closer together instead of
+  // spreading them almost a third of the way around the arc.
+  const totalAngle = Math.PI * 0.34;
+  const arcCenterY = peakY + radius;
+  const step = totalAngle / (n - 1);
+  const startAngle = -Math.PI / 2 - totalAngle / 2;
+  const r = radius * 0.135;
+  for (let i = 0; i < n; i++) {
+    const a = startAngle + step * i;
+    const x = cx + Math.cos(a) * radius;
+    const y = arcCenterY + Math.sin(a) * radius;
+    drawTinyStar(ctx, x, y, r, i < filled);
+  }
 }
 
 function drawStageNode(ctx, n, i, furthestLevelIndex, t) {
@@ -1063,12 +1268,20 @@ function drawStageNode(ctx, n, i, furthestLevelIndex, t) {
     ctx.fillText('🔒', cx, cy + size * 0.1);
   }
 
-  // Star-medal stage number, above the island (like a rank badge).
-  drawStarMedal(ctx, cx, cy - baseR * 0.98, size * 0.24, String(i + 1), locked, complete);
+  // Carved name, arced in a shallow dome right at the top edge of the
+  // island art (peaks at the center, curves down at the ends). Sits a
+  // bit higher above the island than before (was 1.05).
+  drawStageNameBanner(ctx, cx, cy - baseR * 1.3, size * 1.35, theme.name, locked);
 
-  // Clear check, upper-right of the island
+  // 5-star rating, arced the same way just above the name — fills in with
+  // the player's progress through the stage (no numbers, just stars).
+  const starsFilled = locked ? 0 : Math.round((cleared / STAGE_SIZE) * 5);
+  drawStageStars(ctx, cx, cy - baseR * 2.1, size * 1.1, starsFilled);
+
+  // A simple OK check once the player has fully passed the stage — no text,
+  // just the mark, sitting clear of the name/stars up top.
   if (complete) {
-    const cxb = cx + baseR * 0.85, cyb = cy - baseR * 0.75;
+    const cxb = cx + baseR * 0.9, cyb = cy + baseR * 0.85;
     ctx.fillStyle = '#3fbf6f';
     ctx.beginPath(); ctx.arc(cxb, cyb, size * 0.15, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#1a1030'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -1077,14 +1290,6 @@ function drawStageNode(ctx, n, i, furthestLevelIndex, t) {
     ctx.moveTo(cxb - size * 0.07, cyb); ctx.lineTo(cxb - size * 0.015, cyb + size * 0.06); ctx.lineTo(cxb + size * 0.08, cyb - size * 0.07);
     ctx.stroke();
   }
-
-  // Label under the island
-  ctx.font = `10px ${F_BODY}`;
-  ctx.textAlign = 'center';
-  const labelY = cy + baseR * 0.7 + 20;
-  if (locked) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillText('LOCKED', cx, labelY); }
-  else if (complete) { ctx.fillStyle = '#58e07f'; ctx.fillText('CLEARED', cx, labelY); }
-  else { ctx.fillStyle = '#ffd23d'; ctx.fillText(`${cleared}/${STAGE_SIZE} passed`, cx, labelY); }
 }
 
 // Fixed star-field positions (computed once, not per-frame) so the
@@ -1181,14 +1386,14 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
   ctx.font = `36px ${F_TITLE}`;
   ctx.strokeStyle = '#1c3a5c';
   ctx.lineWidth = 7;
-  ctx.strokeText('LANDGATE', 0, 0);
+  ctx.strokeText('GateWall', 0, 0);
   const lg = ctx.createLinearGradient(0, -24, 0, 12);
   lg.addColorStop(0, '#ffffff');
   lg.addColorStop(0.45, '#bdeeff');
   lg.addColorStop(0.75, '#7fd8ff');
   lg.addColorStop(1, '#b358e0');
   ctx.fillStyle = lg;
-  ctx.fillText('LANDGATE', 0, 0);
+  ctx.fillText('GateWall', 0, 0);
   // thin glowing underline flourish
   ctx.save();
   ctx.shadowColor = '#7fd8ff'; ctx.shadowBlur = 6;
@@ -1250,11 +1455,6 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
     }
   }
 
-  ctx.textAlign = 'center';
-  ctx.font = `11px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.fillText(layout.scrollMax > 0 ? 'Tap a stage · drag to scroll' : 'Tap a stage to jump in', W / 2, layout.stageBottom + 14);
-
   if (!continueDismissed) {
     // Same big dialog as GAME OVER / VICTORY / LEVEL CLEAR (ribbon banner,
     // dim background, pulsing button) — just with a close X added so it
@@ -1269,7 +1469,7 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
     ] : [
       'Fly the Guardian anywhere —',
       'magic fires by itself!',
-      'Defend the Landgate',
+      'Defend the GateWall',
       'through 5 stages of trials.',
       'Earn coins — buy BOMBS & ANGELS',
       best > 0 ? `★ Best score: ${best} ★` : '',
@@ -1282,11 +1482,6 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
   // continue dialog is open — you can still jump to Upgrades/Settings/Ranks
   // without closing it first.
   drawBottomNav(ctx, 'play');
-
-  ctx.textAlign = 'right';
-  ctx.font = `10px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.fillText(GAME_VERSION, W - 10, H - NAV_H - 6);
 }
 
 // --- Pause dialog (tap the pause button top-right during a run) --------
@@ -1299,6 +1494,35 @@ export const PAUSE_BUTTONS = {
   resume: { x: PAUSE_CARD.x + 20, y: PAUSE_CARD.y + 140, w: PAUSE_BTN_W, h: PAUSE_BTN_H },
   exit:   { x: PAUSE_CARD.x + 20 + PAUSE_BTN_W + 16, y: PAUSE_CARD.y + 140, w: PAUSE_BTN_W, h: PAUSE_BTN_H },
 };
+
+// --- Placement pause banner (drag a wall/turret into position) ---------
+// The whole battlefield freezes the moment a wall/turret is bought so the
+// Guardian is never dragged into danger while aiming. This small banner +
+// button sits up top (out of the way of the drag surface) — tap CONTINUE
+// once every item is placed to unfreeze and resume the fight.
+export const PLACEMENT_CONTINUE_BUTTON = { x: W / 2 - 90, y: 96, w: 180, h: 46 };
+
+export function renderPlacementBanner(ctx) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,4,20,0.55)';
+  ctx.fillRect(0, 56, W, 108);
+
+  ctx.textAlign = 'center';
+  ctx.font = `14px ${F_BODY}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillText('Battle paused — drag to place, buy more, or continue', W / 2, 76);
+
+  const b = PLACEMENT_CONTINUE_BUTTON;
+  ctx.fillStyle = '#3fbf6f';
+  ctx.strokeStyle = '#1d7a3c'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 14); ctx.fill(); ctx.stroke();
+  ctx.font = `17px ${F_TITLE}`;
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#1d7a3c'; ctx.lineWidth = 3;
+  ctx.strokeText('CONTINUE', b.x + b.w / 2, b.y + b.h / 2 + 6);
+  ctx.fillText('CONTINUE', b.x + b.w / 2, b.y + b.h / 2 + 6);
+  ctx.restore();
+}
 
 export function renderPause(ctx) {
   ctx.fillStyle = 'rgba(8,4,20,0.78)';
@@ -1358,10 +1582,13 @@ export function renderLevelClear(ctx, state, nextName) {
   panel(ctx, isStageClear ? `STAGE ${stageNum} CLEAR!` : `LEVEL ${levelInStage} CLEAR!`, [
     `Score: ${state.score}`,
     `Coins: ${state.coins}  (+bonus!)`,
-    '+1 heart restored',
+    '+1 gate restored',
     '',
     `Next: ${nextName}`,
   ], 'CONTINUE', '#58e07f');
+  // Exit back to the menu instead of continuing straight into the next
+  // level — same small link used on the Victory screen.
+  drawMenuLink(ctx);
 }
 
 // Small "return to the Upgrades/Leaderboard menu" link shown under the
@@ -1383,7 +1610,7 @@ function drawMenuLink(ctx) {
 
 export function renderVictory(ctx, state, best) {
   const stageCount = Math.ceil(state.spawner.level / STAGE_SIZE);
-  panel(ctx, 'LANDGATE SEALED!', [
+  panel(ctx, 'GateWall SEALED!', [
     `All ${stageCount} stages saved!`,
     `Final score: ${state.score}`,
     `Monsters bonked: ${state.kills}`,
@@ -1514,6 +1741,10 @@ export function renderShop(ctx, state, iapEnabled) {
   }
 }
 
+import { ads } from '../systems/ads.js';
+
+export const REVIVE_BUTTON = { x: 44, y: 460, w: 272, h: 56 }; // Assuming W=360, W-88=272
+
 export function renderGameOver(ctx, state, best) {
   const stageNum = Math.ceil(state.spawner.level / STAGE_SIZE);
   const levelInStage = ((state.spawner.level - 1) % STAGE_SIZE) + 1;
@@ -1524,6 +1755,19 @@ export function renderGameOver(ctx, state, best) {
     `Monsters bonked: ${state.kills}`,
     state.score >= best ? '★ NEW BEST! ★' : `Best: ${best}`,
   ], 'TRY AGAIN', '#ff5c7a');
+  
+  if (ads.isRewardedReady()) {
+    const b = REVIVE_BUTTON;
+    ctx.fillStyle = '#ff9900';
+    ctx.strokeStyle = '#b36b00'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 16); ctx.fill(); ctx.stroke();
+    
+    ctx.textAlign = 'center';
+    ctx.font = `bold 18px ${F_BODY}`;
+    ctx.fillStyle = '#fff';
+    ctx.fillText('WATCH AD TO REVIVE', 180, b.y + 34); // 180 = center of 360
+  }
+
   drawMenuLink(ctx);
 }
 
@@ -1601,9 +1845,7 @@ export function renderUpgrades(ctx, saveData) {
 }
 
 // --- Settings --------------------------------------------------------
-// NOTE: the privacy policy URL is a placeholder domain (turtoo.app) until a
-// real domain is assigned — swap PRIVACY_URL below when that's ready.
-export const PRIVACY_URL = 'https://turtoo.app/privacy';
+export const PRIVACY_URL = 'https://gatewall.turtoo.app/privacy';
 
 const SET_ROW_X = 16, SET_ROW_W = W - 32, SET_ROW_H = 64, SET_ROW_GAP = 16, SET_TOP = 76;
 export const SETTINGS_BUTTONS = {
@@ -1723,22 +1965,51 @@ export function renderSettings(ctx, muted, playerName, adsRemoved, iapEnabled) {
 const LB_TOP = 76;
 export const LEADERBOARD_BUTTONS = {};
 
-function drawRankRows(ctx, list) {
+// `mine` marks the row belonging to the current player — drawn with a
+// highlighted pill behind it (and a brighter name/score) so their own rank
+// stands out "between the list too," not just as a number they have to hunt
+// for. Used both for a row found in place within the visible list and for
+// the pinned "YOUR RANK" row appended below it when they're further down
+// than what got fetched.
+function drawRankRows(ctx, list, myName) {
+  const myKey = (myName || '').trim().toLowerCase();
   list.forEach((row, i) => {
     const y = LB_TOP + 16 + i * 44;
-    const rankColor = i === 0 ? '#ffd23d' : i === 1 ? '#cfd8e8' : i === 2 ? '#e0a458' : 'rgba(255,255,255,0.75)';
+    const mine = !!myKey && (row.name || '').trim().toLowerCase() === myKey;
+    if (mine) {
+      ctx.fillStyle = 'rgba(255,210,61,0.14)';
+      ctx.strokeStyle = 'rgba(255,210,61,0.55)';
+      ctx.lineWidth = 1.5;
+      roundRectPath(ctx, 10, y - 26, W - 20, 36, 10);
+      ctx.fill();
+      ctx.stroke();
+    }
+    const rankColor = mine ? '#ffd23d' : i === 0 ? '#ffd23d' : i === 1 ? '#cfd8e8' : i === 2 ? '#e0a458' : 'rgba(255,255,255,0.75)';
     ctx.textAlign = 'left';
     ctx.font = `18px ${F_TITLE}`;
     ctx.fillStyle = rankColor;
-    ctx.fillText(`${i + 1}.`, 20, y);
+    ctx.fillText(`${row.rank ?? i + 1}.`, 20, y);
     ctx.font = `16px ${F_BODY}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.fillText(row.name || 'Guardian', 55, y);
+    ctx.fillStyle = mine ? '#fff6d8' : 'rgba(255,255,255,0.92)';
+    ctx.fillText((row.name || 'Guardian') + (mine ? ' (you)' : ''), 55, y);
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#7fd8ff';
+    ctx.fillStyle = mine ? '#ffd23d' : '#7fd8ff';
     ctx.font = `16px ${F_TITLE}`;
     ctx.fillText(String(row.score), W - 20, y);
   });
+}
+
+// Small local helper — roundRectPath() elsewhere in this file may draw
+// directly with ctx.roundRect(); some older canvas targets don't support
+// that, so the leaderboard's highlight pill uses its own manual path.
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 export function renderLeaderboard(ctx, saveData, globalBoard, globalStatus) {
@@ -1746,22 +2017,50 @@ export function renderLeaderboard(ctx, saveData, globalBoard, globalStatus) {
 
   const haveGlobal = globalStatus === 'ready' && Array.isArray(globalBoard) && globalBoard.length > 0;
   const localList = (saveData.leaderboard || []).slice(0, 10);
+  const myName = saveData.playerName || '';
+  const myKey = myName.trim().toLowerCase();
+  const myBest = saveData.best || 0;
 
   if (haveGlobal) {
-    drawRankRows(ctx, globalBoard.slice(0, 10));
+    const shown = globalBoard.slice(0, 10);
+    drawRankRows(ctx, shown, myName);
+    // If I'm not already visible among the shown rows, look further down
+    // the fetched list (up to 50 — see openLeaderboard()) for my real rank;
+    // if I'm not even in THAT, pin a "YOUR RANK" row below with my best
+    // score so I can still see where I stand relative to the visible list,
+    // instead of just vanishing off the bottom with no context at all.
+    const foundIdx = globalBoard.findIndex((r) => (r.name || '').trim().toLowerCase() === myKey);
+    if (myKey && foundIdx === -1) {
+      const y = LB_TOP + 16 + shown.length * 44 + 14;
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(20, y - 24); ctx.lineTo(W - 20, y - 24);
+      ctx.stroke();
+      drawRankRows(ctx, [{ rank: '50+', name: myName || 'Guardian', score: myBest }], myName);
+    } else if (myKey && foundIdx >= 10) {
+      // I'm ranked but outside the visible top 10 — pin my row below too.
+      const y = LB_TOP + 16 + shown.length * 44 + 14;
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(20, y - 24); ctx.lineTo(W - 20, y - 24);
+      ctx.stroke();
+      drawRankRows(ctx, [globalBoard[foundIdx]], myName);
+    }
   } else if (globalStatus === 'loading') {
     ctx.textAlign = 'center';
     ctx.font = `15px ${F_BODY}`;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.fillText('Loading global rankings…', W / 2, LB_TOP + 30);
-    if (localList.length > 0) drawRankRows(ctx, localList);
+    if (localList.length > 0) drawRankRows(ctx, localList, myName);
   } else if (localList.length === 0) {
     ctx.textAlign = 'center';
     ctx.font = `15px ${F_BODY}`;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.fillText('No runs yet — play a game to set the first record!', W / 2, LB_TOP + 50);
   } else {
-    drawRankRows(ctx, localList);
+    drawRankRows(ctx, localList, myName);
   }
 
   ctx.textAlign = 'center';

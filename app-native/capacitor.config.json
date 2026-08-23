@@ -1,6 +1,6 @@
 {
-  "appId": "com.spellstorm.lanes",
-  "appName": "Landgate",
+  "appId": "com.turtoo.gatewall",
+  "appName": "GateWall",
   "webDir": "www",
   "backgroundColor": "#0d0820",
   "android": {

@@ -1,4 +1,4 @@
-- `[/]` Start the Android Emulator (`medium_phone`)
-- `[ ]` Build the Android project
-- `[ ]` Install and Launch the app on the emulator
-- `[ ]` Verify the app is running via screenshot
+- `[x]` Fix configuration and game logic bugs
+- `[x]` Sync assets to Android project
+- `[-]` Start the Android Emulator (Blocked: session-local background processes failing)
+- `[-]` Build and Run APK (Blocked: persistent `AndroidLocationsBuildService` shell error)

@@ -9,9 +9,11 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
-        <!-- AdMob App ID — TEST ID below is Google's official sample App ID,
-             safe to build/run with. Replace with your real App ID from
-             https://apps.admob.com before publishing (see ADMOB_SETUP.md). -->
+        <!-- AdMob App ID — Google's official TEST App ID for Android. Safe to
+             ship while testing; matches USE_TEST_IDS=true in
+             game/src/systems/ads.js. Swap for your own real App ID (from
+             apps.admob.com) together with flipping USE_TEST_IDS to false
+             before publishing. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713"/>

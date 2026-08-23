@@ -3,9 +3,10 @@
 import { CONFIG } from '../config.js';
 
 export class EnemyBullet {
-  constructor(x, y) {
+  constructor(x, y, damage = 10) {
     this.x = x;
     this.y = y;
+    this.damage = damage;
     this.r = CONFIG.enemyBullet.size;
     this.dead = false;
   }

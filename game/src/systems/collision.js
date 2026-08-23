@@ -113,7 +113,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
     }
   }
 
-  // Monster reaches the Landgate (bottom) → lose a life
+  // Monster reaches the GateWall (bottom) → lose a life
   for (const m of monsters) {
     if (!m.dead && m.y - m.r > CONFIG.height - 24) {
       m.dead = true;
@@ -173,7 +173,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
             // Fire feedback on EVERY graze, not just when the line fully
             // empties — otherwise the first two hits look like nothing happened.
             events.grazed(a);
-            if (a.takeHit()) events.bloodLost(a);
+            if (a.takeHit(b.damage)) events.bloodLost(a);
             break;
           }
         }
@@ -187,7 +187,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
           events.shieldBlock(player); // bullet fizzles — no blood/heart loss while shielded
         } else {
           events.grazed(player);
-          if (player.takeHit()) events.bloodLost(player);
+          if (player.takeHit(b.damage)) events.bloodLost(player);
         }
       }
     }

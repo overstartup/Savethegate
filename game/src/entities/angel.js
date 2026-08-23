@@ -35,11 +35,11 @@ export class Angel {
 
   // Called when an enemy bullet touches this angel. Returns true if this hit
   // depleted the blood line (caller should dock one heart, then refill it).
-  takeHit() {
+  takeHit(damage = 1) {
     if (this.invuln > 0) return false;
-    this.invuln = CONFIG.player.invulnAfterHit;
+    this.invuln = 0.5; // IFrames
     this.hitFlash = 0.15;
-    this.blood -= 1;
+    this.blood -= damage;
     if (this.blood <= 0) {
       this.blood = this.maxBlood; // refill — angels never die from this
       return true;

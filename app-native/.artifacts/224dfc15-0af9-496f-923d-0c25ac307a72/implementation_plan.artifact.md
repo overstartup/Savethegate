@@ -1,53 +1,42 @@
-# Debug and Run implementation plan
+# Optimization Plan (Memory and Speed)
 
-The goal is to resolve existing build issues and potential runtime bugs to allow the app to be run on an Android device or emulator.
-
-## User Review Required
-
-> [!IMPORTANT]
-> A persistent Gradle build error (`AndroidLocationsBuildService`) was encountered in the current shell environment. This appears to be related to environment restrictions (likely missing or non-writable home directories for the Android SDK configuration).
->
-> **You should be able to run the app normally using the Play button in Android Studio**, as the IDE handles these environment variables differently than the raw shell.
+This plan focuses on improving the performance and reducing the memory footprint of the GateWall game on Android.
 
 ## Proposed Changes
 
-### Build Configuration
+### 1. Rendering Optimization
 
-#### [MODIFY] [gradle.properties](file:///C:/ov371/prj/Game/Save%20the%20gate/app-native/android/gradle.properties)
-- Added `org.gradle.java.home` pointing to the Android Studio JBR to resolve Java version mismatches during CLI builds.
+#### [MODIFY] [main.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/main.js)
+- **Remove Expensive Effects**: Disable `ctx.shadowBlur` on mobile devices. It is extremely slow on many mobile GPUs.
+- **Offscreen Canvas for Static UI**: Pre-render the "GateWall" and other static UI elements to an offscreen canvas.
+- **Layered Rendering**: If possible, use separate canvases for the background, the game entities, and the HUD to reduce redrawing overhead.
 
-#### [NEW] [local.properties](file:///C:/ov371/prj/Game/Save%20the%20gate/app-native/android/local.properties)
-- Created to explicitly define `sdk.dir`, ensuring Gradle can find the Android SDK.
+### 2. Particle System Optimization
 
----
+#### [MODIFY] [particles.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/systems/particles.js)
+- **Object Pooling**: Instead of creating and filtering objects every frame, reuse particle objects from a pre-allocated pool to reduce Garbage Collection (GC) pressure.
+- **In-place updates**: Update the list array by swapping elements to the end instead of calling `.filter()`.
 
-### Game Logic & Backend Connectivity
+### 3. Memory & Asset Optimization
 
-#### [MODIFY] [backend.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/systems/backend.js)
-- Updated `API_BASE_URL` to automatically switch to `10.0.2.2` when running on the Android native platform. This allows the emulator to communicate with a backend running on the host machine's `localhost`.
+#### [MODIFY] [build-standalone.mjs](file:///C:/ov371/prj/Game/Save%20the%20gate/game/build-standalone.mjs)
+- **Stop Inlining Large Assets**: Modify the build script to copy images to the `www/assets` folder instead of inlining them as Base64 data URIs in `index.html`. This will significantly reduce the initial load time and memory usage of the WebView.
 
-#### [MODIFY] [iap.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/systems/iap.js)
-- Fixed a bug where the IAP verification logic was looking for the wrong `localStorage` key (`crystalgate-save` instead of `spellstorm-save-v1`). This would have caused purchase verification to fail due to a missing `playerId`.
+#### [MODIFY] [main.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/main.js) & [screens.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/ui/screens.js)
+- Update image loading to use relative paths (e.g., `assets/env/...`) instead of expecting inlined `BG_DATA`.
 
----
+### 4. Logic & Collision Optimization
 
-### Distribution
-
-#### [MODIFY] [index.html](file:///C:/ov371/prj/Game/Save%20the%20gate/app-native/www/index.html)
-- Regenerated the bundled game HTML with the above fixes.
-- Synced the new bundle to the Android assets directory (`android/app/src/main/assets/public/`).
+#### [MODIFY] [collision.js](file:///C:/ov371/prj/Game/Save%20the%20gate/game/src/systems/collision.js)
+- **Grid-based Partitioning (Broadphase)**: If performance still lags with many entities, implement a simple spatial grid to reduce the number of O(N*M) collision checks.
+- **Avoid Object Spread**: Use `.push()` with a loop instead of `...spread` if child monsters are created, to avoid unnecessary array allocations.
 
 ## Verification Plan
 
 ### Automated Tests
-- None available for this web-based game at the current level.
+- None.
 
 ### Manual Verification
-1. Open the project in **Android Studio**.
-2. Perform a **Gradle Sync**.
-3. Select an emulator (e.g., `medium_phone`) and click **Run**.
-4. Verify the following:
-    - The game loads and plays.
-    - Leaderboard/Backend calls don't fail with connection errors (if a backend is running at port 5041).
-    - AdMob test ads appear (test IDs are currently active).
-    - In-App Purchase buttons (if reachable) attempt to open the Google Play billing overlay.
+1. Build the project and measure the final `index.html` size (goal: < 500KB).
+2. Run on the physical Pixel 4a and monitor frame rate (FPS) during intense scenes (many particles and monsters).
+3. Use Chrome DevTools (remote debugging) to check the JS heap size and GC frequency.

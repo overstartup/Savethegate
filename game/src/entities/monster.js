@@ -21,6 +21,10 @@ export class Monster {
     const hp = Math.max(1, Math.round(d.hp * hpMult));
     this.hp = hp;
     this.maxHp = hp;
+    // Base bullet damage raised (was 10) so enemy fire actually chews into
+    // the blood line meaningfully instead of needing ~20 hits to cost a
+    // heart — bullets should hurt.
+    this.damage = Math.max(5, Math.round((d.damage || 20) * hpMult));
     this.r = d.size / 2;
     this.color = d.color;
     this.score = d.coins * 10;
@@ -28,6 +32,10 @@ export class Monster {
     this.splitsInto = d.splitsInto || null;
     this.hitFlash = 0;
     this.dead = false;
+    // Fixed power cost for the BOMB weapon's power-budget targeting (see
+    // buyWeapon('bomb') in main.js) — deliberately NOT scaled by hpMult, so
+    // the bomb behaves consistently across every stage.
+    this.power = d.power ?? 50;
 
     // Movement path — { targetX, curveAmp, curveFreq, phase }. Default is the
     // old behavior: a gentle in-place waddle straight down (randomized phase
@@ -35,7 +43,30 @@ export class Monster {
     // explicit shared path from the spawner — in that case the phase must be
     // used EXACTLY as given (no extra randomness added), or the sine overlay
     // desyncs between members and the "move together" effect is lost.
-    this.path = path || { targetX: x, curveAmp: 14, curveFreq: 6, phase: Math.random() * Math.PI * 2 };
+    const basePath = path || { targetX: x, curveAmp: 14, curveFreq: 6, phase: Math.random() * Math.PI * 2 };
+    // Every type gets its own movement "personality" (see MONSTERS.<type>.
+    // movement) layered on top of whatever shared clump path was assigned —
+    // this is what makes a goblin dart, a slime bounce, a skeleton march,
+    // and a troll lumber differently even when spawned in the same clump
+    // heading the same direction, instead of every monster on screen moving
+    // identically.
+    const mv = d.movement || { amp: 1, freq: 1, bob: 0 };
+    if (basePath.type === 'circle') {
+      // Circle/spiral formation (see spawner.js's flyCircle pattern) — orbits
+      // a fixed center point while still falling at normal speed, instead of
+      // lerping toward a targetX. Personality amp/freq don't apply to the
+      // orbit itself (would just distort the circle) so this path is left
+      // as-is rather than run through the curveAmp/curveFreq multiply below.
+      this.path = { ...basePath };
+      this.age = 0;
+    } else {
+      this.path = {
+        ...basePath,
+        curveAmp: (basePath.curveAmp ?? 14) * mv.amp,
+        curveFreq: (basePath.curveFreq ?? 6) * mv.freq,
+      };
+    }
+    this.bobAmp = mv.bob || 0;
     this.wobble = this.path.phase ?? 0;
 
     this.shootInterval = d.shootInterval || null;
@@ -44,6 +75,21 @@ export class Monster {
   }
 
   update(dt) {
+    if (this.path.type === 'circle') {
+      // Fly-circle formation — orbits a fixed center point while still
+      // falling at the normal per-monster speed, instead of lerping toward a
+      // targetX. This is what makes the "fly circle" pattern read as a real
+      // spinning ring/spiral of monsters rather than just a wobbly line.
+      this.age += dt;
+      this.y = this.startY + this.speed * this.age;
+      const angle = (this.path.phase || 0) + this.age * (this.path.angularSpeed || 3);
+      this.x = this.path.centerX + Math.cos(angle) * this.path.radius;
+      this.x = Math.max(this.r, Math.min(CONFIG.width - this.r, this.x));
+      if (this.hitFlash > 0) this.hitFlash -= dt;
+      if (this.shootTimer !== null) this.shootTimer -= dt;
+      return;
+    }
+
     this.y += this.speed * dt;
     this.wobble += dt * (this.path.curveFreq ?? 6);
 

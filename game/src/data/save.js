@@ -15,6 +15,15 @@ export function load() {
       leaderboard: Array.isArray(raw.leaderboard) ? raw.leaderboard : d.leaderboard,
       progress: { ...d.progress, ...(raw.progress || {}) },
       settings: { ...d.settings, ...(raw.settings || {}) },
+      // Guard against a missing/empty/malformed stickers array (e.g. an
+      // older save from before stickers existed, or one that lost its
+      // equipped hero somehow) — without this, Player falls back to
+      // CONFIG.player.maxBlood (a tiny 3-hit buffer) instead of the
+      // sticker's real blood pool (200), which makes every single enemy
+      // bullet (5-10+ damage) look like an instant one-hit kill.
+      stickers: Array.isArray(raw.stickers) && raw.stickers.some((s) => s && s.equipped)
+        ? raw.stickers
+        : d.stickers,
     };
   } catch {
     return defaults();
@@ -46,7 +55,8 @@ function defaults() {
     // screen (separate from the in-run coin shop). Each is a level 0..UPGRADE_MAX
     // (see data/upgrades.js) that persists across every run.
     permanent: { power: 0, speed: 0, fireRate: 0 },
-    stickers: [],          // monster ids collected
+    // Stickers are heroes/tools the player owns. They provide stats like blood (HP) and damage.
+    stickers: [{ id: 'hero1', name: 'Starter Hero', blood: 200, damage: 120, equipped: true }],
     streak: { wins: 0, losses: 0 },  // for adaptive difficulty
     leaderboard: [],        // top local runs: { name, score, stage, date }
     // Furthest level the player has reached (0-based index into LEVELS).

@@ -11,11 +11,19 @@ AdMob ads. **AdMob only works here — not in the plain browser version.**
 - `src/systems/ads.js` (inside the game bundle) — a thin wrapper around
   `@capacitor-community/admob` that:
   - does nothing (safely) when opened in a normal browser
-  - shows a **banner** at the top while playing
+  - shows a **banner** at the **bottom** of the screen on every non-gameplay
+    screen (menu, shop, leaderboard, upgrades, settings, pause, game over,
+    victory, level clear) — and hides it during active PLAYING, so it never
+    sits near the buy-button row or the Guardian's own movement space.
+    A single `syncBanner()` helper in `main.js` is called right after every
+    mode change, so this can't drift out of sync screen-by-screen.
   - shows a **full-screen interstitial** after Game Over, on Victory, and
     every `CONFIG.ads.interstitialEveryNLevels` levels cleared (default: 2)
-  - shows a **rewarded ad** button (bottom-center, labeled "FREE") that
-    grants `CONFIG.ads.rewardedCoins` coins (default: 50) for watching
+    — the bottom banner is already back in place for that screen underneath,
+    so it's there the moment the interstitial dismisses
+  - shows a **rewarded ad** button (bottom-center, labeled "FREE") during
+    gameplay that grants `CONFIG.ads.rewardedCoins` coins (default: 50) for
+    watching
 - `android/app/src/main/AndroidManifest.xml` — has the AdMob App ID meta-data
   tag required by the SDK.
 - Everything currently uses **Google's official TEST ad unit IDs**. These are

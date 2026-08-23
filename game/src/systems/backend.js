@@ -1,20 +1,25 @@
 // ============================================================
-// Backend sync — talks to the Landgate .NET API (CrystalGate.Api)
-// so the "TOP RANKS" screen shows a real cross-device leaderboard
-// instead of only runs played on this one phone.
+// Backend sync — talks to the GateWall .NET API (hosted at
+// gatewall.turtoo.app) so the "TOP RANKS" screen shows a real
+// cross-device leaderboard instead of only runs played on this one phone.
 //
 // Every call here is fire-and-forget-safe: if the API is unreachable
-// (offline, backend not deployed yet, request times out) every
-// function just resolves to `null` and the caller falls back to the
-// on-device data. The game never blocks or breaks because of this.
-//
-// TODO: swap API_BASE_URL for your real deployed backend URL before
-// publishing — this placeholder points at nothing reachable yet
-// (same "fill in before shipping" pattern as PRIVACY_URL in
-// ui/screens.js). Until then, all backend calls simply fail closed.
+// (offline, backend down, request times out) every function just
+// resolves to `null` and the caller falls back to the on-device data.
+// The game never blocks or breaks because of this.
 // ============================================================
 
-export const API_BASE_URL = 'https://api.turtoo.app';
+// The native app (real device or emulator) and any production web build
+// call the real deployed API. Only an actual local-browser dev session
+// (running off localhost/127.0.0.1, not wrapped in Capacitor) falls back
+// to a local backend on :5041, so `dotnet run`-ing the API locally still
+// works during development without touching this file.
+export const API_BASE_URL = (() => {
+  if (typeof window === 'undefined') return 'https://gatewall.turtoo.app';
+  const isNative = window.location.origin.includes('caps://') || !!window.Capacitor?.isNativePlatform?.();
+  const isLocalDevHost = !isNative && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  return isLocalDevHost ? 'http://localhost:5041' : 'https://gatewall.turtoo.app';
+})();
 
 const TIMEOUT_MS = 6000;
 const DEVICE_ID_KEY = 'crystalgate-device-id';
@@ -40,7 +45,18 @@ async function request(path, opts = {}) {
 
 // A stable per-install id so the same phone always maps back to the
 // same server-side Player row across app restarts.
-function getDeviceId() {
+async function getDeviceId() {
+  try {
+    // 1. If running as a native Android/iOS app, use the actual hardware UUID
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Device) {
+      const info = await window.Capacitor.Plugins.Device.getId();
+      return info.identifier; // this persists across app uninstalls/reinstalls!
+    }
+  } catch (e) {
+    console.warn("Capacitor Device plugin failed:", e);
+  }
+
+  // 2. Fallback to localStorage for browser/web builds
   try {
     let id = localStorage.getItem(DEVICE_ID_KEY);
     if (!id) {
@@ -59,7 +75,7 @@ export const backend = {
   async register(name, email) {
     return request('/api/players/register', {
       method: 'POST',
-      body: JSON.stringify({ deviceId: getDeviceId(), name, email }),
+      body: JSON.stringify({ deviceId: await getDeviceId(), name, email }),
     });
   },
 
@@ -78,7 +94,7 @@ export const backend = {
   async recover(recoveryCode) {
     return request('/api/players/recover', {
       method: 'POST',
-      body: JSON.stringify({ recoveryCode, deviceId: getDeviceId() }),
+      body: JSON.stringify({ recoveryCode, deviceId: await getDeviceId() }),
     });
   },
 
