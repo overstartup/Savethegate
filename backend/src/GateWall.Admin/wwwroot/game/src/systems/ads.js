@@ -39,8 +39,11 @@ const REAL_IDS = {
   },
 };
 
-// Flip to false once you've filled in REAL_IDS and are ready to publish.
-const USE_TEST_IDS = false;
+// Flip to false once you've filled in REAL_IDS with a real AdMob account's
+// ad unit IDs and are ready to publish. Test IDs always serve a sample ad
+// and never earn money, so there's zero risk of an AdMob policy violation
+// while you're just trying things out.
+const USE_TEST_IDS = true;
 
 let AdMob = null;
 let BannerAdPosition = null;
@@ -97,7 +100,7 @@ export const ads = {
       await AdMob.showBanner({
         adId: ids().banner,
         adSize: BannerAdSize.ADAPTIVE_BANNER,
-        position: BannerAdPosition.TOP_CENTER,
+        position: BannerAdPosition.BOTTOM_CENTER,
         margin: 0,
       });
     } catch (err) { console.warn('[ads] banner failed:', err); }

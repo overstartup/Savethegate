@@ -17,7 +17,7 @@ import { resolveCollisions } from './systems/collision.js';
 import { Particles } from './systems/particles.js';
 import { audio } from './systems/audio.js';
 import { renderHUD, buttonAt } from './ui/hud.js';
-import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, envIcon, renderPause, PAUSE_BUTTONS, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
+import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
 import { Announcer } from './ui/announce.js';
 import { LEVELS, WEAPONS, STAGE_SIZE, STAGE_COUNT } from './data/levels.js';
 import { COIN_PACKS } from './data/shop.js';
@@ -86,6 +86,35 @@ resize();
 
 // --- Sprites -----------------------------------------------------
 const SPRITES = {};
+
+// --- Gunner sprite geometry ------------------------------------------
+// The gunner_07/gunner_08 art is tall/narrow (drawn by width, anchored at
+// the feet — see the render code below). GUNNER_DISP_MULT controls how big
+// the sprite is drawn relative to the (unchanged) collision size. The
+// fractions below were measured directly off gunner_07.png (the flame-less
+// "idle" frame, 220x444): the barrel muzzle sits ~97.97% of the sprite's
+// height above the feet, and its center is ~24.09% of the sprite's width
+// to the right of the character's horizontal center.
+const GUNNER_DISP_MULT = 0.9; // was 1.8 — half-size on-screen character
+
+// How long (seconds) to hold on the cleared lane before the LEVELCLEAR/
+// VICTORY dialog actually appears, once the last attacker is gone — gives
+// the player a beat to see the level actually finish instead of the dialog
+// cutting in over the last kill.
+const LEVEL_CLEAR_DELAY = 4.0;
+const GUNNER_ASPECT = 444 / 220; // sprite height / width
+const GUNNER_MUZZLE_X_FRAC = 0.2409;
+const GUNNER_MUZZLE_Y_FRAC = 0.9797;
+
+function gunnerMuzzle(p) {
+  const dispW = p.size * GUNNER_DISP_MULT;
+  const dispH = dispW * GUNNER_ASPECT;
+  const footY = p.y + p.size * 1.25;
+  return {
+    x: p.x + p.facing * GUNNER_MUZZLE_X_FRAC * dispW,
+    y: footY - GUNNER_MUZZLE_Y_FRAC * dispH,
+  };
+}
 for (const name of ['wizard', 'goblin', 'slime', 'imp', 'fireball', 'portal-good']) {
   const img = new Image();
   img.src = `assets/sprites/${name}.svg`;
@@ -117,6 +146,30 @@ function drawSprite(name, x, y, size, alpha = 1, flipX = false) {
   ctx.globalAlpha = 1;
 }
 
+// Recolors a sprite/image to the current stage's monster palette (see
+// STAGE_THEMES[].monsterTint in data/levels.js) without needing separate art
+// per stage — draws the image normally, then paints the tint color into just
+// its opaque pixels ('source-atop') at partial alpha, so the original art's
+// shading/highlights still show through underneath the new hue. This is
+// what makes the SAME goblin/slime/imp/bat art actually read as "belonging"
+// to Glacial Peak vs. Draconic Peaks vs. The Deepwood, etc., instead of
+// every stage showing identical enemy colors.
+function drawTintedImage(img, x, y, w, h, tint, flipX = false) {
+  if (!img) return;
+  ctx.save();
+  if (flipX) { ctx.translate(x, y); ctx.scale(-1, 1); x = 0; y = 0; }
+  ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
+  if (tint) {
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = tint;
+    ctx.fillRect(x - w / 2, y - h / 2, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
 // --- Environment decor (moving background objects) ---------------
 const rand = (a, b) => a + Math.random() * (b - a);
 let decor = [];
@@ -125,12 +178,16 @@ function makeDecor(def) {
   decor = [];
   const n = def.decor === 'clouds' ? 8 : 26;
   // Bubbles now only make sense in the water band (bottom half of the Sea
-  // War screen, below the hills) — see CONFIG.ship.waterLine.
+  // War screen, below the hills) — see CONFIG.ship.waterLine. Kept clear of
+  // the buy-button row at the very bottom (was height-10, which let bubbles
+  // drift right through/behind the row and read as odd little pale
+  // crescent shapes poking out at the row's edges).
   const waterY = CONFIG.height * CONFIG.ship.waterLine;
+  const bubbleFloor = CONFIG.height - CONFIG.hud.rowBottomOffset - 50;
   for (let i = 0; i < n; i++) {
     decor.push({
       x: rand(0, CONFIG.width),
-      y: def.decor === 'bubbles' ? rand(waterY + 10, CONFIG.height - 10) : rand(0, CONFIG.height),
+      y: def.decor === 'bubbles' ? rand(waterY + 10, bubbleFloor) : rand(0, CONFIG.height),
       r: def.decor === 'clouds' ? rand(30, 70) : rand(1.5, 4),
       phase: rand(0, Math.PI * 2),
       speed: rand(0.6, 1.4),
@@ -159,9 +216,12 @@ function updateDecor(dt, def) {
     if (d.x > CONFIG.width + 80) d.x -= CONFIG.width + 160;
     if (def.decor === 'bubbles') {
       // Bubbles rise and must wrap back to the seafloor, not off the top of
-      // the whole screen — the hills above the water line aren't their space.
+      // the whole screen — the hills above the water line aren't their
+      // space. Wrap point kept clear of the buy-button row, same as their
+      // initial spawn range in makeDecor() above.
       const waterY = CONFIG.height * CONFIG.ship.waterLine;
-      if (d.y < waterY - 20) d.y = CONFIG.height - 10;
+      const bubbleFloor = CONFIG.height - CONFIG.hud.rowBottomOffset - 50;
+      if (d.y < waterY - 20) d.y = bubbleFloor;
     } else {
       if (d.y < -80) d.y += CONFIG.height + 160;
       if (d.y > CONFIG.height + 80) d.y -= CONFIG.height + 160;
@@ -193,15 +253,37 @@ function makeSeaLife() {
       speed: rand(0.7, 1.3),
     });
   }
+
+  // A few extra, larger swaying seaweed patches at specific marked spots
+  // (both far corners and a few in between) — same Kenney seaweed sprite
+  // object already used for the rest of the seafloor growth, just sized up
+  // so they read as the taller "tree" accents at those points instead of
+  // introducing a differently-styled shape.
+  const treeXFracs = [0.05, 0.18, 0.42, 0.6, 0.9];
+  for (const fx of treeXFracs) {
+    seaweedPatches.push({
+      x: fx * CONFIG.width, y: floorY,
+      sprite: SEAWEED_SPRITES[Math.floor(rand(0, SEAWEED_SPRITES.length))],
+      size: rand(70, 88),
+      phase: rand(0, Math.PI * 2),
+      speed: rand(0.6, 0.9),
+    });
+  }
+
   seaFish = [];
   // Fish swim in small schools banded into horizontal "layers" at
   // different depths — each school shares one sprite, direction, and
   // speed so it reads as a group moving together, like the reference
   // aquarium scene's stacked rows of same-color schools, instead of a
   // handful of solo fish scattered at random.
+  // Bottom bound is pulled well above the buy-button row now (was just
+  // height-90, which let the lowest school swim right through/behind the
+  // row and pop weirdly at the screen edges as it wrapped) — fish now stay
+  // clear of that row entirely, confined to open water above it.
   const waterY = CONFIG.height * CONFIG.ship.waterLine;
   const layerCount = 4;
-  const bandH = (CONFIG.height - 90 - waterY) / layerCount;
+  const floorLimit = CONFIG.height - CONFIG.hud.rowBottomOffset - 60;
+  const bandH = (floorLimit - waterY) / layerCount;
   for (let layer = 0; layer < layerCount; layer++) {
     const layerY = waterY + 40 + (layer + 0.5) * bandH;
     const schoolSize = Math.floor(rand(3, 6));
@@ -282,6 +364,188 @@ function drawAurora(t) {
   ctx.restore();
 }
 
+// A silhouette tree (simple round canopy over a trunk) and a small grass
+// tuft (a few curved blades), both drawn as flat solid shapes so they read
+// clearly against the hill bands behind them without needing dedicated art.
+// The tree takes an optional sway angle (radians) so it can gently rock
+// like the seaweed does, instead of standing perfectly still — pivoting
+// around its base (x, y), not its center, so it reads as rooted swaying
+// rather than floating/rotating in place.
+function drawTreeSilhouette(x, y, s, color, sway = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(sway);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.08, 0);
+  ctx.lineTo(-s * 0.08, -s * 0.5);
+  ctx.lineTo(s * 0.08, -s * 0.5);
+  ctx.lineTo(s * 0.08, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, -s * 0.7, s * 0.42, 0, Math.PI * 2);
+  ctx.arc(-s * 0.3, -s * 0.55, s * 0.3, 0, Math.PI * 2);
+  ctx.arc(s * 0.3, -s * 0.55, s * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawGrassTuft(x, y, s, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.5, s * 0.12);
+  ctx.lineCap = 'round';
+  for (const dx of [-0.35, -0.1, 0.15, 0.4]) {
+    ctx.beginPath();
+    ctx.moveTo(x + dx * s, y);
+    ctx.quadraticCurveTo(x + dx * s * 1.4, y - s * 0.55, x + dx * s * 0.6, y - s * 0.9);
+    ctx.stroke();
+  }
+}
+
+// Sea War's own layered backdrop — three rolling hill silhouettes running
+// from the water line up into the sky, each a shade darker than the one
+// behind it (so the nearest hill reads as being in its own shadow, like
+// the far/mid/near bands of a real coastline), plus a scatter of grass
+// tufts and small trees sitting in the "valleys" between hill crests on
+// the two nearer layers for a fuller, less empty view. Drawn in place of
+// the old static background photo for this decor type (see renderBackground).
+function drawHills(w, h, t) {
+  const waterY = h * CONFIG.ship.waterLine;
+  // Each layer combines two sine frequencies (a big rolling crest + a
+  // smaller secondary wobble) instead of one uniform sine, so the hills
+  // come out as an irregular mixed range of high peaks and low saddles
+  // rather than a repeating row of identical bumps.
+  const layers = [
+    { baseY: waterY - 92, amp1: 20, freq1: 0.0075, amp2: 8,  freq2: 0.021, phase: 0.4, color: '#3f7a5c' },  // far — lightest
+    { baseY: waterY - 56, amp1: 26, freq1: 0.010,  amp2: 11, freq2: 0.026, phase: 2.6, color: '#2a5a42' },  // mid — darker, in the far hill's shadow
+    { baseY: waterY - 18, amp1: 32, freq1: 0.013,  amp2: 14, freq2: 0.031, phase: 4.4, color: '#173d2e' },  // near — darkest, its own cast shadow
+  ];
+  const crestY = (layer, x) =>
+    layer.baseY - Math.abs(Math.sin(x * layer.freq1 + layer.phase)) * layer.amp1
+                - Math.abs(Math.sin(x * layer.freq2 + layer.phase * 1.7)) * layer.amp2;
+
+  layers.forEach((layer, i) => {
+    ctx.beginPath();
+    ctx.moveTo(0, waterY + 4);
+    for (let x = 0; x <= w; x += 10) ctx.lineTo(x, crestY(layer, x));
+    ctx.lineTo(w, waterY + 4);
+    ctx.closePath();
+    ctx.fillStyle = layer.color;
+    ctx.fill();
+
+    // Grass + trees between the hills — only on the two nearer layers so
+    // the far hill stays a clean, simple silhouette (depth cue: detail
+    // increases as things get closer, same as the real world).
+    if (i === 1) {
+      for (const fx of [0.16, 0.38, 0.62, 0.84]) {
+        const x = fx * w;
+        drawGrassTuft(x, crestY(layer, x) + 2, 14, '#3f7a5c');
+      }
+    }
+    if (i === 2) {
+      // Trees sit right in the corners of the hill scene now, and sway
+      // gently like the seaweed does (see renderSeaLife) instead of
+      // standing perfectly still — a slow, small rock back and forth,
+      // each on its own phase so the two don't move in lockstep.
+      const swayL = Math.sin(t * 0.9) * 0.05;
+      const swayR = Math.sin(t * 0.9 + 1.8) * 0.05;
+      drawTreeSilhouette(w * 0.07, crestY(layer, w * 0.07) + 2, 44, '#0f2a20', swayL);
+      drawTreeSilhouette(w * 0.93, crestY(layer, w * 0.93) + 2, 40, '#0f2a20', swayR);
+      for (const fx of [0.06, 0.32, 0.5, 0.62, 0.9]) {
+        const x = fx * w;
+        drawGrassTuft(x, crestY(layer, x) + 2, 16, '#2a5a42');
+      }
+    }
+  });
+}
+
+// Generalized version of drawHills() above, for every LAND stage (Sea War
+// keeps its own dedicated water-line version). Same rolling-silhouette
+// technique — three layers combining two sine frequencies each, darkening
+// toward the viewer — but anchored to a fixed baseline (no water line to
+// sit above) and using the stage's own groundPalette.hills/tree colors
+// instead of the sea's fixed green.
+function drawGroundHills(w, h, t, baseline, palette) {
+  const layers = [
+    { baseY: baseline - 92, amp1: 20, freq1: 0.0075, amp2: 8,  freq2: 0.021, phase: 0.4, color: palette.hills[0] },
+    { baseY: baseline - 56, amp1: 26, freq1: 0.010,  amp2: 11, freq2: 0.026, phase: 2.6, color: palette.hills[1] },
+    { baseY: baseline - 18, amp1: 32, freq1: 0.013,  amp2: 14, freq2: 0.031, phase: 4.4, color: palette.hills[2] },
+  ];
+  const crestY = (layer, x) =>
+    layer.baseY - Math.abs(Math.sin(x * layer.freq1 + layer.phase)) * layer.amp1
+                - Math.abs(Math.sin(x * layer.freq2 + layer.phase * 1.7)) * layer.amp2;
+
+  layers.forEach((layer, i) => {
+    ctx.beginPath();
+    ctx.moveTo(0, baseline + 4);
+    for (let x = 0; x <= w; x += 10) ctx.lineTo(x, crestY(layer, x));
+    ctx.lineTo(w, baseline + 4);
+    ctx.closePath();
+    ctx.fillStyle = layer.color;
+    ctx.fill();
+    if (i === 1) {
+      for (const fx of [0.16, 0.38, 0.62, 0.84]) {
+        const x = fx * w;
+        drawGrassTuft(x, crestY(layer, x) + 2, 14, palette.hills[0]);
+      }
+    }
+    if (i === 2) {
+      const swayL = Math.sin(t * 0.9) * 0.05;
+      const swayR = Math.sin(t * 0.9 + 1.8) * 0.05;
+      drawTreeSilhouette(w * 0.07, crestY(layer, w * 0.07) + 2, 44, palette.tree, swayL);
+      drawTreeSilhouette(w * 0.93, crestY(layer, w * 0.93) + 2, 40, palette.tree, swayR);
+      for (const fx of [0.06, 0.32, 0.5, 0.62, 0.9]) {
+        const x = fx * w;
+        drawGrassTuft(x, crestY(layer, x) + 2, 16, palette.hills[1]);
+      }
+    }
+  });
+}
+
+// Generalized version of the Sea War seafloor bands — four strata, each its
+// own bounded strip between its own undulating curve and the curve of the
+// band directly below it (not filled all the way to the screen bottom,
+// which was the original layering bug — see the 'bubbles' case), recolored
+// per stage via groundPalette.bands. Used as the actual ground every
+// character/monster stands and walks on, for every stage.
+function drawGroundBands(w, h, t, palette) {
+  const bandDefs = [
+    { baseY: h - 20, amp1: 6, freq1: 0.020, amp2: 3, freq2: 0.05, phase: 0.0, speed: 0,    color: palette.bands[0] },
+    { baseY: h - 44, amp1: 7, freq1: 0.017, amp2: 3, freq2: 0.04, phase: 1.7, speed: 0.05, color: palette.bands[1] },
+    { baseY: h - 70, amp1: 8, freq1: 0.023, amp2: 3, freq2: 0.06, phase: 3.3, speed: 0.12, color: palette.bands[2] },
+    { baseY: h - 98, amp1: 9, freq1: 0.026, amp2: 4, freq2: 0.07, phase: 5.1, speed: 0.4,  color: palette.bands[3] },
+  ];
+  const duneY = (b, x) =>
+    b.baseY - Math.abs(Math.sin(x * b.freq1 + b.phase + t * b.speed)) * b.amp1
+            - Math.abs(Math.sin(x * b.freq2 + b.phase * 1.6 + t * b.speed * 1.3)) * b.amp2;
+
+  let floorOf = () => h;
+  bandDefs.forEach((b, i) => {
+    const topY = (x) => duneY(b, x);
+    const bottomY = floorOf;
+    ctx.beginPath();
+    ctx.moveTo(0, bottomY(0));
+    ctx.lineTo(0, topY(0));
+    for (let x = 0; x <= w; x += 10) ctx.lineTo(x, topY(x));
+    ctx.lineTo(w, topY(w));
+    ctx.lineTo(w, bottomY(w));
+    for (let x = w; x >= 0; x -= 10) ctx.lineTo(x, bottomY(x));
+    ctx.closePath();
+    ctx.fillStyle = b.color;
+    ctx.fill();
+    if (i === bandDefs.length - 1) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, topY(0));
+      for (let x = 0; x <= w; x += 10) ctx.lineTo(x, topY(x));
+      ctx.stroke();
+    }
+    floorOf = topY;
+  });
+}
+
 // A couple of concrete scenery objects per environment — some fixed
 // landmarks (trees, mountains, ruins), some genuinely moving (the Sea War
 // ship drifts across, swamp trees sway, embers/lightning flicker) — on top
@@ -298,6 +562,18 @@ function drawLandmark(def, t) {
   // real floor continuing under UI chrome; only the standalone objects on
   // top of that floor move up.
   const GO = 108;
+  // Every stage now gets the same layered-terrain treatment the Sea War
+  // stage originated — rolling hill silhouettes + a bounded 4-strata ground
+  // floor (see drawGroundHills/drawGroundBands above) — drawn FIRST, right
+  // here, so each stage's own unique set-piece props (castle towers, ice
+  // golem, cacti, volcano, etc.) still render on top of it via the switch
+  // below. Sea War ('bubbles') is the one exception — it already has its own
+  // dedicated water-line version of this same idea and would double-draw a
+  // conflicting floor if this ran for it too.
+  if (def.decor !== 'bubbles' && def.groundPalette) {
+    drawGroundHills(w, h, t, h * 0.62, def.groundPalette);
+    drawGroundBands(w, h, t, def.groundPalette);
+  }
   switch (def.decor) {
     case 'fireflies': // Enchanted Forest — a couple of fixed pine trees
       envIcon(ctx, 46, h - 46 - GO, 42, 'fireflies', t);
@@ -332,8 +608,10 @@ function drawLandmark(def, t) {
       if (catapultImg) ctx.drawImage(catapultImg, w / 2 - 30, h - 76 - GO, 60, 60);
       break;
     }
-    case 'bubbles': { // Sea War — bright water-surface line where the hills
-      // meet the sea; the real Ship entities (spawner/main.js) sail along it.
+    case 'bubbles': { // Sea War — layered hills (see drawHills) meeting the
+      // sea at a bright water-surface line; the real Ship entities
+      // (spawner/main.js) sail along it.
+      drawHills(w, h, t);
       const waterY = h * CONFIG.ship.waterLine;
       ctx.strokeStyle = 'rgba(232,249,255,0.4)';
       ctx.lineWidth = 2;
@@ -342,48 +620,53 @@ function drawLandmark(def, t) {
       ctx.lineWidth = 6;
       ctx.beginPath(); ctx.moveTo(0, waterY + 3); ctx.lineTo(w, waterY + 3); ctx.stroke();
 
-      // Two-tone seafloor — a darker rock base with a lighter, gently
-      // wavy sand layer over the top, matching the classic Kenney "Fish
-      // Pack" underwater scene's scalloped sand-over-rock silhouette,
-      // instead of the old flat gradient band.
-      const rockY = h - 34;
-      ctx.fillStyle = '#7a4a26';
-      ctx.fillRect(0, rockY, w, 34);
+      // Layered seafloor — four distinct strata, each its own bounded strip
+      // between its own undulating curve and the curve of the band directly
+      // below it (not each one filling all the way down to the screen
+      // bottom, which was the bug: the last-drawn, shallowest band's polygon
+      // covered everything beneath it, so only one color ever actually
+      // showed). Amplitudes are kept comfortably smaller than the gaps
+      // between each band's baseY so the curves never cross and hide a
+      // whole layer again.
+      const floorBands = [
+        { baseY: h - 20,  amp1: 6, freq1: 0.020, amp2: 3, freq2: 0.05, phase: 0.0, speed: 0,    color: '#3d2b1a' }, // darkest rock, bottom-most
+        { baseY: h - 44,  amp1: 7, freq1: 0.017, amp2: 3, freq2: 0.04, phase: 1.7, speed: 0.05, color: '#5a3d22' }, // mid rock
+        { baseY: h - 70,  amp1: 8, freq1: 0.023, amp2: 3, freq2: 0.06, phase: 3.3, speed: 0.12, color: '#7a5a34' }, // silt
+        { baseY: h - 98,  amp1: 9, freq1: 0.026, amp2: 4, freq2: 0.07, phase: 5.1, speed: 0.4,  color: '#e8d29e' }, // pale sunlit sand, topmost
+      ];
+      const duneY = (b, x) =>
+        b.baseY - Math.abs(Math.sin(x * b.freq1 + b.phase + t * b.speed)) * b.amp1
+                - Math.abs(Math.sin(x * b.freq2 + b.phase * 1.6 + t * b.speed * 1.3)) * b.amp2;
 
-      const sandBaseY = h - 74;
-      const waveAmp = 8, waveFreq = 0.028;
-      const waveY = (x) => sandBaseY + Math.sin(x * waveFreq + t * 0.4) * waveAmp;
-      ctx.beginPath();
-      ctx.moveTo(0, h);
-      ctx.lineTo(0, waveY(0));
-      for (let x = 0; x <= w; x += 12) ctx.lineTo(x, waveY(x));
-      ctx.lineTo(w, h);
-      ctx.closePath();
-      ctx.fillStyle = '#e0c48c';
-      ctx.fill();
-      // wet-sand edge highlight tracing the same wave
-      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, waveY(0));
-      for (let x = 0; x <= w; x += 12) ctx.lineTo(x, waveY(x));
-      ctx.stroke();
-
-      // No tree here — this is a sea/shore scene, not a jungle beach, so
-      // the palm was pulled per feedback; a second sand-rock cluster on
-      // the left balances it instead.
-      const rockImg = KENNEY_PIRATE['rocks-sand-a'];
-      if (rockImg) {
-        const rh = 34, rw = rh * (rockImg.width / rockImg.height);
-        ctx.drawImage(rockImg, w * 0.1 - rw / 2, h - 10 - rh * 0.5 - GO, rw, rh);
-        ctx.drawImage(rockImg, w * 0.85 - rw / 2, h - 6 - rh * 0.5 - GO, rw, rh);
-        ctx.drawImage(rockImg, w * 0.06 - rw * 0.6 / 2, h - 8 - rh * 0.5 * 0.6 - GO, rw * 0.6, rh * 0.6);
-      }
-      const crateImg = KENNEY_PIRATE.crate;
-      if (crateImg) {
-        const ch2 = 30, cw2 = ch2 * (crateImg.width / crateImg.height);
-        ctx.drawImage(crateImg, w * 0.92 - cw2 / 2, h - ch2 - 6 - GO, cw2, ch2);
-      }
+      // Bottom-most band's floor is the screen edge itself; every band
+      // above it is floored by the curve of the one just below, so each
+      // layer only occupies its own strip and every color stays visible.
+      let floorOf = () => h;
+      floorBands.forEach((b, i) => {
+        const topY = (x) => duneY(b, x);
+        const bottomY = floorOf;
+        ctx.beginPath();
+        ctx.moveTo(0, bottomY(0));
+        ctx.lineTo(0, topY(0));
+        for (let x = 0; x <= w; x += 10) ctx.lineTo(x, topY(x));
+        ctx.lineTo(w, topY(w));
+        ctx.lineTo(w, bottomY(w));
+        for (let x = w; x >= 0; x -= 10) ctx.lineTo(x, bottomY(x));
+        ctx.closePath();
+        ctx.fillStyle = b.color;
+        ctx.fill();
+        // Only the topmost (sand) band gets the bright wet-edge highlight —
+        // it's the one actually catching the light at the water's surface.
+        if (i === floorBands.length - 1) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, topY(0));
+          for (let x = 0; x <= w; x += 10) ctx.lineTo(x, topY(x));
+          ctx.stroke();
+        }
+        floorOf = topY;
+      });
       break;
     }
     case 'sand': { // Desert Storm — fixed sun, plus real low-poly cacti
@@ -461,7 +744,11 @@ function drawLandmark(def, t) {
 
 function renderBackground(def, time) {
   const themeIdx = Math.max(0, Math.min(STAGE_COUNT - 1, (def.stage || 1) - 1));
-  const bgImg = BG_IMAGES[themeIdx];
+  // Sea War draws its own procedural sky-and-hills backdrop (see drawHills()
+  // in drawLandmark's 'bubbles' case) instead of the static per-stage photo
+  // — that's what makes the layered, shadowed hill silhouettes with
+  // grass/trees between them possible, instead of a flat baked-in image.
+  const bgImg = def.decor === 'bubbles' ? null : BG_IMAGES[themeIdx];
   if (bgImg) {
     ctx.drawImage(bgImg, 0, 0, CONFIG.width, CONFIG.height);
     // Faint tint so gameplay sprites keep contrast against the photo.
@@ -469,8 +756,16 @@ function renderBackground(def, time) {
     ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
   } else {
     const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.height);
-    grad.addColorStop(0, def.sky[0]);
-    grad.addColorStop(1, def.sky[1]);
+    if (def.decor === 'bubbles') {
+      // Bright open-air daytime sky for the coastal hill scene — the
+      // theme's own dark abyssal-depths palette (def.sky) is for the water
+      // itself elsewhere, not for a sunny shoreline with grassy hills.
+      grad.addColorStop(0, '#8fd8ff');
+      grad.addColorStop(1, '#cdeeff');
+    } else {
+      grad.addColorStop(0, def.sky[0]);
+      grad.addColorStop(1, def.sky[1]);
+    }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
   }
@@ -533,8 +828,18 @@ if (typeof saveData.coins !== 'number') saveData.coins = 0;
 audio.setMuted(!!saveData.settings?.muted);
 ads.setRemoved(!!saveData.removeAds);
 let mode = 'MENU';
-// Show banner immediately on the main menu
-ads.showBanner();
+
+// The bottom banner belongs on every screen EXCEPT active gameplay — it
+// would sit awkwardly close to the buy-button row and the Guardian's own
+// movement space otherwise. Call this right after every `mode = 'X'`
+// assignment so banner visibility can never drift out of sync with the
+// screen actually on display (single source of truth, instead of manually
+// scattering show/hide calls next to each mode change).
+function syncBanner() {
+  if (mode === 'PLAYING') ads.hideBanner();
+  else ads.showBanner();
+}
+syncBanner(); // MENU on load — show immediately
 let state = null;
 let resetArmed = false; // "tap RESET PROGRESS twice" confirmation guard
 let continueDismissed = false; // home page: collapses the continue card to a slim strip
@@ -632,6 +937,14 @@ function startLevel(index) {
   state.walls = [];
   state.turrets = [];
   state.placing = null;
+  state.placePaused = false;
+  // Level-clear is detected the instant the last attacker is gone, but the
+  // actual LEVELCLEAR/VICTORY screen switch is held off for a few seconds
+  // (see the update() check below) so the moment doesn't get yanked away
+  // from the player the frame it happens — they get to see the lane go
+  // quiet and the "LEVEL CLEAR!" banner before the dialog cuts in.
+  state.levelClearPending = false;
+  state.levelClearTimer = 0;
   // NOTE: state.angels is deliberately NOT reset here — angels are a
   // permanent purchase and carry over from one level to the next.
   makeDecor(def);
@@ -646,6 +959,7 @@ function newGame(startIndex = 0) {
     player: new Player(saveData.permanent, activeSticker),
     spells: [], monsters: [], obstacles: [], gates: [], angels: [], enemyBullets: [], ships: [], walls: [], turrets: [],
     placing: null,
+    placePaused: false,
     spawner: new Spawner(LEVELS[idx], idx),
     score: 0, kills: 0, coins: saveData.coins,
     lives: CONFIG.gateHealth,
@@ -681,13 +995,26 @@ function buyWeapon(key) {
   state.coins -= cost;
   if (key === 'bomb') {
     audio.crack();
-    announcer.show('KA-BOOM!', '', '#ff8a3d', 1.1);
     particles.addShake(12);
-    for (const m of state.monsters) {
-      if (m.dead) continue;
+    // Power-based blast — no longer an unconditional full-screen clear.
+    // The bomb has a fixed power budget (WEAPONS.bomb.power) and detonates
+    // outward from the gate: the closest monsters to the gate (highest y —
+    // nearest the Guardian/gate line) are destroyed first, one at a time,
+    // spending their type's power cost (MONSTERS.<type>.power) out of the
+    // budget, until the next-closest monster costs more than what's left.
+    // A wave of cheap goblins gets mostly wiped; the same bomb thrown into
+    // a knot of trolls or a boss barely dents it.
+    const closestFirst = state.monsters.filter(m => !m.dead).sort((a, b) => b.y - a.y);
+    let budget = WEAPONS.bomb.power;
+    let killed = 0;
+    for (const m of closestFirst) {
+      if (m.power > budget) break; // power exhausted — anything farther is untouched
+      budget -= m.power;
       m.dead = true;
       events.kill(m);
+      killed++;
     }
+    announcer.show('KA-BOOM!', killed > 0 ? `${killed} destroyed!` : 'Not enough power!', '#ff8a3d', 1.1);
     // white flash
     state.bombFlash = 0.25;
   } else if (key === 'angel') {
@@ -704,12 +1031,14 @@ function buyWeapon(key) {
     particles.sparkle(state.player.x, state.player.y, '#7fd8ff');
   } else if (key === 'wall') {
     audio.gateGood();
-    announcer.show('DRAG TO PLACE', 'Drag anywhere, release to set the wall', '#c8a06a', 1.6);
+    announcer.show('DRAG TO PLACE', 'The battle is paused — drag to place, then tap CONTINUE', '#c8a06a', 1.6);
     state.placing = { type: 'wall', x: state.player.x, y: CONFIG.wall.dropY, armed: false };
+    state.placePaused = true;
   } else if (key === 'turret') {
     audio.gateGood();
-    announcer.show('DRAG TO PLACE', 'Drag anywhere, release to set the turret', '#ffd88a', 1.6);
+    announcer.show('DRAG TO PLACE', 'The battle is paused — drag to place, then tap CONTINUE', '#ffd88a', 1.6);
     state.placing = { type: 'turret', x: state.player.x, y: CONFIG.turret.dropY, armed: false };
+    state.placePaused = true;
   }
   persistCoins();
 }
@@ -772,10 +1101,12 @@ function openShop() {
   if (mode === 'SHOP') return;
   modeBeforeShop = mode;
   mode = 'SHOP';
+  syncBanner();
 }
 
 function closeShop() {
   mode = modeBeforeShop;
+  syncBanner();
 }
 
 function hit(btn, x, y) {
@@ -788,9 +1119,14 @@ let globalBoardStatus = 'idle'; // idle | loading | ready | error
 
 function openLeaderboard() {
   mode = 'LEADERBOARD';
+  syncBanner();
   if (globalBoardStatus === 'loading') return;
   globalBoardStatus = 'loading';
-  backend.topLeaderboard(20).then((rows) => {
+  // Fetch a bigger slice (was 20) so a mid-pack player is more likely to
+  // actually be sitting inside the fetched rows — this is what lets
+  // screens.js highlight "your rank" in place instead of always having to
+  // fall back to a pinned "not in this list" row. Backend caps at 100.
+  backend.topLeaderboard(50).then((rows) => {
     if (Array.isArray(rows)) { globalBoard = rows; globalBoardStatus = 'ready'; }
     else globalBoardStatus = 'error'; // offline / unreachable — screens.js falls back to local list
   });
@@ -827,9 +1163,9 @@ async function buyCoinPack(pack) {
 // handler, before that page's own buttons.
 function navTap(x, y) {
   if (x === null) return false;
-  if (hit(MENU_BUTTONS.play, x, y)) { mode = 'MENU'; return true; }
-  if (hit(MENU_BUTTONS.upgrades, x, y)) { mode = 'UPGRADES'; return true; }
-  if (hit(MENU_BUTTONS.settings, x, y)) { resetArmed = false; mode = 'SETTINGS'; return true; }
+  if (hit(MENU_BUTTONS.play, x, y)) { mode = 'MENU'; syncBanner(); return true; }
+  if (hit(MENU_BUTTONS.upgrades, x, y)) { mode = 'UPGRADES'; syncBanner(); return true; }
+  if (hit(MENU_BUTTONS.settings, x, y)) { resetArmed = false; mode = 'SETTINGS'; syncBanner(); return true; }
   if (hit(MENU_BUTTONS.leaderboard, x, y)) { openLeaderboard(); return true; }
   return false;
 }
@@ -910,13 +1246,16 @@ input.onTap((x, y) => {
     // screen would), or tapping a stage node. Everywhere else on the home
     // page is inert — no "tap anywhere".
     if (!continueDismissed) {
-      if (hit(CONTINUE_CARD_RECT, x, y)) {
+      // Only the actual CONTINUE/TAP TO PLAY button starts the run — tapping
+      // elsewhere on the card (including its center) does nothing, same as
+      // the close X only working when tapped exactly.
+      if (hit(CONTINUE_PLAY_BUTTON, x, y)) {
         newGame(saveData.progress?.levelIndex || 0);
         mode = 'PLAYING';
-        ads.showBanner();
+        syncBanner();
       }
       // Dialog is open and dimming the whole page — anything outside its
-      // card (and outside the close X, checked above) is a no-op; the
+      // button (and outside the close X, checked above) is a no-op; the
       // stage map underneath isn't really tappable while it's covered.
       return;
     }
@@ -928,37 +1267,45 @@ input.onTap((x, y) => {
     return;
   }
   if (mode === 'GAMEOVER' || mode === 'VICTORY') {
-    if (x !== null && hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; ads.showBanner(); return; }
-    
+    if (x !== null && hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; syncBanner(); return; }
+
     // Revive button handling
     if (mode === 'GAMEOVER' && x !== null && ads.isRewardedReady() && typeof REVIVE_BUTTON !== 'undefined' && hit(REVIVE_BUTTON, x, y)) {
       ads.showRewarded(() => {
         // Reward: Full health and resume!
         state.player.hp = state.player.maxHp;
         mode = 'PLAYING';
-        ads.showBanner();
+        syncBanner();
       }, () => {
         // Fallback if ad failed
       });
       return;
     }
 
-    newGame(saveData.progress?.levelIndex || 0);
-    mode = 'PLAYING';
-    ads.showBanner();
+    // Only the actual TRY AGAIN / PLAY AGAIN button restarts — tapping
+    // anywhere else on the Game Over / Victory card is a no-op, same as the
+    // home page's continue dialog.
+    if (x !== null && hit(CONTINUE_PLAY_BUTTON, x, y)) {
+      newGame(saveData.progress?.levelIndex || 0);
+      mode = 'PLAYING';
+      syncBanner();
+    }
     return;
   }
   if (mode === 'LEVELCLEAR') {
-    startLevel(state.levelIndex + 1);
-    mode = 'PLAYING';
-    ads.showBanner();
+    if (x !== null && hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; syncBanner(); return; }
+    if (x !== null && hit(CONTINUE_PLAY_BUTTON, x, y)) {
+      startLevel(state.levelIndex + 1);
+      mode = 'PLAYING';
+      syncBanner();
+    }
     return;
   }
 
   if (mode === 'PAUSED') {
     if (x === null) return;
-    if (hit(PAUSE_BUTTONS.resume, x, y)) { mode = 'PLAYING'; ads.showBanner(); return; }
-    if (hit(PAUSE_BUTTONS.exit, x, y)) { mode = 'MENU'; ads.showBanner(); return; } // abandon the run, no score submitted
+    if (hit(PAUSE_BUTTONS.resume, x, y)) { mode = 'PLAYING'; syncBanner(); return; }
+    if (hit(PAUSE_BUTTONS.exit, x, y)) { mode = 'MENU'; syncBanner(); return; } // abandon the run, no score submitted
     return;
   }
 
@@ -967,8 +1314,15 @@ input.onTap((x, y) => {
     // the placement drag, not a button press — HUD buttons are ignored
     // until the wall/turret is dropped.
     if (state.placing) return;
+    if (state.placePaused) {
+      // Between placements, the battle stays frozen — the only taps that
+      // matter are CONTINUE (resume) or buying another wall/turret.
+      if (hit(PLACEMENT_CONTINUE_BUTTON, x, y)) { state.placePaused = false; }
+      else { const btn = buttonAt(x, y); if (btn === 'wall' || btn === 'turret') buyWeapon(btn); }
+      return;
+    }
     const btn = buttonAt(x, y);
-    if (btn === 'pause') { mode = 'PAUSED'; ads.hideBanner(); }
+    if (btn === 'pause') { mode = 'PAUSED'; syncBanner(); }
     else if (btn === 'watchAd') watchRewardedAd();
     else if (btn === 'shop') openShop();
     else if (btn) buyWeapon(btn);
@@ -1018,7 +1372,7 @@ input.onRelease((x, y) => {
     const targetLevel = furthest <= stageEnd ? Math.max(furthest, stageStart) : stageStart;
     newGame(targetLevel);
     mode = 'PLAYING';
-    ads.showBanner();
+    syncBanner();
     return;
   }
 });
@@ -1051,13 +1405,16 @@ const events = {
 
   breach(m) {
     state.lives--;
+    // A breach costs a gate outright. Blood and gates are separate pools
+    // now — a breach no longer refills the blood line (used to reset it to
+    // full here), so whatever buffer is left carries over as-is.
     state.combo = 0;
     state.gateFlash = 0.35;
     audio.crack();
     particles.addShake(10);
     particles.poof(m.x, Math.min(m.y, CONFIG.height - 20), '#ff5c7a');
     state.player.hurtFlash = 0.4;
-    if (state.lives === 1) announcer.show('LAST HEART!', 'Protect the gate!', '#ff5c7a', 1.3);
+    if (state.lives === 1) announcer.show('LAST GATE!', 'Protect the gate!', '#ff5c7a', 1.3);
     if (state.lives <= 0) {
       mode = 'GAMEOVER';
       audio.gameOver();
@@ -1065,21 +1422,23 @@ const events = {
       submitScore(saveData, { name: saveData.playerName, score: state.score, stage: Math.ceil(state.spawner.level / STAGE_SIZE) });
       save(saveData);
       backend.submitScore(saveData.playerId, state.score, Math.ceil(state.spawner.level / STAGE_SIZE));
-      ads.hideBanner();
       ads.showInterstitial(); // ad after losing — the highest-value placement
+      syncBanner(); // GAMEOVER screen — banner comes back once the interstitial dismisses
     }
   },
 
+  // Every gate is a gift now — no more curse/bad portal. Either a fire-rate
+  // boost or a partial blood-line heal, both always good to grab.
   gate(g) {
-    state.player.applyGate(g.mult);
-    if (g.good) {
-      audio.gateGood();
+    audio.gateGood();
+    if (g.kind === 'blood') {
+      state.player.healBlood(CONFIG.gate.bloodGiftHeal);
+      particles.sparkle(g.x, g.y, '#ff5c7a');
+      particles.scoreText(g.x, g.y, 'BLOOD RESTORED!', '#ff5c7a');
+    } else {
+      state.player.applyGate(g.mult);
       particles.sparkle(g.x, g.y, '#58e07f');
       particles.scoreText(g.x, g.y, `×${g.mult} MAGIC!`, '#58e07f');
-    } else {
-      audio.gateCurse();
-      particles.sparkle(g.x, g.y, '#b358e0');
-      particles.scoreText(g.x, g.y, 'CURSED!', '#b358e0');
     }
   },
 
@@ -1101,22 +1460,23 @@ const events = {
   },
 
   // A blood line (wizard's or an angel's) got fully depleted by enemy fire.
-  // Costs one shared heart; the blood line itself already refilled itself.
+  // Costs one shared gate. Blood stays empty afterward — it no longer
+  // auto-refills — so it only comes back via a blood-gift gate.
   bloodLost(who) {
     state.lives--;
     state.gateFlash = 0.35;
     audio.crack();
     particles.addShake(6);
     particles.poof(who.x, who.y, '#ff5d7a');
-    if (state.lives === 1) announcer.show('LAST HEART!', 'Protect the gate!', '#ff5c7a', 1.3);
+    if (state.lives === 1) announcer.show('LAST GATE!', 'Protect the gate!', '#ff5c7a', 1.3);
     if (state.lives <= 0) {
       mode = 'GAMEOVER';
       audio.gameOver();
       persistCoins();
       submitScore(saveData, { name: saveData.playerName, score: state.score, stage: Math.ceil(state.spawner.level / STAGE_SIZE) });
       save(saveData);
-      ads.hideBanner();
       ads.showInterstitial();
+      syncBanner(); // GAMEOVER screen — banner comes back once the interstitial dismisses
     }
   },
 };
@@ -1159,18 +1519,33 @@ function update(dt) {
 
   if (st.placing) {
     // Placement mode: the drag surface controls the ghost item instead of
-    // the Guardian — freeze movement/firing so the player isn't dragged
-    // into danger while aiming a placement.
+    // the Guardian. The vertical range is a FIXED band across the play
+    // field (not tied to wherever the Guardian happened to be standing
+    // when the item was bought) — otherwise if the Guardian was up near
+    // the top, the old player.y-relative cap made it impossible to drag
+    // the item back down to the lower half of the field at all.
     st.placing.x = input.targetX(st.placing.x);
     st.placing.y = input.targetY(st.placing.y);
     st.placing.x = Math.max(30, Math.min(CONFIG.width - 30, st.placing.x));
-    st.placing.y = Math.max(120, Math.min(st.player.y - 36, st.placing.y));
-  } else {
-    st.player.update(dt, input);
-    if (st.player.tryFire()) {
-      st.spells.push(new Spell(st.player.x, st.player.y - st.player.size, st.player.damage));
-      audio.zap();
-    }
+    const placeMaxY = CONFIG.height - CONFIG.hud.rowBottomOffset - 20;
+    st.placing.y = Math.max(120, Math.min(placeMaxY, st.placing.y));
+  }
+
+  if (st.placePaused) {
+    // The whole battlefield is frozen while placing a wall/turret (and
+    // stays frozen across placing more than one) — nothing attacks, moves,
+    // or fires until the player taps CONTINUE. Only decor/ambient animation
+    // above keeps running so the scene doesn't look dead.
+    return;
+  }
+
+  st.player.update(dt, input);
+  if (st.player.tryFire()) {
+    const { x: muzzleX, y: muzzleY } = gunnerMuzzle(st.player);
+    st.spells.push(new Spell(muzzleX, muzzleY, st.player.damage));
+    particles.sparkle(muzzleX, muzzleY, '#ffe9a8');
+    particles.addShake(1.5);
+    audio.zap();
   }
 
   for (const a of st.angels) a.update(dt, st.player, st.spells);
@@ -1231,9 +1606,34 @@ function update(dt) {
   st.obstacles = st.obstacles.filter((o) => !o.dead);
   st.gates = st.gates.filter((g) => !g.dead);
 
-  // Level complete: time up + boss (if any) defeated
-  const bossAlive = st.monsters.some((m) => m.type === 'ogreBoss');
-  if (st.levelTime >= def.duration && !bossAlive) {
+  // Level complete: the level's whole attacker quota has been sent out (not
+  // a clock), the boss (if this level has one) has been spawned and beaten,
+  // and nothing hostile is left standing. Don't cut straight to the
+  // LEVELCLEAR/VICTORY dialog the instant this becomes true — hold for a
+  // few seconds first (LEVEL_CLEAR_DELAY) so the player gets a beat to see
+  // the lane clear out and the banner below, instead of the dialog
+  // slamming in over the last kill.
+  const allAttackersSpawned = st.spawner.allSpawned();
+  const bossHandled = !def.boss || st.spawner.bossSpawned;
+  const clearNow = allAttackersSpawned && bossHandled && st.monsters.length === 0;
+
+  if (clearNow && !st.levelClearPending) {
+    st.levelClearPending = true;
+    st.levelClearTimer = LEVEL_CLEAR_DELAY;
+    announcer.show('LEVEL CLEAR!', '', '#58e07f', LEVEL_CLEAR_DELAY);
+  } else if (!clearNow && st.levelClearPending) {
+    // Extremely rare (e.g. a split-spawning slime lands after the check),
+    // but if something hostile is somehow back on screen, cancel the
+    // countdown instead of cutting to the dialog with enemies still alive.
+    st.levelClearPending = false;
+  }
+
+  if (st.levelClearPending) {
+    st.levelClearTimer -= dt;
+  }
+
+  if (st.levelClearPending && st.levelClearTimer <= 0) {
+    st.levelClearPending = false;
     if (st.levelIndex >= LEVELS.length - 1) {
       mode = 'VICTORY';
       audio.waveUp();
@@ -1244,8 +1644,8 @@ function update(dt) {
       submitScore(saveData, { name: saveData.playerName, score: st.score, stage: Math.ceil(st.spawner.level / STAGE_SIZE) });
       save(saveData);
       backend.submitScore(saveData.playerId, st.score, Math.ceil(st.spawner.level / STAGE_SIZE));
-      ads.hideBanner();
       ads.showInterstitial();
+      syncBanner(); // VICTORY screen — banner comes back once the interstitial dismisses
     } else {
       mode = 'LEVELCLEAR';
       audio.waveUp();
@@ -1255,12 +1655,12 @@ function update(dt) {
       // picks up here even if the player quits before finishing the next level.
       saveData.progress = { levelIndex: st.levelIndex + 1 };
       persistCoins();
-      ads.hideBanner();
       levelsSinceInterstitial++;
       if (levelsSinceInterstitial >= CONFIG.ads.interstitialEveryNLevels) {
         levelsSinceInterstitial = 0;
         ads.showInterstitial(); // periodic ad between levels — not every single one
       }
+      syncBanner(); // LEVELCLEAR screen — banner comes back once any interstitial dismisses
     }
   }
 }
@@ -1339,6 +1739,280 @@ function drawGateWall(ctx, state) {
   }
 }
 
+// --- Distinct procedural shapes for the non-sprite Shatterlings -----------
+// skeleton/troll/ogreBoss used to all share one generic "circle with two
+// eyes" fallback — the only thing that changed between them was fill color.
+// Each now gets its own real silhouette, still pure canvas vector art (no
+// new image assets needed), and all three take a `tint` = the active
+// stage's monsterTint.primary/dark/glow so they read as belonging to
+// whichever environment they're currently marching through.
+
+// Skeleton — tall, narrow, boxy: a skull, a ribcage of horizontal bars, and
+// crossed bone-like arms. Reads as gaunt/disciplined next to the troll's
+// bulk, matching its "steady, marching" movement personality.
+function drawSkeletonShape(m, tint) {
+  const bone = tint?.primary || '#cfe8f0';
+  const dark = tint?.dark || '#2a3a40';
+  const glow = tint?.glow || '#eaffff';
+  const r = m.r;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(2, r * 0.14);
+  ctx.lineCap = 'round';
+  // crossed arms behind the ribcage
+  ctx.strokeStyle = bone;
+  ctx.beginPath(); ctx.moveTo(-r * 0.75, -r * 0.05); ctx.lineTo(r * 0.55, r * 0.55); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r * 0.75, -r * 0.05); ctx.lineTo(-r * 0.55, r * 0.55); ctx.stroke();
+  // ribcage — a few horizontal bars over a narrow torso
+  ctx.fillStyle = 'rgba(0,0,0,0.001)'; // (torso is implied by the ribs only, no fill — gaunt look)
+  ctx.strokeStyle = bone;
+  ctx.lineWidth = Math.max(1.5, r * 0.1);
+  for (let i = 0; i < 3; i++) {
+    const y = -r * 0.05 + i * r * 0.22;
+    const w = r * (0.52 - i * 0.08);
+    ctx.beginPath(); ctx.moveTo(-w, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  // spine
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.15); ctx.lineTo(0, r * 0.6); ctx.stroke();
+  // skull
+  ctx.fillStyle = bone;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(2, r * 0.1);
+  ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // jaw
+  ctx.beginPath(); ctx.roundRect(-r * 0.22, -r * 0.28, r * 0.44, r * 0.18, 3); ctx.fill(); ctx.stroke();
+  // glowing eye sockets
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(-r * 0.16, -r * 0.58, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.16, -r * 0.58, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// Troll — big, hunched, asymmetric silhouette with heavy shoulders and a
+// club, matching its slow/heavy movement personality (low freq, wide amp
+// lumbering sway in data/monsters.js).
+function drawTrollShape(m, tint) {
+  const skin = tint?.primary || '#6a5c9e';
+  const dark = tint?.dark || '#2a2048';
+  const glow = tint?.glow || '#e2c8ff';
+  const r = m.r;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  // club, held low and behind
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(3, r * 0.16);
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(r * 0.7, r * 0.1); ctx.lineTo(r * 1.15, r * 0.75); ctx.stroke();
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.ellipse(r * 1.18, r * 0.8, r * 0.22, r * 0.15, 0.6, 0, Math.PI * 2); ctx.fill();
+  // hunched body — wider at the shoulders than the waist, lopsided
+  ctx.fillStyle = skin;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(2.5, r * 0.1);
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.85, r * 0.15);
+  ctx.quadraticCurveTo(-r * 0.95, -r * 0.35, -r * 0.35, -r * 0.55);
+  ctx.quadraticCurveTo(r * 0.15, -r * 0.7, r * 0.6, -r * 0.35);
+  ctx.quadraticCurveTo(r * 0.95, -r * 0.05, r * 0.7, r * 0.35);
+  ctx.quadraticCurveTo(r * 0.5, r * 0.75, -r * 0.1, r * 0.8);
+  ctx.quadraticCurveTo(-r * 0.7, r * 0.75, -r * 0.85, r * 0.15);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // small sunken eyes, low brow
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(-r * 0.1, -r * 0.15, r * 0.09, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.28, -r * 0.2, r * 0.09, 0, Math.PI * 2); ctx.fill();
+  // brow ridge + tusk
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(2, r * 0.08);
+  ctx.beginPath(); ctx.moveTo(-r * 0.25, -r * 0.28); ctx.lineTo(r * 0.4, -r * 0.35); ctx.stroke();
+  ctx.fillStyle = '#fff8ec';
+  ctx.beginPath(); ctx.moveTo(r * 0.1, r * 0.05); ctx.lineTo(r * 0.18, r * 0.22); ctx.lineTo(r * 0.02, r * 0.15); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// Boss (ogreBoss) — a bigger, more ominous silhouette: broad horned
+// shoulders, a wide snarling head, glowing eyes, and a rim-light outline so
+// it reads as the level's threat centerpiece at a glance.
+function drawBossShape(m, tint) {
+  const skin = tint?.primary || '#7a3fa0';
+  const dark = tint?.dark || '#2a1040';
+  const glow = tint?.glow || '#ffd23d';
+  const r = m.r;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  // rim-light halo — makes the boss pop out of a busy screen
+  ctx.strokeStyle = glow;
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = r * 0.22;
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.95, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+  // broad body
+  ctx.fillStyle = skin;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(3, r * 0.08);
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.1, r * 0.82, r * 0.72, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  // horns
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.45); ctx.lineTo(-r * 0.78, -r * 0.95); ctx.lineTo(-r * 0.28, -r * 0.55); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(r * 0.5, -r * 0.45); ctx.lineTo(r * 0.78, -r * 0.95); ctx.lineTo(r * 0.28, -r * 0.55); ctx.closePath(); ctx.fill();
+  // glowing eyes
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(-r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  // snarling mouth with tusks
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(2, r * 0.06);
+  ctx.beginPath(); ctx.moveTo(-r * 0.32, r * 0.32); ctx.quadraticCurveTo(0, r * 0.48, r * 0.32, r * 0.32); ctx.stroke();
+  ctx.fillStyle = '#fff8ec';
+  ctx.beginPath(); ctx.moveTo(-r * 0.24, r * 0.34); ctx.lineTo(-r * 0.16, r * 0.5); ctx.lineTo(-r * 0.08, r * 0.34); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(r * 0.24, r * 0.34); ctx.lineTo(r * 0.16, r * 0.5); ctx.lineTo(r * 0.08, r * 0.34); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+const SHAPE_MONSTERS = { skeleton: drawSkeletonShape, troll: drawTrollShape, ogreBoss: drawBossShape };
+
+// --- Obstacle ("falling stone") shapes, one per stage decor -------------
+// These used to be one identical purple rounded rect with a rune everywhere.
+// Every stage now gets its own drifting hazard silhouette + color (pulled
+// from that stage's groundPalette so it visually matches the ground/hills
+// it's falling past) instead of the same block regardless of theme.
+function drawObstacle(o, def) {
+  const pal = def.groundPalette;
+  const base = pal ? pal.bands[2] : '#4a4066';
+  const dark = pal ? pal.bands[0] : '#2a1f4d';
+  const light = pal ? pal.bands[3] : '#7fd8ff';
+  const x = o.x, y = o.y, w = o.w, h = o.h;
+  ctx.fillStyle = base;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = 3;
+
+  switch (def.decor) {
+    case 'bubbles': { // Sea War — a real barrel or crate (Kenney "Pirate
+      // Kit" art, not a drawn shape), as if it had been thrown/lost
+      // overboard from one of the passing ships — o.spriteChoice is set
+      // once at spawn time (see spawner.js) so it doesn't flicker between
+      // the two every frame.
+      const img = KENNEY_PIRATE[o.spriteChoice || 'barrel'];
+      if (img) {
+        const dw = w, dh = dw * (img.height / img.width);
+        ctx.drawImage(img, x - dw / 2, y - dh / 2, dw, dh);
+      } else {
+        ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 6); ctx.fill(); ctx.stroke();
+      }
+      break;
+    }
+    case 'snow': { // Glacial Peak — a BIG chunky ice block: a hexagonal
+      // facet body (now drawn near-square per its larger spawner size) with
+      // several bright crack/facet highlights so it reads as a real hunk of
+      // ice, not a small pebble.
+      ctx.beginPath();
+      ctx.moveTo(x - w * 0.28, y - h / 2); ctx.lineTo(x + w * 0.28, y - h / 2);
+      ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w * 0.28, y + h / 2);
+      ctx.lineTo(x - w * 0.28, y + h / 2); ctx.lineTo(x - w / 2, y);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = light;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x - w * 0.18, y - h * 0.32); ctx.lineTo(x + w * 0.05, y + h * 0.15); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.02, y - h * 0.28); ctx.lineTo(x + w * 0.24, y + h * 0.05); ctx.stroke();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = light;
+      ctx.beginPath(); ctx.moveTo(x - w * 0.28, y - h / 2); ctx.lineTo(x + w * 0.1, y - h / 2); ctx.lineTo(x - w * 0.1, y - h * 0.1); ctx.lineTo(x - w * 0.4, y - h * 0.15); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'sand': { // cracked sandstone block
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 6); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = dark; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x - w * 0.2, y - h * 0.4); ctx.lineTo(x - w * 0.05, y); ctx.lineTo(x + w * 0.15, y + h * 0.35); ctx.stroke();
+      break;
+    }
+    case 'crystals': { // faceted crystal shard (used by Crystallized Forest / Abyssal Forest)
+      ctx.beginPath();
+      ctx.moveTo(x, y - h / 2); ctx.lineTo(x + w * 0.32, y - h * 0.05);
+      ctx.lineTo(x + w * 0.2, y + h / 2); ctx.lineTo(x - w * 0.2, y + h / 2);
+      ctx.lineTo(x - w * 0.32, y - h * 0.05); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = light; ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(x, y - h / 2); ctx.lineTo(x + w * 0.1, y); ctx.lineTo(x, y + h * 0.3); ctx.lineTo(x - w * 0.1, y); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'embers': { // jagged obsidian rock with a glowing crack
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2, y + h * 0.3); ctx.lineTo(x - w * 0.3, y - h / 2);
+      ctx.lineTo(x + w * 0.1, y - h * 0.3); ctx.lineTo(x + w / 2, y - h * 0.4);
+      ctx.lineTo(x + w * 0.35, y + h / 2); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = light; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - w * 0.1, y - h * 0.3); ctx.lineTo(x + w * 0.05, y + h * 0.2); ctx.stroke();
+      break;
+    }
+    case 'clouds': { // broken gilded marble/column fragment
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = light; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - w / 2 + 6, y); ctx.lineTo(x + w / 2 - 6, y); ctx.stroke();
+      break;
+    }
+    case 'voidstars': { // elongated floating aether shard
+      ctx.beginPath();
+      ctx.moveTo(x, y - h * 0.6); ctx.lineTo(x + w * 0.22, y);
+      ctx.lineTo(x, y + h * 0.6); ctx.lineTo(x - w * 0.22, y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = light;
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'rain': { // brass gear/cog chunk — Clockwork City
+      const r = Math.min(w, h) / 2;
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const rr = i % 2 === 0 ? r : r * 0.72;
+        const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = dark;
+      ctx.beginPath(); ctx.arc(x, y, r * 0.32, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'fireflies': { // mushroom-capped log — Spectral Jungle
+      ctx.beginPath(); ctx.roundRect(x - w * 0.35, y - h * 0.2, w * 0.7, h * 0.4, 6); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = light;
+      ctx.beginPath(); ctx.ellipse(x, y - h * 0.32, w * 0.28, h * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.stroke();
+      break;
+    }
+    case 'banners': { // grey granite boulder — Crown of the Mountain King
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2, y + h * 0.2); ctx.lineTo(x - w * 0.25, y - h / 2);
+      ctx.lineTo(x + w * 0.25, y - h * 0.45); ctx.lineTo(x + w / 2, y + h * 0.15);
+      ctx.lineTo(x + w * 0.1, y + h / 2); ctx.lineTo(x - w * 0.2, y + h * 0.45);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      break;
+    }
+    case 'spores': { // moss-wrapped log — The Deepwood
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h * 0.32, w, h * 0.64, h * 0.3); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = light; ctx.lineWidth = 2;
+      for (const fx of [-0.28, 0, 0.28]) {
+        ctx.beginPath(); ctx.moveTo(x + fx * w, y - h * 0.3); ctx.lineTo(x + fx * w, y + h * 0.3); ctx.stroke();
+      }
+      break;
+    }
+    default: // fallback — the original stone-rune block
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = light;
+      ctx.font = 'bold 14px "Fredoka", Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('ᚱ', x, y + 5);
+  }
+}
+
 // --- Render ------------------------------------------------------
 function drawMonster(m) {
   const sprite = MONSTER_SPRITE[m.type];
@@ -1346,15 +2020,38 @@ function drawMonster(m) {
   const batImg = m.type === 'imp' && BAT_FRAMES.length
     ? BAT_FRAMES[Math.floor(m.wobble * 1.5) % BAT_FRAME_COUNT]
     : null;
+  // Current stage's enemy palette (see STAGE_THEMES[].monsterTint in
+  // data/levels.js, threaded onto each level def by buildStage()) — falls
+  // back to undefined (no tint applied) outside of an active level, e.g.
+  // on the sticker/menu preview paths that also happen to call drawMonster.
+  const tint = state?.levelDef?.monsterTint;
+  const shapeFn = SHAPE_MONSTERS[m.type];
+  // Per-type squash-and-stretch bob (m.bobAmp — see MONSTERS.<type>.movement
+  // in data/monsters.js) layered on top of the actual path movement, so
+  // every monster reads as alive/bouncing in place even during the eased
+  // straight stretches of its path, not just when it's curving.
+  const bobActive = (m.bobAmp || 0) > 0;
+  if (bobActive) {
+    const s = Math.sin(m.wobble * 2.2);
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.scale(1 - s * m.bobAmp * 0.4, 1 + s * m.bobAmp);
+    ctx.translate(-m.x, -m.y);
+  }
   if (batImg) {
     // Animated ice-bat wing-flap cycle (user-supplied AI art) for the
     // flying "imp" enemy, instead of one rigid static sprite — driven by
     // the monster's own wobble phase so a clump of imps doesn't flap in
-    // lockstep, and freezes correctly whenever the game is paused.
+    // lockstep, and freezes correctly whenever the game is paused. Tinted
+    // per-stage the same way as the other sprite-based enemies.
     const bw = size * (batImg.width / batImg.height);
-    ctx.drawImage(batImg, m.x - bw / 2, m.y - size / 2, bw, size);
+    drawTintedImage(batImg, m.x, m.y, bw, size, tint);
   } else if (sprite && SPRITES[sprite]) {
-    drawSprite(sprite, m.x, m.y, size);
+    drawTintedImage(SPRITES[sprite], m.x, m.y, size, size, tint);
+  } else if (shapeFn) {
+    // skeleton / troll / ogreBoss — dedicated procedural silhouettes
+    // instead of the old shared "circle with two eyes" placeholder.
+    shapeFn(m, tint);
   } else {
     ctx.fillStyle = m.color;
     ctx.strokeStyle = '#2a1f4d';
@@ -1370,6 +2067,7 @@ function drawMonster(m) {
     ctx.beginPath(); ctx.arc(m.x - m.r * 0.3, m.y - m.r * 0.12, m.r * 0.09, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.arc(m.x + m.r * 0.3, m.y - m.r * 0.12, m.r * 0.09, 0, 7); ctx.fill();
   }
+  if (bobActive) ctx.restore();
   if (m.hitFlash > 0) {
     ctx.globalAlpha = m.hitFlash * 6;
     ctx.fillStyle = '#fff';
@@ -1384,7 +2082,7 @@ function drawMonster(m) {
   if (m.maxHp > 1) {
     const py = m.y - m.r - 9;
     if (m.maxHp <= 8) {
-      const pipW = 5, gap = 2;
+      const pipW = 4, gap = 1.5;
       const total = m.maxHp * pipW + (m.maxHp - 1) * gap;
       let px = m.x - total / 2;
       for (let i = 0; i < m.maxHp; i++) {
@@ -1395,11 +2093,11 @@ function drawMonster(m) {
         px += pipW + gap;
       }
     } else {
-      const w = m.r * 1.6;
+      const w = m.r * 1.3;
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.fillRect(m.x - w / 2, py - 2, w, 5);
+      ctx.fillRect(m.x - w / 2, py - 1.5, w, 3);
       ctx.fillStyle = '#ff5d7a';
-      ctx.fillRect(m.x - w / 2, py - 2, w * (m.hp / m.maxHp), 5);
+      ctx.fillRect(m.x - w / 2, py - 1.5, w * (m.hp / m.maxHp), 3);
     }
   }
 }
@@ -1619,49 +2317,55 @@ function render() {
   const st = state;
   renderBackground(st.levelDef, st.levelTime);
 
-  // Obstacles
-  for (const o of st.obstacles) {
-    ctx.fillStyle = '#4a4066';
-    ctx.strokeStyle = '#2a1f4d';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.roundRect(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h, 8);
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#7fd8ff';
-    ctx.font = 'bold 14px "Fredoka", Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('ᚱ', o.x, o.y + 5);
-  }
+  // Obstacles — each stage gets its own drifting hazard silhouette (see
+  // drawObstacle above) instead of one identical purple rune block.
+  for (const o of st.obstacles) drawObstacle(o, st.levelDef);
 
-  // Gates — mini crystal archways. Good ones glow icy blue, cursed ones violet.
+  // Gates — small mini crystal archways, always a gift now (no more curse
+  // portal). Fire-rate gifts glow icy blue with a ×mult label; blood-heal
+  // gifts glow warm pink/red with a small heart instead.
   for (const g of st.gates) {
     const glow = 0.5 + 0.3 * Math.sin(g.pulse);
-    const tint = g.good ? '#7fd8ff' : '#b358e0';
+    const tint = g.kind === 'blood' ? '#ff5c7a' : '#7fd8ff';
     ctx.globalAlpha = glow;
     ctx.strokeStyle = tint;
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.ellipse(g.x, g.y, g.rx, g.ry, 0, 0, Math.PI * 2);
     ctx.stroke();
     // inner faceted ring, like a cut gem seen edge-on
     ctx.globalAlpha = glow * 0.7;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 6]);
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 5]);
     ctx.beginPath();
-    ctx.ellipse(g.x, g.y, g.rx - 8, g.ry - 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(g.x, g.y, g.rx - 6, g.ry - 4, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     ctx.fillStyle = tint;
-    ctx.font = '20px "Luckiest Guy", Arial';
+    ctx.font = '15px "Luckiest Guy", Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(g.good ? `×${g.mult}` : '×½', g.x, g.y + 7);
+    ctx.fillText(g.kind === 'blood' ? '♥' : `×${g.mult}`, g.x, g.y + 5);
   }
 
-  // Spells
+  // Spells — a short trailing glow behind each shard makes rapid fire read
+  // as a solid stream of light instead of separate faint dots.
   for (const s of st.spells) {
-    if (SPRITES['fireball']) drawSprite('fireball', s.x, s.y, s.r * 4);
+    ctx.save();
+    const grad = ctx.createLinearGradient(s.x, s.y, s.x, s.y + 26);
+    grad.addColorStop(0, 'rgba(154, 230, 255, 0)');
+    grad.addColorStop(1, 'rgba(154, 230, 255, 0.5)');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = s.r * 0.9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y + 26);
+    ctx.lineTo(s.x, s.y);
+    ctx.stroke();
+    ctx.restore();
+
+    if (SPRITES['fireball']) drawSprite('fireball', s.x, s.y, s.r * 4.4);
     else {
       ctx.fillStyle = '#ff8a3d';
       ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
@@ -1738,49 +2442,62 @@ function render() {
 
   // Automaton Gunner (p declared above, at the shield-ring check)
   if (p.hurtFlash > 0 && Math.floor(p.hurtFlash * 12) % 2 === 0) ctx.globalAlpha = 0.5;
-  
-  // Continuous loop animation (21 frames)
-  // roughly 60ms per frame for a smooth continuous cycle
-  const frameIdx = Math.floor(performance.now() / 60) % 21;
-  const gunnerSprite = `gunner_${String(frameIdx).padStart(2, '0')}`;
-  drawSprite(gunnerSprite, p.x, p.y, p.size * 2.5, 1, p.facing === -1);
-  
-  ctx.globalAlpha = 1;
 
-  // Player Blood-line
-  if (p.maxBlood > 1) {
-    const py = p.y + p.size + 8;
-    const w = p.size * 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(p.x - w / 2, py - 2, w, 5);
-    ctx.fillStyle = '#7fd8ff';
-    ctx.fillRect(p.x - w / 2, py - 2, w * Math.max(0, p.blood / p.maxBlood), 5);
-  }
-  if (!SPRITES['wizard']) {
-    ctx.fillStyle = '#7c5cff';
-    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
-  }
-  ctx.globalAlpha = 1;
-
-  // Wizard's blood-line pips (tiny hearts under the wizard's feet)
+  // Simple 2-frame animation: just alternates between two clean "aiming
+  // up" gunner frames on a fixed clock, no wobble/sway/tilt/bob layered on
+  // top — kept intentionally minimal per request.
+  const gunnerSprite = Math.floor(st.levelTime * 6) % 2 === 0 ? 'gunner_07' : 'gunner_08';
   {
-    const pipW = 7, gap = 3;
-    const total = p.maxBlood * pipW + (p.maxBlood - 1) * gap;
-    let px = p.x - total / 2;
-    const py = p.y + p.size * 1.1;
-    for (let i = 0; i < p.maxBlood; i++) {
-      ctx.fillStyle = i < p.blood ? '#ff5d7a' : 'rgba(255,255,255,0.25)';
-      ctx.beginPath();
-      ctx.arc(px + pipW / 2, py, pipW / 2, 0, Math.PI * 2);
-      ctx.fill();
-      px += pipW + gap;
+    const img = SPRITES[gunnerSprite];
+    if (img) {
+      // These sprites are tall/narrow (not square), and the two frames
+      // aren't the same height (the firing frame's flame sticks up higher)
+      // — scale by width only and anchor the FEET at a fixed line so the
+      // character doesn't appear to bob between frames, only the flame
+      // grows taller.
+      const dispW = p.size * GUNNER_DISP_MULT;
+      const dispH = dispW * (img.naturalHeight / img.naturalWidth);
+      const footY = p.y + p.size * 1.25;
+      ctx.save();
+      ctx.translate(p.x, footY);
+      if (p.facing === -1) ctx.scale(-1, 1);
+      ctx.drawImage(img, -dispW / 2, -dispH, dispW, dispH);
+      ctx.restore();
     }
   }
 
-  // The GateWall — always visible, cracks segment by segment as hearts
-  // are lost. Drawn as a foreground layer so it reads clearly even with
-  // monsters and bullets passing in front of it.
-  drawGateWall(ctx, st);
+  ctx.globalAlpha = 1;
+
+  // Guardian's blood line — one clean full progress bar under the
+  // character's feet (replaces the old thin sliver + separate row of
+  // tiny pip-dots, which were redundant and easy to mistake for a stray
+  // line). Blood-red fill to match the "blood line" theme, rounded, with
+  // a border so it reads clearly as a health bar even at a glance.
+  if (p.maxBlood > 1) {
+    // Smaller and tucked right under his feet now (was a much wider/longer
+    // bar floating well below him) — matches the same foot offset used for
+    // the sprite itself (see GUNNER_DISP_MULT/footY above).
+    const barW = p.size * 0.9, barH = 4;
+    const bx = p.x - barW / 2, by = p.y + p.size * 1.25;
+    const frac = Math.max(0, Math.min(1, p.blood / p.maxBlood));
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 4); ctx.fill();
+    if (frac > 0) {
+      ctx.fillStyle = frac > 0.3 ? '#ff5d7a' : '#ff2d4a';
+      ctx.beginPath(); ctx.roundRect(bx, by, barW * frac, barH, 4); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 4); ctx.stroke();
+    ctx.restore();
+  }
+
+  // The GateWall crystal-segment bar used to render here, right behind the
+  // buy-button row — its glow showed through the gaps between buttons and
+  // clashed with themed seafloors/grounds (esp. Sea War's sand). Lives are
+  // already tracked by the heart icons in the top-right HUD, so this
+  // redundant bottom bar has been removed rather than re-themed per stage.
 
   // Bomb flash
   if (st.bombFlash > 0) {
@@ -1797,6 +2514,7 @@ function render() {
   if (mode === 'GAMEOVER') renderGameOver(ctx, st, saveData.best || 0);
   if (mode === 'SHOP') renderShop(ctx, st, iap.enabled);
   if (mode === 'PAUSED') renderPause(ctx);
+  if (mode === 'PLAYING' && st.placePaused && !st.placing) renderPlacementBanner(ctx);
 
   ctx.restore();
 }

@@ -15,6 +15,15 @@ export function load() {
       leaderboard: Array.isArray(raw.leaderboard) ? raw.leaderboard : d.leaderboard,
       progress: { ...d.progress, ...(raw.progress || {}) },
       settings: { ...d.settings, ...(raw.settings || {}) },
+      // Guard against a missing/empty/malformed stickers array (e.g. an
+      // older save from before stickers existed, or one that lost its
+      // equipped hero somehow) — without this, Player falls back to
+      // CONFIG.player.maxBlood (a tiny 3-hit buffer) instead of the
+      // sticker's real blood pool (200), which makes every single enemy
+      // bullet (5-10+ damage) look like an instant one-hit kill.
+      stickers: Array.isArray(raw.stickers) && raw.stickers.some((s) => s && s.equipped)
+        ? raw.stickers
+        : d.stickers,
     };
   } catch {
     return defaults();

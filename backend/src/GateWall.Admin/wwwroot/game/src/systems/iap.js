@@ -28,8 +28,8 @@ export const iap = {
           const token = transaction.products[0].transactionId || transaction.transactionId;
           const productId = transaction.products[0].id;
           
-          // Get the playerId from localStorage (set by main.js)
-          const saveData = JSON.parse(localStorage.getItem('crystalgate-save') || '{}');
+          // Get the playerId from localStorage (set by main.js / save.js)
+          const saveData = JSON.parse(localStorage.getItem('spellstorm-save-v1') || '{}');
           if (!saveData.playerId) {
             console.error('[iap] No playerId found, cannot verify purchase.');
             return;

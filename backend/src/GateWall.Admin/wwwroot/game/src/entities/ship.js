@@ -21,7 +21,9 @@ export class Ship {
     const hp = Math.max(2, Math.round(baseHp * hpMult));
     this.hp = hp;
     this.maxHp = hp;
-    this.damage = Math.max(5, Math.round(15 * hpMult));
+    // Raised alongside monster bullet damage (was 15) so ship cannonballs
+    // hurt proportionally more too.
+    this.damage = Math.max(5, Math.round(24 * hpMult));
     this.hitFlash = 0;
     this.score = CONFIG.ship.score;
     this.bobPhase = Math.random() * Math.PI * 2;

@@ -291,20 +291,34 @@ export function renderHUD(ctx, state, adsReady = false) {
   // Coins (tappable pill, opens the shop)
   drawCoinPill(ctx, state);
 
-  // Level (top-center) — shown as Stage / Level-in-stage, since the game is
-  // organized into STAGE_SIZE-level stages that each get progressively harder.
+  // Level (top-center) — two stacked lines, both set in the same bold
+  // title font/style now (was italic/softer for the name) so the level's
+  // flavor name reads as part of the same readout, not a separate caption.
   ctx.textAlign = 'center';
-  ctx.font = `15px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
   const stageNum = Math.ceil(state.spawner.level / STAGE_SIZE);
   const levelInStage = ((state.spawner.level - 1) % STAGE_SIZE) + 1;
-  ctx.fillText(`STAGE ${stageNum} · LV ${levelInStage}/${STAGE_SIZE} — ${state.levelDef.name}`, CONFIG.width / 2, 30);
-  // level progress bar
-  const prog = Math.min(1, state.levelTime / state.levelDef.duration);
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1;
+
+  ctx.font = `bold 16px ${F_TITLE}`;
+  ctx.fillStyle = '#ffe9a8';
+  ctx.fillText(`STAGE ${stageNum} · LV ${levelInStage}/${STAGE_SIZE}`, CONFIG.width / 2, 21);
+
+  ctx.font = `bold 12px ${F_TITLE}`;
+  ctx.fillStyle = 'rgba(255,233,168,0.75)';
+  ctx.fillText(state.levelDef.name, CONFIG.width / 2, 36);
+  ctx.restore();
+
+  // Level progress bar — tracks the attacker quota being sent out (not a
+  // clock), thin/small to match the rest of the HUD's slimmer bars.
+  const prog = Math.min(1, state.spawner.spawnedCount / state.spawner.totalAttackers);
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillRect(CONFIG.width / 2 - 70, 38, 140, 5);
+  ctx.fillRect(CONFIG.width / 2 - 55, 44, 110, 3);
   ctx.fillStyle = '#7fd8ff';
-  ctx.fillRect(CONFIG.width / 2 - 70, 38, 140 * prog, 5);
+  ctx.fillRect(CONFIG.width / 2 - 55, 44, 110 * prog, 3);
 
   // Lives (top-right, below the pause button)
   for (let i = 0; i < CONFIG.gateHealth; i++) {
@@ -358,11 +372,4 @@ export function renderHUD(ctx, state, adsReady = false) {
   drawButton(ctx, 'turret', state, adsReady);
   drawButton(ctx, 'angel', state, adsReady);
   if (adsReady) drawButton(ctx, 'watchAd', state, adsReady);
-
-  // GateWall line
-  const grad = ctx.createLinearGradient(0, CONFIG.height - 20, 0, CONFIG.height);
-  grad.addColorStop(0, 'rgba(124,220,255,0.0)');
-  grad.addColorStop(1, 'rgba(124,220,255,0.55)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, CONFIG.height - 20, CONFIG.width, 20);
 }

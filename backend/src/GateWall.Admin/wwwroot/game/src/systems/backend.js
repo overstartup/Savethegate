@@ -9,6 +9,11 @@
 // The game never blocks or breaks because of this.
 // ============================================================
 
+// The native app (real device or emulator) and any production web build
+// call the real deployed API. Only an actual local-browser dev session
+// (running off localhost/127.0.0.1, not wrapped in Capacitor) falls back
+// to a local backend on :5041, so `dotnet run`-ing the API locally still
+// works during development without touching this file.
 export const API_BASE_URL = (() => {
   if (typeof window === 'undefined') return 'https://gatewall.turtoo.app';
   const isNative = window.location.origin.includes('caps://') || !!window.Capacitor?.isNativePlatform?.();

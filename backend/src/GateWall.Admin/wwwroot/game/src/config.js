@@ -6,7 +6,7 @@ export const CONFIG = {
   // TEMP TESTING AID — set back to false before release. When true, every
   // stage on the road map is tappable/playable regardless of progress, so
   // all 5 themes can be tested directly instead of grinding stage 1 first.
-  devUnlockAllStages: true,
+  devUnlockAllStages: false,
 
   // Canvas (portrait, phone-like)
   width: 420,
@@ -18,7 +18,12 @@ export const CONFIG = {
     y: 640,              // fixed vertical position (kept a bit above the buy-button row clamp)
     size: 36,
     fireRate: 6,         // spells per second (base)
-    maxBlood: 3,         // "blood line" hit-buffer — depleting it costs 1 heart, then refills
+    // "blood line" hit-buffer — depleting it costs 1 heart, then refills.
+    // This is only a fallback for the rare case a run somehow starts with no
+    // equipped sticker (normally the sticker's own `blood` — e.g. 200 —
+    // wins). Kept in the same 200-ish ballpark so bullets (5-10+ damage
+    // each) always take several hits to cost a heart, never just one.
+    maxBlood: 200,
     invulnAfterHit: 0.8, // seconds of immunity after taking a blood-line hit (no instant double-hits)
   },
 
@@ -91,9 +96,15 @@ export const CONFIG = {
     damage: 1,
     touchDamageFromMonster: 3, // per second a monster is pressed against it
   },
+  // Gates are now a pure gift — no more curse/bad portal. Most of the time
+  // it's a fire-rate multiplier (×2/×3 for a few seconds); sometimes
+  // (bloodGiftChance) it's a straight partial heal of the blood line
+  // instead, so the gift stays interesting without ever punishing the
+  // player for grabbing it.
   gate: {
-    multipliers: [2, 3], // good portals
-    curse: 0.5,          // bad portal fire-rate factor
+    multipliers: [2, 3],   // fire-rate gift options
+    bloodGiftChance: 0.35, // chance a gate gift is a blood-heal instead of a fire-rate mult
+    bloodGiftHeal: 0.5,    // fraction of max blood restored by a blood-gift gate
   },
 
   // HUD — the bottom buy-button row's position, shared between ui/hud.js

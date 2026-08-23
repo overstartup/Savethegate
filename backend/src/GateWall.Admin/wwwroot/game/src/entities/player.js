@@ -37,25 +37,35 @@ export class Player {
   }
 
   update(dt, input) {
-    // Free 2D movement — fly anywhere on screen; you shoot from wherever you are
+    // Free 2D movement — fly anywhere on screen; you shoot from wherever you
+    // are. Simple straight-line pursuit of the touch point, no extra sway
+    // or wobble layered on top — kept intentionally minimal per request.
     const tx = input.targetX(this.x);
     const ty = input.targetY(this.y);
     const dx = tx - this.x, dy = ty - this.y;
-    
+
     // Update facing direction based on movement
     if (dx > 0) this.facing = 1;
     else if (dx < 0) this.facing = -1;
-    
+
     const dist = Math.hypot(dx, dy);
     const step = CONFIG.player.speed * this.speedMult * dt;
     if (dist <= step) { this.x = tx; this.y = ty; }
     else { this.x += (dx / dist) * step; this.y += (dy / dist) * step; }
+
     const half = this.size / 2;
     this.x = Math.max(half, Math.min(CONFIG.width - half, this.x));
-    // Bottom clamp stops the Guardian right above the buy-button row (not
-    // just above the screen edge) — the buttons are solid UI, so the player
-    // should never be able to fly behind/under them.
-    const maxY = CONFIG.height - CONFIG.hud.rowBottomOffset - half - 6;
+    // Bottom clamp stops the Guardian above the buy-button row. This used to
+    // only account for the collision half-size, but the drawn sprite's feet
+    // sit well below this.y (see GUNNER_DISP_MULT/footY in main.js's
+    // drawPlayer — the sprite is anchored at y + size*1.25, not y + half),
+    // so the old clamp let the visible feet dip behind the buttons even
+    // though the hit-circle itself was still clear. Clamp now accounts for
+    // that full visual foot offset plus a small fixed buffer (was a much
+    // bigger ~10%-of-screen buffer, which stopped the Guardian way too high
+    // — he couldn't come down anywhere near the seafloor growth at all).
+    const footOffset = this.size * 1.25;
+    const maxY = CONFIG.height - CONFIG.hud.rowBottomOffset - footOffset - 20;
     this.y = Math.max(half + 40, Math.min(maxY, this.y)); // 40 = HUD zone
 
     // Gate effect timer
@@ -91,17 +101,28 @@ export class Player {
     this.fireRateMultTime = duration;
   }
 
-  // Called when an enemy bullet touches the wizard. Returns true if this hit
-  // depleted the blood line (caller should dock one heart, then refill it).
+  // A blood-gift gate — restores a fraction of max blood outright (never
+  // more than the max, so it can't be stockpiled past full).
+  healBlood(frac) {
+    this.blood = Math.min(this.maxBlood, this.blood + this.maxBlood * frac);
+  }
+
+  // Called when an enemy bullet touches the wizard. Returns true exactly
+  // once, the moment the blood line crosses from having some left to
+  // empty (caller docks one gate for that). Blood and gates are separate
+  // pools now — losing a gate does NOT refill blood anymore (that used to
+  // happen automatically here and in events.breach()); the only way blood
+  // comes back is a blood-gift gate (see healBlood()) or damage/upgrades.
+  // Blood is clamped at 0 rather than going negative, and since the
+  // "just crossed to empty" check only fires once, sitting at 0 blood
+  // doesn't cost a gate on every subsequent hit — it just means there's no
+  // buffer left until a blood gift tops it back up.
   takeHit(damage = 1) {
     if (this.invuln > 0) return false;
     this.invuln = CONFIG.player.invulnAfterHit;
     this.hurtFlash = 0.15;
-    this.blood -= damage;
-    if (this.blood <= 0) {
-      this.blood = this.maxBlood;
-      return true;
-    }
-    return false;
+    const hadBlood = this.blood > 0;
+    this.blood = Math.max(0, this.blood - damage);
+    return hadBlood && this.blood <= 0;
   }
 }
