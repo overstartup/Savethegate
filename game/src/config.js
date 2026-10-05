@@ -17,7 +17,7 @@ export const CONFIG = {
     speed: 420,          // px/sec horizontal drag speed cap
     y: 640,              // fixed vertical position (kept a bit above the buy-button row clamp)
     size: 36,
-    fireRate: 6,         // spells per second (base)
+    fireRate: 7,         // spells per second (base)
     // "blood line" hit-buffer — depleting it costs 1 heart, then refills.
     // This is only a fallback for the rare case a run somehow starts with no
     // equipped sticker (normally the sticker's own `blood` — e.g. 200 —
@@ -25,6 +25,7 @@ export const CONFIG = {
     // each) always take several hits to cost a heart, never just one.
     maxBlood: 200,
     invulnAfterHit: 0.8, // seconds of immunity after taking a blood-line hit (no instant double-hits)
+    stickerDamagePerBolt: 120, // sticker damage rating that equals 1 bolt damage (see Player)
   },
 
   // Spells
@@ -117,8 +118,13 @@ export const CONFIG = {
     rowHeight: 64,
   },
 
-  // GateWall (base health)
-  gateHealth: 3,
+  // GateWall — hearts. EVERY Shatterling that crosses the gate line costs
+  // one heart, so the level pacing (systems/spawner.js) is tuned to keep
+  // leaks rare and the player's power climbing faster than the horde.
+  gateHealth: 5,
+  // The gate line sits just above the buy-button row so crossings are
+  // visible (render/atmosphere.js draws it as an energy barrier).
+  gateY: 740 - 66 - 12,
 
   // Adaptive difficulty
   adaptive: {

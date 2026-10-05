@@ -62,4 +62,22 @@ export const audio = {
   waveUp()     { tone(600, 0.12, 'sine', 0.08, 200); tone(900, 0.18, 'sine', 0.06, 200); },
   enemyShot()  { tone(180, 0.08, 'sawtooth', 0.025, -60); },
   grazed()     { tone(220, 0.07, 'square', 0.05, -40); }, // enemy bullet chips a blood line (no heart lost yet)
+  // Gem pickups rise in pitch while collected in quick succession.
+  gem() {
+    const now = performance.now();
+    if (now - gemLast < 45) return;
+    gemStreak = now - gemLast < 400 ? Math.min(gemStreak + 1, 16) : 0;
+    gemLast = now;
+    tone(900 + gemStreak * 45, 0.05, 'sine', 0.035, 200);
+  },
+  levelUp()    { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.08, 0), i * 70)); },
+  pick()       { tone(660, 0.1, 'sine', 0.09, 440); tone(990, 0.18, 'triangle', 0.05, 300); },
+  fever()      { [440, 554, 659, 880, 1109].forEach((f, i) => setTimeout(() => tone(f, 0.12, 'square', 0.04, 60), i * 55)); },
+  zapChain()   { tone(1400, 0.12, 'sawtooth', 0.035, -1000); },
+  nova()       { tone(1200, 0.35, 'sine', 0.06, -900); },
+  shatter()    { tone(1600 + Math.random() * 400, 0.07, 'triangle', 0.025, -900); },
+  bossRoar()   { tone(90, 0.7, 'sawtooth', 0.12, -40); tone(60, 0.8, 'square', 0.06, -20); },
+  bossShot()   { tone(240, 0.18, 'sawtooth', 0.05, -160); },
+  bigBoom()    { tone(70, 0.6, 'sawtooth', 0.14, -30); tone(160, 0.35, 'square', 0.06, -120); },
 };
+let gemLast = 0, gemStreak = 0;

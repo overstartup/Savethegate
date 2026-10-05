@@ -7,7 +7,8 @@ const ORDER = [
   'src/entities/monster.js', 'src/entities/obstacle.js', 'src/entities/gate.js', 'src/entities/angel.js',
   'src/entities/enemyBullet.js', 'src/entities/ship.js',
   'src/entities/wall.js', 'src/entities/turret.js',
-  'src/systems/spawner.js', 'src/systems/collision.js', 'src/systems/particles.js',
+  'src/systems/flocks.js', 'src/systems/spawner.js', 'src/systems/collision.js', 'src/systems/particles.js',
+  'src/render/creatures.js', 'src/render/atmosphere.js', 'src/systems/runUpgrades.js',
   'src/systems/audio.js', 'src/systems/ads.js', 'src/systems/iap.js', 'src/systems/backend.js',
   'src/ui/hud.js', 'src/ui/screens.js', 'src/ui/announce.js', 'src/main.js',
 ];

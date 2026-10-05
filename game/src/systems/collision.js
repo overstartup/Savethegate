@@ -17,15 +17,21 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
     if (s.dead) continue;
     for (const m of monsters) {
       if (m.dead) continue;
+      if (s.hitSet && s.hitSet.has(m)) continue; // piercing shot already went through this one
       const dx = s.x - m.x, dy = s.y - m.y, rr = s.r + m.r;
       if (dx * dx + dy * dy <= rr * rr) {
-        s.dead = true;
+        if (s.pierce > 0) {
+          s.pierce--;
+          (s.hitSet || (s.hitSet = new Set())).add(m);
+        } else {
+          s.dead = true;
+        }
         const children = m.onHit(s.damage);
         if (m.dead) {
-          events.kill(m);
+          events.kill(m, s);
           if (children) monsters.push(...children);
         } else {
-          events.hit(m);
+          events.hit(m, s);
         }
         break;
       }
@@ -83,8 +89,9 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
         if (w.dead) continue;
         if (w.contains(m.x, m.y, m.r)) {
           m.y = w.y - w.h / 2 - m.r; // hold it just above the wall
+          if (m.pvy > 0) m.pvy = 0;
           w.onHit(CONFIG.wall.touchDamageToWall * dt);
-          const children = m.onHit(CONFIG.wall.touchDamageToMonster * dt);
+          const children = m.onHit(CONFIG.wall.touchDamageToMonster * (w.thorns || 1) * dt);
           if (m.dead) {
             events.kill(m);
             if (children) monsters.push(...children);
@@ -115,20 +122,20 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
 
   // Monster reaches the GateWall (bottom) → lose a life
   for (const m of monsters) {
-    if (!m.dead && m.y - m.r > CONFIG.height - 24) {
+    if (!m.dead && !m.boss && m.y > CONFIG.gateY) {
       m.dead = true;
       events.breach(m);
     }
   }
 
-  // Monster ↔ player → lose a life
+  // Monster ↔ player → it explodes on the Guardian (heavy blood-line hit)
   const pr = player.size / 2;
   for (const m of monsters) {
     if (m.dead) continue;
     const dx = m.x - player.x, dy = m.y - player.y, rr = m.r + pr;
     if (dx * dx + dy * dy <= rr * rr) {
       m.dead = true;
-      events.breach(m);
+      events.rammed(m);
     }
   }
 

@@ -7,14 +7,17 @@ import { Spell } from './spell.js';
 import { CONFIG } from '../config.js';
 
 export class Angel {
-  constructor(side = 1) {
+  // up = Armory levels { power, fireRate, blood } (data/upgrades.js)
+  constructor(side = 1, up = {}) {
     this.side = side;       // -1 left, +1 right of the wizard
+    this.damage = CONFIG.spell.damage * (1 + 0.25 * (up.power || 0));
+    this.fireInterval = 0.25 / (1 + 0.12 * (up.fireRate || 0));
     this.fireTimer = 0;
     this.x = 0;
     this.y = 0;
     this.bob = 0;
-    this.blood = CONFIG.angel.maxBlood;
-    this.maxBlood = CONFIG.angel.maxBlood;
+    this.maxBlood = CONFIG.angel.maxBlood + (up.blood || 0);
+    this.blood = this.maxBlood;
     this.invuln = 0;
     this.hitFlash = 0;
     this.dead = false;
@@ -26,8 +29,8 @@ export class Angel {
     this.y = player.y - 6 + Math.sin(this.bob) * 5;
     this.fireTimer -= dt;
     if (this.fireTimer <= 0) {
-      this.fireTimer = 0.25;
-      spells.push(new Spell(this.x, this.y - 18));
+      this.fireTimer = this.fireInterval;
+      spells.push(new Spell(this.x, this.y - 18, this.damage));
     }
     if (this.invuln > 0) this.invuln -= dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;

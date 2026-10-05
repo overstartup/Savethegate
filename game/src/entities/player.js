@@ -14,20 +14,29 @@ export class Player {
     this.fireRateMultTime = 0;  // seconds remaining on gate effect
     this.hurtFlash = 0;
     this.facing = 1; // 1 for right, -1 for left
+    this.vx = 0;        // smoothed velocity → lean / dust (render only)
+    this.vy = 0;
+    this.recoil = 0;    // 1 right after a shot, decays → kick + muzzle flash
+    this.runRateMult = 1; // in-run upgrades + FEVER (see systems/runUpgrades.js)
 
     // Permanent upgrade effects
     this.speedMult = 1 + (upgrades.speed || 0) * 0.08;      // SWIFTNESS: +8%/level
     this.fireRateBonus = 1 + (upgrades.fireRate || 0) * 0.08; // HASTE: +8%/level
     
     // Base stats come from the equipped sticker, plus power upgrades
-    const baseDmg = activeSticker ? activeSticker.damage : CONFIG.spell.damage;
-    this.damage = baseDmg + (upgrades.power || 0); // POWER: +1 dmg/level
+    // Sticker damage is a power RATING (the starter hero is 120) — scaled
+    // so 120 = 1 bolt damage against monster hp of 1-6 (data/monsters.js).
+    // Using the raw 120 one-shot every enemy at every stage, which made hp,
+    // pips, stage toughness and damage upgrades all meaningless.
+    const baseDmg = activeSticker ? activeSticker.damage / CONFIG.player.stickerDamagePerBolt : CONFIG.spell.damage;
+    this.damage = baseDmg * (1 + 0.15 * (upgrades.power || 0)); // POWER: +15% dmg/level
 
     // Blood line — a hit-buffer against enemy bullets.
     // The active sticker defines max blood (e.g., 200 HP).
     const baseBlood = activeSticker ? activeSticker.blood : CONFIG.player.maxBlood;
-    this.blood = baseBlood;
-    this.maxBlood = baseBlood;
+    const maxBlood = Math.round(baseBlood * (1 + 0.15 * (upgrades.blood || 0))); // VITALITY: +15%/level
+    this.blood = maxBlood;
+    this.maxBlood = maxBlood;
     this.invuln = 0;
 
     // Shield — a timed buff (bought with coins, see WEAPONS.shield) that
@@ -40,6 +49,7 @@ export class Player {
     // Free 2D movement — fly anywhere on screen; you shoot from wherever you
     // are. Simple straight-line pursuit of the touch point, no extra sway
     // or wobble layered on top — kept intentionally minimal per request.
+    const px0 = this.x, py0 = this.y;
     const tx = input.targetX(this.x);
     const ty = input.targetY(this.y);
     const dx = tx - this.x, dy = ty - this.y;
@@ -68,6 +78,11 @@ export class Player {
     const maxY = CONFIG.height - CONFIG.hud.rowBottomOffset - footOffset - 20;
     this.y = Math.max(half + 40, Math.min(maxY, this.y)); // 40 = HUD zone
 
+    const k = Math.min(1, dt * 10);
+    this.vx += ((this.x - px0) / Math.max(dt, 1e-4) - this.vx) * k;
+    this.vy += ((this.y - py0) / Math.max(dt, 1e-4) - this.vy) * k;
+    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - dt * 9);
+
     // Gate effect timer
     if (this.fireRateMultTime > 0) {
       this.fireRateMultTime -= dt;
@@ -75,6 +90,13 @@ export class Player {
     }
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
     if (this.invuln > 0) this.invuln -= dt;
+    // Out-of-combat regen: after a few seconds without a hit, the blood
+    // line slowly refills (2%/s) — so a drained Guardian recovers by
+    // playing well, not only via blood-gift gates.
+    this.sinceHit = (this.sinceHit || 0) + dt;
+    if (this.sinceHit > 3.5 && this.blood < this.maxBlood) {
+      this.blood = Math.min(this.maxBlood, this.blood + this.maxBlood * 0.02 * dt);
+    }
     if (this.shieldTime > 0) this.shieldTime -= dt;
 
     this.fireTimer -= dt;
@@ -90,7 +112,8 @@ export class Player {
   // Returns true when it's time to cast a spell
   tryFire() {
     if (this.fireTimer <= 0) {
-      this.fireTimer = 1 / (CONFIG.player.fireRate * this.fireRateMult * this.fireRateBonus);
+      this.fireTimer = 1 / (CONFIG.player.fireRate * this.fireRateMult * this.fireRateBonus * this.runRateMult);
+      this.recoil = 1;
       return true;
     }
     return false;
@@ -121,8 +144,14 @@ export class Player {
     if (this.invuln > 0) return false;
     this.invuln = CONFIG.player.invulnAfterHit;
     this.hurtFlash = 0.15;
-    const hadBlood = this.blood > 0;
+    this.sinceHit = 0;
+    // Already drained? This hit goes straight through to a heart (with a
+    // longer grace window) — previously a drained Guardian was immune.
+    if (this.blood <= 0) {
+      this.invuln = 1.5;
+      return true;
+    }
     this.blood = Math.max(0, this.blood - damage);
-    return hadBlood && this.blood <= 0;
+    return this.blood <= 0;
   }
 }

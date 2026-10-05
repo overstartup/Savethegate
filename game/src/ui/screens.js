@@ -3,7 +3,7 @@
 import { CONFIG } from '../config.js';
 import { COIN_PACKS } from '../data/shop.js';
 import { LEVELS, STAGE_SIZE, STAGE_COUNT, STAGE_THEMES } from '../data/levels.js';
-import { UPGRADES, UPGRADE_MAX, upgradeCost } from '../data/upgrades.js';
+import { UNITS, UNIT_ORDER, unitLevel, statCost, statLabel, unitTotalLevel } from '../data/upgrades.js';
 
 export const GAME_VERSION = 'v3.1 — GateWall';
 export const F_TITLE = '"Luckiest Guy", "Arial Black", Arial';
@@ -1469,9 +1469,9 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
     ] : [
       'Fly the Guardian anywhere —',
       'magic fires by itself!',
-      'Defend the GateWall',
-      'through 5 stages of trials.',
-      'Earn coins — buy BOMBS & ANGELS',
+      'Defend the GateWall!',
+      'Grab gems — LEVEL UP — pick powers',
+      'Chain 25 kills for FEVER!',
       best > 0 ? `★ Best score: ${best} ★` : '',
     ], started ? 'CONTINUE' : 'TAP TO PLAY');
 
@@ -1771,17 +1771,36 @@ export function renderGameOver(ctx, state, best) {
   drawMenuLink(ctx);
 }
 
-// --- Guardian upgrades page (permanent, bought here) -----------------
-// Rows fill the page below the header, full width; no floating card, no
-// close button — leave via the bottom nav bar like any other page.
-const UPG_ROW_X = 16, UPG_ROW_W = W - 32, UPG_ROW_H = 116, UPG_ROW_GAP = 14, UPG_TOP = 76;
+// --- ARMORY (permanent upgrades page) ---------------------------------
+// A grid of every unit the player fights with; tapping one opens a dialog
+// where each of its stats is upgraded separately. Costs climb exponentially
+// (data/upgrades.js), and GET COINS buttons lead to the coin shop.
+const ARM_TOP = 104, ARM_GAP = 12, ARM_CW = (W - 32 - ARM_GAP) / 2, ARM_CH = 172;
 export const UPGRADE_BUTTONS = {
-  buy: {
-    power:    { x: UPG_ROW_X, y: UPG_TOP + (UPG_ROW_H + UPG_ROW_GAP) * 0, w: UPG_ROW_W, h: UPG_ROW_H },
-    speed:    { x: UPG_ROW_X, y: UPG_TOP + (UPG_ROW_H + UPG_ROW_GAP) * 1, w: UPG_ROW_W, h: UPG_ROW_H },
-    fireRate: { x: UPG_ROW_X, y: UPG_TOP + (UPG_ROW_H + UPG_ROW_GAP) * 2, w: UPG_ROW_W, h: UPG_ROW_H },
-  },
+  getCoins: { x: W - 16 - 130, y: 60, w: 130, h: 32 },
+  cards: Object.fromEntries(UNIT_ORDER.map((u, i) => [u, {
+    x: 16 + (i % 2) * (ARM_CW + ARM_GAP),
+    y: ARM_TOP + Math.floor(i / 2) * (ARM_CH + ARM_GAP),
+    w: ARM_CW, h: ARM_CH,
+  }])),
 };
+const ARM_DLG = { x: 16, y: 66, w: W - 32, h: 580 };
+export const UNIT_DIALOG = {
+  close: { x: ARM_DLG.x + ARM_DLG.w - 44, y: ARM_DLG.y + 10, w: 34, h: 34 },
+  getCoins: { x: W / 2 - 110, y: ARM_DLG.y + ARM_DLG.h - 56, w: 220, h: 42 },
+};
+// Row + buy-button rects for every stat of a unit's dialog.
+export function unitDialogRows(unit) {
+  const out = {};
+  Object.keys(UNITS[unit].stats).forEach((stat, i) => {
+    const y = ARM_DLG.y + 132 + i * 98;
+    out[stat] = {
+      row: { x: ARM_DLG.x + 12, y, w: ARM_DLG.w - 24, h: 88 },
+      buy: { x: ARM_DLG.x + ARM_DLG.w - 128, y: y + 22, w: 106, h: 46 },
+    };
+  });
+  return out;
+}
 
 function drawCloseX(ctx, cl) {
   ctx.fillStyle = '#e0483d';
@@ -1794,54 +1813,273 @@ function drawCloseX(ctx, cl) {
   ctx.stroke();
 }
 
-export function renderUpgrades(ctx, saveData) {
-  pageShell(ctx, 'GUARDIAN UPGRADES', '#7fd8ff');
-
-  ctx.textAlign = 'center';
-  ctx.font = `13px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText(`You have ${saveData.coins} coins`, W / 2, 66);
-
-  for (const key in UPGRADES) {
-    const u = UPGRADES[key];
-    const r = UPGRADE_BUTTONS.buy[key];
-    const level = saveData.permanent[key] || 0;
-    const maxed = level >= UPGRADE_MAX;
-    const cost = maxed ? 0 : upgradeCost(key, level);
-    const affordable = !maxed && saveData.coins >= cost;
-
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
-    ctx.strokeStyle = affordable ? u.color : 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 16); ctx.fill(); ctx.stroke();
-
-    ctx.textAlign = 'left';
-    ctx.font = `19px ${F_TITLE}`;
-    ctx.fillStyle = u.color;
-    ctx.fillText(u.label, r.x + 16, r.y + 28);
-
-    ctx.font = `13px ${F_BODY}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText(u.tagline, r.x + 16, r.y + 48);
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.font = `12px ${F_BODY}`;
-    ctx.fillText(u.perLevel, r.x + 16, r.y + 64);
-
-    // level pips
-    for (let i = 0; i < UPGRADE_MAX; i++) {
-      ctx.fillStyle = i < level ? u.color : 'rgba(255,255,255,0.2)';
-      ctx.beginPath();
-      ctx.arc(r.x + 18 + i * 20, r.y + 88, 7, 0, Math.PI * 2);
-      ctx.fill();
+// Animated unit portraits for the Armory (procedural, plus the real cannon
+// art and the Guardian sprite passed in from main.js).
+function drawUnitIcon(ctx, unit, x, y, s, t, heroImg) {
+  ctx.save();
+  ctx.translate(x, y);
+  const bob = Math.sin(t * 2.4) * s * 0.04;
+  switch (unit) {
+    case 'hero': {
+      if (heroImg) {
+        const h = s * 1.5, w = h * (heroImg.naturalWidth / heroImg.naturalHeight);
+        ctx.drawImage(heroImg, -w / 2, -h * 0.55 + bob, w, h);
+      } else {
+        ctx.fillStyle = '#ffd23d';
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.4, 0, 7); ctx.fill();
+      }
+      break;
     }
-
-    ctx.textAlign = 'right';
-    ctx.font = `16px ${F_TITLE}`;
-    ctx.fillStyle = maxed ? '#58e07f' : (affordable ? '#ffd23d' : '#ff9a9a');
-    ctx.fillText(maxed ? 'MAXED' : `${cost}¢`, r.x + r.w - 16, r.y + r.h - 14);
+    case 'angel': {
+      ctx.translate(0, bob * 2);
+      const flap = Math.sin(t * 10) * 0.35;
+      ctx.fillStyle = 'rgba(154,230,255,0.85)';
+      ctx.strokeStyle = '#1c3a52';
+      ctx.lineWidth = 2;
+      for (const sd of [-1, 1]) {
+        ctx.save(); ctx.scale(sd, 1); ctx.rotate(-0.3 + flap);
+        ctx.beginPath(); ctx.ellipse(s * 0.32, 0, s * 0.26, s * 0.12, 0.5, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#bdeeff';
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.24, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#7fd8ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, -s * 0.34, s * 0.18, s * 0.06, 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#1c3a52';
+      ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.02, 2.5, 0, 7); ctx.arc(s * 0.07, -s * 0.02, 2.5, 0, 7); ctx.fill();
+      break;
+    }
+    case 'turret': {
+      const img = CANNON_FRAMES[Math.sin(t * 3) > 0.85 ? 'fire' : 'idle'] || CANNON_FRAMES.idle;
+      if (img) {
+        const h = s * 1.3, w = h * (img.width / img.height);
+        ctx.drawImage(img, -w / 2, -h * 0.6, w, h);
+      }
+      break;
+    }
+    case 'wall': {
+      const w = s * 1.1, h = s * 0.5;
+      ctx.fillStyle = '#8a6a4a';
+      ctx.strokeStyle = '#4a3420';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 6); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0);
+      for (const fx of [-0.25, 0.25]) { ctx.moveTo(fx * w, -h / 2); ctx.lineTo(fx * w, 0); }
+      ctx.moveTo(0, 0); ctx.lineTo(0, h / 2);
+      ctx.stroke();
+      ctx.fillStyle = '#d8c8a8'; // thorns
+      for (let i = 0; i < 5; i++) {
+        const tx = -w / 2 + 8 + i * ((w - 16) / 4);
+        ctx.beginPath();
+        ctx.moveTo(tx - 5, -h / 2); ctx.lineTo(tx, -h / 2 - 9 - Math.sin(t * 3 + i) * 2); ctx.lineTo(tx + 5, -h / 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'bomb': {
+      ctx.translate(0, bob);
+      ctx.fillStyle = '#2a2438';
+      ctx.strokeStyle = '#120c1e';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, s * 0.05, s * 0.36, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.ellipse(-s * 0.13, -s * 0.08, s * 0.08, s * 0.12, -0.5, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#c8a06a';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(s * 0.18, -s * 0.24); ctx.quadraticCurveTo(s * 0.35, -s * 0.5, s * 0.22, -s * 0.55); ctx.stroke();
+      const sp = 0.6 + 0.4 * Math.sin(t * 22);
+      ctx.fillStyle = '#ffd23d';
+      ctx.beginPath(); ctx.arc(s * 0.22, -s * 0.57, 5 * sp + 2, 0, 7); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(s * 0.22, -s * 0.57, 2, 0, 7); ctx.fill();
+      break;
+    }
+    case 'shield': {
+      const g = 0.6 + 0.4 * Math.sin(t * 3);
+      ctx.shadowColor = '#7fd8ff';
+      ctx.shadowBlur = 16 * g;
+      ctx.fillStyle = '#3a7fa8';
+      ctx.strokeStyle = '#bdeeff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 0.42);
+      ctx.quadraticCurveTo(s * 0.36, -s * 0.36, s * 0.34, -s * 0.12);
+      ctx.quadraticCurveTo(s * 0.3, s * 0.3, 0, s * 0.46);
+      ctx.quadraticCurveTo(-s * 0.3, s * 0.3, -s * 0.34, -s * 0.12);
+      ctx.quadraticCurveTo(-s * 0.36, -s * 0.36, 0, -s * 0.42);
+      ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 0.28); ctx.lineTo(0, s * 0.3);
+      ctx.moveTo(-s * 0.2, -s * 0.05); ctx.lineTo(s * 0.2, -s * 0.05);
+      ctx.stroke();
+      break;
+    }
   }
+  ctx.restore();
+}
+
+function armCoinPill(ctx, coins) {
+  ctx.fillStyle = 'rgba(10,6,24,0.6)';
+  ctx.strokeStyle = '#ffd23d';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(16, 60, 150, 32, 16); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffd23d';
+  ctx.strokeStyle = '#a8781a';
+  ctx.beginPath(); ctx.arc(34, 76, 10, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'left';
+  ctx.font = `17px ${F_TITLE}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(String(coins), 52, 83);
+}
+
+function armButton(ctx, r, label, colors, t, glow = false) {
+  ctx.save();
+  if (glow) { ctx.shadowColor = colors[0]; ctx.shadowBlur = 10 + 6 * Math.sin(t * 5); }
+  const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+  g.addColorStop(0, colors[0]);
+  g.addColorStop(1, colors[1]);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, r.h / 2); ctx.fill();
+  ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.font = `${Math.round(r.h * 0.42)}px ${F_TITLE}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, r.x + r.w / 2, r.y + r.h * 0.66);
+}
+
+function unitAffordable(saveData, unit) {
+  for (const stat in UNITS[unit].stats) {
+    const lv = unitLevel(saveData, unit, stat);
+    if (lv < UNITS[unit].stats[stat].max && (saveData.coins || 0) >= statCost(unit, stat, lv)) return true;
+  }
+  return false;
+}
+
+// selected = unit key whose dialog is open (or null); flash = { unit, stat, t }
+// pulses a just-bought row; heroImg = the Guardian sprite from main.js.
+export function renderUpgrades(ctx, saveData, selected = null, t = 0, heroImg = null, flash = null) {
+  pageShell(ctx, 'ARMORY', '#ffd23d');
+  armCoinPill(ctx, saveData.coins || 0);
+  armButton(ctx, UPGRADE_BUTTONS.getCoins, '+ GET COINS', ['#ffd23d', '#d89a1a'], t);
+
+  UNIT_ORDER.forEach((unit, i) => {
+    const u = UNITS[unit];
+    const r = UPGRADE_BUTTONS.cards[unit];
+    const total = unitTotalLevel(saveData, unit);
+    let maxTotal = 0;
+    for (const st in u.stats) maxTotal += u.stats[st].max;
+    const can = unitAffordable(saveData, unit);
+    ctx.save();
+    ctx.translate(0, Math.sin(t * 1.8 + i) * 2);
+    const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+    g.addColorStop(0, '#34265e');
+    g.addColorStop(1, '#1c1238');
+    ctx.fillStyle = g;
+    ctx.strokeStyle = can ? u.color : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = can ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 18); ctx.fill(); ctx.stroke();
+    const hg = ctx.createRadialGradient(r.x + r.w / 2, r.y + 58, 4, r.x + r.w / 2, r.y + 58, 56);
+    hg.addColorStop(0, u.color + '55');
+    hg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(r.x, r.y, r.w, 116);
+    drawUnitIcon(ctx, unit, r.x + r.w / 2, r.y + 62, 70, t + i, heroImg);
+    ctx.textAlign = 'center';
+    ctx.font = `17px ${F_TITLE}`;
+    ctx.fillStyle = u.color;
+    ctx.fillText(u.name, r.x + r.w / 2, r.y + 126);
+    const bx = r.x + 16, bw = r.w - 32, by = r.y + 138;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, 6, 3); ctx.fill();
+    ctx.fillStyle = u.color;
+    ctx.beginPath(); ctx.roundRect(bx, by, Math.max(6, bw * (total / maxTotal)), 6, 3); ctx.fill();
+    ctx.font = `12px ${F_BODY}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(`POWER LV ${total}`, r.x + r.w / 2, r.y + 160);
+    if (can) { // something here is affordable right now
+      ctx.fillStyle = '#58e07f';
+      ctx.beginPath(); ctx.arc(r.x + r.w - 16, r.y + 16, 6 + Math.sin(t * 5) * 1.5, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  });
 
   drawBottomNav(ctx, 'upgrades');
+  if (selected) renderUnitDialog(ctx, saveData, selected, t, heroImg, flash);
+}
+
+function renderUnitDialog(ctx, saveData, unit, t, heroImg, flash) {
+  const u = UNITS[unit];
+  const d = ARM_DLG;
+  ctx.fillStyle = 'rgba(8,4,20,0.78)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.shadowColor = u.color;
+  ctx.shadowBlur = 24;
+  const g = ctx.createLinearGradient(0, d.y, 0, d.y + d.h);
+  g.addColorStop(0, '#36275f');
+  g.addColorStop(1, '#1a1034');
+  ctx.fillStyle = g;
+  ctx.strokeStyle = u.color;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(d.x, d.y, d.w, d.h, 22); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  drawCloseX(ctx, UNIT_DIALOG.close);
+
+  drawUnitIcon(ctx, unit, d.x + 62, d.y + 64, 84, t, heroImg);
+  ctx.textAlign = 'left';
+  ctx.font = `24px ${F_TITLE}`;
+  ctx.fillStyle = u.color;
+  ctx.fillText(u.name, d.x + 118, d.y + 52);
+  ctx.font = `13px ${F_BODY}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillText(u.role, d.x + 118, d.y + 74);
+  ctx.fillStyle = '#ffd23d';
+  ctx.font = `15px ${F_TITLE}`;
+  ctx.fillText(`● ${saveData.coins || 0} coins`, d.x + 118, d.y + 100);
+
+  const rows = unitDialogRows(unit);
+  for (const stat in u.stats) {
+    const sdef = u.stats[stat];
+    const { row, buy } = rows[stat];
+    const lv = unitLevel(saveData, unit, stat);
+    const maxed = lv >= sdef.max;
+    const cost = maxed ? 0 : statCost(unit, stat, lv);
+    const afford = !maxed && (saveData.coins || 0) >= cost;
+    const fl = flash && flash.unit === unit && flash.stat === stat ? Math.max(0, 1 - (t - flash.t) / 0.6) : 0;
+
+    ctx.fillStyle = fl > 0 ? `rgba(255,255,255,${0.06 + fl * 0.25})` : 'rgba(255,255,255,0.05)';
+    ctx.strokeStyle = fl > 0 ? '#ffffff' : 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(row.x, row.y, row.w, row.h, 14); ctx.fill(); ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.font = `18px ${F_TITLE}`;
+    ctx.fillStyle = u.color;
+    ctx.fillText(sdef.label, row.x + 14, row.y + 26);
+    ctx.font = `12px ${F_BODY}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText(`${sdef.desc}  ·  LV ${lv}/${sdef.max}`, row.x + 14, row.y + 45);
+    ctx.font = `14px ${F_BODY}`;
+    ctx.fillStyle = '#ffffff';
+    const cur = lv === 0 ? 'base' : statLabel(unit, stat, lv);
+    ctx.fillText(maxed ? `${cur}  (max)` : `${cur}  →  ${statLabel(unit, stat, lv + 1)}`, row.x + 14, row.y + 68);
+    const tw = Math.min(150, row.w - 160);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(row.x + 14, row.y + 76, tw, 4);
+    ctx.fillStyle = u.color;
+    ctx.fillRect(row.x + 14, row.y + 76, tw * (lv / sdef.max), 4);
+
+    if (maxed) armButton(ctx, buy, 'MAX', ['#58e07f', '#2e9a52'], t);
+    else if (afford) armButton(ctx, buy, `● ${cost}`, ['#6ef598', '#38b85f'], t, true);
+    else armButton(ctx, buy, `● ${cost}`, ['#7a5a6a', '#4a3442'], t);
+  }
+  armButton(ctx, UNIT_DIALOG.getCoins, '+ GET MORE COINS', ['#ffd23d', '#d89a1a'], t);
 }
 
 // --- Settings --------------------------------------------------------

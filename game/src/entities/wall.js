@@ -6,12 +6,14 @@
 import { CONFIG } from '../config.js';
 
 export class Wall {
-  constructor(x, y) {
+  // up = Armory levels { hp, thorns } (data/upgrades.js)
+  constructor(x, y, up = {}) {
     this.x = x;
     this.y = y;
     this.w = CONFIG.wall.width;
     this.h = CONFIG.wall.height;
-    this.hp = CONFIG.wall.hp;
+    this.hp = CONFIG.wall.hp * (1 + 0.25 * (up.hp || 0));
+    this.thorns = 1 + 0.3 * (up.thorns || 0);
     this.maxHp = this.hp;
     this.hitFlash = 0;
     this.dead = false;

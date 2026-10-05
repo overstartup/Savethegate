@@ -5,48 +5,28 @@
 // The 10 levels inside a stage are still a difficulty ramp (same enemy/
 // duration/interval progression as before), just reskinned with flavor
 // names + art that all belong to that one theme.
-// interval  = seconds between monster clumps (lower = harder)
 // speed     = monster speed multiplier
 // hpMult    = multiplies every spawned monster's base hp (see data/monsters.js)
 // decor     = animated background effect (moving objects)
-// attackers = a FIXED attacker quota for the level — this (not a clock) is
-//             what ends the level: once this many enemies have been sent out
-//             AND every last one of them (plus the boss, if any) is dealt
-//             with, the level clears. Ramps up level-to-level here, then
-//             buildStage() below multiplies it further per stage so Stage 1
-//             opens light and the final stage throws far more (and tougher)
-//             attackers at the gate.
-// Attacker counts bumped up (~1.8x) across the board so every level runs
-// through meaningfully more enemies before it clears — the level is still
-// purely evil-count-based (see buildStage()'s attackersMult below and
-// Spawner.allSpawned() in systems/spawner.js), never a clock; this just
-// raises how many evils that count actually is, so a level takes longer to
-// get through without ever adding an artificial timer.
-// Attacker quotas are now a proper HORDE scale — 500 at level 1, growing
-// ~20% per level within a stage (500 * 1.2^n), landing around 2,580 by
-// level 10. That's a ~27x jump from the old 18-58 range, so two things had
-// to change alongside it or a level would take many minutes to clear:
-//   1. Intervals (seconds between spawn pulses) are roughly halved across
-//      the board — see buildStage() below too — so pulses fire more often.
-//   2. Spawner.update() (systems/spawner.js) no longer picks a small
-//      near-constant clump size — it now sizes each clump off
-//      totalAttackers ÷ a target wave count, so a 500-attacker level and a
-//      2,580-attacker level both resolve in a similar number of pulses,
-//      just with far denser clumps in the bigger one. That's what actually
-//      delivers the "swarm" feel instead of just a much longer grind.
+// attackers = a FIXED attacker quota for the level — once this many have
+//             been sent and every one (plus the boss, if any) is dealt with,
+//             the level clears. Every Shatterling that crosses the gate costs
+//             a heart, so quotas start small and climb step by step; the
+//             spawner (systems/spawner.js) also caps how many are alive at
+//             once so the player is never swamped before they've grown.
+// New enemy types are introduced one at a time (goblins → slimes → bats →
+// skeletons → trolls) so each level teaches one new threat.
 const LEVEL_PROGRESSION = [
-  // A couple of imps from level 1 on, so the "enemies shoot back" mechanic
-  // is visible right away instead of only showing up two levels in.
-  { attackers: 500,  spawns: { goblin: 6, slime: 3, imp: 1 }, interval: 1.33, speed: 1.0, boss: false, movingObstacles: false },
-  { attackers: 600,  spawns: { goblin: 4, slime: 4, imp: 2 }, interval: 1.19, speed: 1.1, boss: false, movingObstacles: false },
-  { attackers: 720,  spawns: { slime: 5, goblin: 3, imp: 2 }, interval: 1.09, speed: 1.2, boss: false, movingObstacles: true },
-  { attackers: 860,  spawns: { goblin: 4, imp: 3, skeleton: 2 }, interval: 0.98, speed: 1.3, boss: true, movingObstacles: true },
-  { attackers: 1040, spawns: { slime: 4, skeleton: 3, imp: 2 }, interval: 0.91, speed: 1.4, boss: false, movingObstacles: true },
-  { attackers: 1240, spawns: { imp: 4, skeleton: 3, troll: 1 }, interval: 0.84, speed: 1.5, boss: false, movingObstacles: true },
-  { attackers: 1490, spawns: { slime: 4, skeleton: 3, troll: 2 }, interval: 0.77, speed: 1.6, boss: true, movingObstacles: true },
-  { attackers: 1790, spawns: { imp: 6, goblin: 3, troll: 2 }, interval: 0.70, speed: 1.7, boss: false, movingObstacles: true },
-  { attackers: 2150, spawns: { imp: 4, skeleton: 4, troll: 3 }, interval: 0.60, speed: 1.85, boss: false, movingObstacles: true },
-  { attackers: 2580, spawns: { imp: 4, skeleton: 4, troll: 4 }, interval: 0.49, speed: 2.0, boss: true, movingObstacles: true },
+  { attackers: 30,  spawns: { goblin: 1 }, speed: 0.8, boss: false, movingObstacles: false },
+  { attackers: 40,  spawns: { goblin: 5, slime: 2 }, speed: 0.85, boss: false, movingObstacles: false },
+  { attackers: 50,  spawns: { goblin: 4, slime: 3, imp: 1 }, speed: 0.9, boss: false, movingObstacles: false },
+  { attackers: 60,  spawns: { goblin: 4, slime: 3, imp: 2, skeleton: 1 }, speed: 0.95, boss: true, movingObstacles: false },
+  { attackers: 75,  spawns: { slime: 4, skeleton: 2, imp: 2, goblin: 2 }, speed: 1.0, boss: false, movingObstacles: true },
+  { attackers: 90,  spawns: { imp: 3, skeleton: 3, troll: 1, goblin: 2 }, speed: 1.05, boss: false, movingObstacles: true },
+  { attackers: 105, spawns: { slime: 3, skeleton: 3, troll: 2, imp: 2 }, speed: 1.1, boss: true, movingObstacles: true },
+  { attackers: 125, spawns: { imp: 4, goblin: 3, troll: 2, skeleton: 2 }, speed: 1.15, boss: false, movingObstacles: true },
+  { attackers: 145, spawns: { imp: 4, skeleton: 4, troll: 3 }, speed: 1.2, boss: false, movingObstacles: true },
+  { attackers: 170, spawns: { imp: 4, skeleton: 4, troll: 4 }, speed: 1.3, boss: true, movingObstacles: true },
 ];
 
 // One theme per stage — sky gradient, animated background decor, and 10
@@ -211,17 +191,11 @@ function buildStage(stageIdx) {
   // a longer clock, so "Stage 5, Level 1" is a real step up from "Stage 1,
   // Level 1" even in its own theme.
   const theme = STAGE_THEMES[stageIdx];
-  const hpMult = +(1 + stageIdx * 0.6).toFixed(2);
-  const speedBump = +(1 + stageIdx * 0.12).toFixed(2);
-  // How much bigger each stage's attacker quota is than Stage 1's. Toned
-  // down further (was +0.35/stage) now that waves are small, readable groups
-  // of 5-20 with genuine per-monster entry timing (see systems/spawner.js) —
-  // that pacing model means total playtime scales directly with attacker
-  // count, so stacking a steep per-stage multiplier on top of Stage 1's own
-  // already-huge 500-2,580 base would have pushed late-stage levels into
-  // 30-40+ minutes each. Cross-stage difficulty now leans on hpMult/speedBump
-  // (tougher, faster enemies) rather than an ever-larger horde.
-  const attackersMult = 1 + stageIdx * 0.03;
+  const hpMult = +(1 + stageIdx * 0.5).toFixed(2);
+  const speedBump = +(1 + stageIdx * 0.06).toFixed(2);
+  // Each later stage sends a few more attackers (+15%/stage) on top of
+  // tougher (hpMult) and slightly faster (speedBump) Shatterlings.
+  const attackersMult = 1 + stageIdx * 0.15;
 
   return LEVEL_PROGRESSION.map((lvl, i) => ({
     ...lvl,
@@ -233,12 +207,6 @@ function buildStage(stageIdx) {
     groundPalette: theme.groundPalette,
     stage: stageIdx + 1,
     attackers: Math.round(lvl.attackers * attackersMult),
-    // Tightens the cadence slightly per stage; floor lowered to 0.3 (was
-    // 0.6) to give later stages room to actually speed up now that their
-    // attacker quotas are so much bigger — see Spawner's wave-count-based
-    // clump sizing (systems/spawner.js), which is what keeps a level's real
-    // duration bounded regardless of how huge totalAttackers gets.
-    interval: +Math.max(0.3, lvl.interval - stageIdx * 0.04).toFixed(2),
     speed: +(lvl.speed * speedBump).toFixed(2),
     hpMult,
     spawns: remapSpawns(lvl.spawns, theme.typeSwap),

@@ -17,15 +17,19 @@ import { resolveCollisions } from './systems/collision.js';
 import { Particles } from './systems/particles.js';
 import { audio } from './systems/audio.js';
 import { renderHUD, buttonAt } from './ui/hud.js';
-import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
+import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, UNIT_DIALOG, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
 import { Announcer } from './ui/announce.js';
 import { LEVELS, WEAPONS, STAGE_SIZE, STAGE_COUNT } from './data/levels.js';
 import { COIN_PACKS } from './data/shop.js';
-import { UPGRADE_MAX, upgradeCost } from './data/upgrades.js';
+import { UNITS, unitLevel, setUnitLevel, statCost, statBonus, unitStats } from './data/upgrades.js';
 import { load, save, submitScore } from './data/save.js';
 import { ads } from './systems/ads.js';
 import { iap } from './systems/iap.js';
 import { backend } from './systems/backend.js';
+import { drawCreature, drawGlow } from './render/creatures.js';
+import { renderAtmosphereBack, renderAtmosphereFront } from './render/atmosphere.js';
+import { applySeparation } from './systems/flocks.js';
+import { createRun, runFire, runUpdate, dropGems, applyPick, rateMult, renderRunWorld, renderXPBar, renderLevelUp, levelUpTap, grantCatchUp } from './systems/runUpgrades.js';
 
 ads.init(); // no-op in a plain browser; activates real AdMob inside the native app
 iap.init(); // no-op in a plain browser; activates real purchases inside the native app
@@ -127,7 +131,6 @@ for (let i = 0; i < 21; i++) {
   img.src = `assets/sprites/gunner/${name}.png`;
   img.onload = () => { SPRITES[name] = img; };
 }
-const MONSTER_SPRITE = { goblin: 'goblin', slime: 'slime', slimeSmall: 'slime', imp: 'imp' };
 
 function drawSprite(name, x, y, size, alpha = 1, flipX = false) {
   const img = SPRITES[name];
@@ -144,30 +147,6 @@ function drawSprite(name, x, y, size, alpha = 1, flipX = false) {
     }
   }
   ctx.globalAlpha = 1;
-}
-
-// Recolors a sprite/image to the current stage's monster palette (see
-// STAGE_THEMES[].monsterTint in data/levels.js) without needing separate art
-// per stage — draws the image normally, then paints the tint color into just
-// its opaque pixels ('source-atop') at partial alpha, so the original art's
-// shading/highlights still show through underneath the new hue. This is
-// what makes the SAME goblin/slime/imp/bat art actually read as "belonging"
-// to Glacial Peak vs. Draconic Peaks vs. The Deepwood, etc., instead of
-// every stage showing identical enemy colors.
-function drawTintedImage(img, x, y, w, h, tint, flipX = false) {
-  if (!img) return;
-  ctx.save();
-  if (flipX) { ctx.translate(x, y); ctx.scale(-1, 1); x = 0; y = 0; }
-  ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
-  if (tint) {
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = tint;
-    ctx.fillRect(x - w / 2, y - h / 2, w, h);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
 }
 
 // --- Environment decor (moving background objects) ---------------
@@ -836,7 +815,7 @@ let mode = 'MENU';
 // screen actually on display (single source of truth, instead of manually
 // scattering show/hide calls next to each mode change).
 function syncBanner() {
-  if (mode === 'PLAYING') ads.hideBanner();
+  if (mode === 'PLAYING' || mode === 'LEVELUP') ads.hideBanner();
   else ads.showBanner();
 }
 syncBanner(); // MENU on load — show immediately
@@ -945,6 +924,7 @@ function startLevel(index) {
   // quiet and the "LEVEL CLEAR!" banner before the dialog cuts in.
   state.levelClearPending = false;
   state.levelClearTimer = 0;
+  if (state.run) { state.run.vacuum = false; state.run.gems = []; }
   // NOTE: state.angels is deliberately NOT reset here — angels are a
   // permanent purchase and carry over from one level to the next.
   makeDecor(def);
@@ -966,9 +946,12 @@ function newGame(startIndex = 0) {
     gateFlash: 0,
     combo: 0, bestCombo: 0, comboTimer: 0,
     levelIndex: idx, levelDef: LEVELS[idx], levelTime: 0,
-    onBoss: () => { audio.crack(); announcer.show('BOSS INCOMING!', 'Defeat it to clear the level!', '#ff5c7a', 2.0); particles.addShake(8); },
+    run: createRun(),
+    onBoss: () => { audio.bossRoar(); announcer.show('BOSS INCOMING!', 'Defeat it to clear the level!', '#ff5c7a', 2.0); particles.addShake(10); },
   };
   startLevel(idx);
+  const boost = grantCatchUp(state.run, state.player, idx);
+  if (boost) announcer.show('VETERAN BOOST!', `+${boost} powers for Level ${idx + 1}`, '#ffd23d', 2.2);
 }
 
 function persistCoins() {
@@ -1005,7 +988,7 @@ function buyWeapon(key) {
     // A wave of cheap goblins gets mostly wiped; the same bomb thrown into
     // a knot of trolls or a boss barely dents it.
     const closestFirst = state.monsters.filter(m => !m.dead).sort((a, b) => b.y - a.y);
-    let budget = WEAPONS.bomb.power;
+    let budget = WEAPONS.bomb.power * statBonus('bomb', 'power', unitLevel(saveData, 'bomb', 'power'));
     let killed = 0;
     for (const m of closestFirst) {
       if (m.power > budget) break; // power exhausted — anything farther is untouched
@@ -1021,11 +1004,11 @@ function buyWeapon(key) {
     audio.gateGood();
     announcer.show('WARD SUMMONED!', 'A crystal sprite joins you — for good!', '#bdeeff', 1.4);
     const side = state.angels.length % 2 === 0 ? 1 : -1;
-    state.angels.push(new Angel(side));
+    state.angels.push(new Angel(side, unitStats(saveData, 'angel')));
     particles.sparkle(state.player.x, state.player.y - 40, '#bdeeff');
   } else if (key === 'shield') {
     audio.gateGood();
-    const dur = WEAPONS.shield.duration;
+    const dur = WEAPONS.shield.duration + statBonus('shield', 'duration', unitLevel(saveData, 'shield', 'duration'));
     announcer.show('SHIELD UP!', `Blocks bullets for ${dur}s`, '#7fd8ff', 1.2);
     state.player.addShield(dur);
     particles.sparkle(state.player.x, state.player.y, '#7fd8ff');
@@ -1058,17 +1041,22 @@ function watchRewardedAd() {
   );
 }
 
-// --- Permanent Guardian upgrades (main menu, persists across runs) -----
-function buyUpgrade(key) {
-  const level = saveData.permanent[key] || 0;
-  if (level >= UPGRADE_MAX) return;
-  const cost = upgradeCost(key, level);
-  if (saveData.coins < cost) { audio.gateCurse(); return; }
+// --- ARMORY: permanent unit upgrades (main menu, persist across runs) ----
+let armorySel = null;    // unit whose upgrade dialog is open
+let armoryFlash = null;  // { unit, stat, t } — pulse on the row just bought
+
+function buyUnitStat(unit, stat) {
+  const def = UNITS[unit].stats[stat];
+  const level = unitLevel(saveData, unit, stat);
+  if (level >= def.max) return;
+  const cost = statCost(unit, stat, level);
+  if ((saveData.coins || 0) < cost) { audio.gateCurse(); openShop(); return; } // short — offer coins
   saveData.coins -= cost;
-  saveData.permanent[key] = level + 1;
+  setUnitLevel(saveData, unit, stat, level + 1);
   save(saveData);
   syncProfile();
-  audio.gateGood();
+  audio.pick();
+  armoryFlash = { unit, stat, t: performance.now() / 1000 };
 }
 
 // --- Remove Ads (one-time IAP) — app-only, same "no-op in a browser tab"
@@ -1140,7 +1128,7 @@ async function buyCoinPack(pack) {
     // home-screen coin pill (no active run, state is null) — credit
     // whichever coin total is live so a purchase from the menu doesn't
     // silently vanish (and isn't lost if a run is in progress either).
-    if (state) {
+    if (state && modeBeforeShop === 'PLAYING') {
       state.coins += pack.coins;
       persistCoins();
     } else {
@@ -1163,6 +1151,7 @@ async function buyCoinPack(pack) {
 // handler, before that page's own buttons.
 function navTap(x, y) {
   if (x === null) return false;
+  if (y >= MENU_BUTTONS.play.y) armorySel = null; // leaving via the nav bar closes any Armory dialog
   if (hit(MENU_BUTTONS.play, x, y)) { mode = 'MENU'; syncBanner(); return true; }
   if (hit(MENU_BUTTONS.upgrades, x, y)) { mode = 'UPGRADES'; syncBanner(); return true; }
   if (hit(MENU_BUTTONS.settings, x, y)) { resetArmed = false; mode = 'SETTINGS'; syncBanner(); return true; }
@@ -1185,9 +1174,19 @@ input.onTap((x, y) => {
 
   if (mode === 'UPGRADES') {
     if (x === null) return;
+    if (armorySel) {
+      if (hit(UNIT_DIALOG.close, x, y)) { armorySel = null; return; }
+      if (hit(UNIT_DIALOG.getCoins, x, y)) { openShop(); return; }
+      const rows = unitDialogRows(armorySel);
+      for (const stat in rows) {
+        if (hit(rows[stat].buy, x, y)) { buyUnitStat(armorySel, stat); return; }
+      }
+      return; // dialog is modal
+    }
     if (navTap(x, y)) return;
-    for (const key in UPGRADE_BUTTONS.buy) {
-      if (hit(UPGRADE_BUTTONS.buy[key], x, y)) buyUpgrade(key);
+    if (hit(UPGRADE_BUTTONS.getCoins, x, y)) { openShop(); return; }
+    for (const unit in UPGRADE_BUTTONS.cards) {
+      if (hit(UPGRADE_BUTTONS.cards[unit], x, y)) { armorySel = unit; audio.gateGood(); return; }
     }
     return;
   }
@@ -1273,7 +1272,10 @@ input.onTap((x, y) => {
     if (mode === 'GAMEOVER' && x !== null && ads.isRewardedReady() && typeof REVIVE_BUTTON !== 'undefined' && hit(REVIVE_BUTTON, x, y)) {
       ads.showRewarded(() => {
         // Reward: Full health and resume!
-        state.player.hp = state.player.maxHp;
+        state.lives = CONFIG.gateHealth;
+        state.player.blood = state.player.maxBlood;
+        state.player.invuln = 2;
+        state.enemyBullets = [];
         mode = 'PLAYING';
         syncBanner();
       }, () => {
@@ -1299,6 +1301,19 @@ input.onTap((x, y) => {
       mode = 'PLAYING';
       syncBanner();
     }
+    return;
+  }
+
+  if (mode === 'LEVELUP') {
+    if (x === null) return;
+    const i = levelUpTap(state.run, x, y);
+    if (i < 0) return;
+    const key = state.run.choices[i];
+    audio.pick();
+    particles.sparkle(CONFIG.width / 2, 300, '#ffd23d', 14);
+    const again = applyPick(state.run, key, state);
+    if (again) audio.levelUp();
+    else { mode = 'PLAYING'; syncBanner(); state.player.invuln = Math.max(state.player.invuln, 0.6); }
     return;
   }
 
@@ -1341,11 +1356,11 @@ input.onRelease((x, y) => {
   }
   const { type, x: px, y: py } = state.placing;
   if (type === 'wall') {
-    state.walls.push(new Wall(px, py));
+    state.walls.push(new Wall(px, py, unitStats(saveData, 'wall')));
     announcer.show('WALL SET!', 'Blocks attackers in its lane', '#c8a06a', 1.1);
     particles.sparkle(px, py, '#c8a06a');
   } else if (type === 'turret') {
-    state.turrets.push(new Turret(px, py));
+    state.turrets.push(new Turret(px, py, unitStats(saveData, 'turret')));
     announcer.show('TURRET SET!', 'Fires on its own until destroyed', '#ffd88a', 1.1);
     particles.sparkle(px, py, '#ffd88a');
   }
@@ -1378,8 +1393,67 @@ input.onRelease((x, y) => {
 });
 
 // --- Collision events (points, coins, lives, juice) --------------
+// Global slow-motion for big moments (elite/boss kills). update() runs on
+// dt * timeScale; it eases back to 1 on its own.
+let timeScale = 1;
+let slowmoT = 0;
+function slowmo(duration, scale = 0.3) {
+  slowmoT = Math.max(slowmoT, duration);
+  timeScale = Math.min(timeScale, scale);
+}
+
+// Single entry point for every non-collision damage source (orbit blades,
+// chain lightning, frost nova) so kills/splits/juice always behave the same.
+function damageMonster(m, dmg) {
+  if (m.dead) return;
+  const children = m.onHit(dmg);
+  if (m.dead) {
+    events.kill(m);
+    if (children) state.monsters.push(...children);
+  } else {
+    events.hit(m);
+  }
+}
+
+// Boss bullet patterns — alternates between a radial burst, an aimed fan,
+// and (once enraged under 50% hp) a rotating double spiral.
+function bossVolley(m) {
+  const st = state;
+  m.volley = (m.volley || 0) + 1;
+  const sp = CONFIG.enemyBullet.speed * (m.enraged ? 0.95 : 0.8);
+  const dmg = Math.round(m.damage * 0.75); // volleys are many bullets — each hits softer
+  const ox = m.x, oy = m.y + m.r * 0.4;
+  const pattern = m.enraged ? m.volley % 3 : m.volley % 2;
+  if (pattern === 0) {
+    const n = m.enraged ? 14 : 10;
+    const off = m.volley * 0.3;
+    for (let i = 0; i < n; i++) {
+      const a = off + (i / n) * Math.PI * 2;
+      st.enemyBullets.push(new EnemyBullet(ox, oy, dmg, Math.cos(a) * sp * 0.75, Math.sin(a) * sp * 0.75, true));
+    }
+  } else if (pattern === 1) {
+    const base = Math.atan2(st.player.y - oy, st.player.x - ox);
+    const n = m.enraged ? 5 : 3;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * 0.22;
+      st.enemyBullets.push(new EnemyBullet(ox, oy, dmg, Math.cos(a) * sp * 1.1, Math.sin(a) * sp * 1.1, true));
+    }
+  } else {
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < 6; i++) {
+        const a = m.volley * 0.5 + k * Math.PI + i * 0.18;
+        st.enemyBullets.push(new EnemyBullet(ox, oy, dmg, Math.cos(a) * sp * 0.7, Math.abs(Math.sin(a)) * sp * 0.7 + 40, true));
+      }
+    }
+  }
+  particles.ring(ox, oy, m.enraged ? '#ff4d5a' : '#e07bff', 40, 0.3, 4);
+  audio.bossShot();
+}
+
 const events = {
-  hit(m) { particles.sparkle(m.x, m.y, '#fff'); },
+  hit(m) {
+    particles.sparkle(m.x, m.y, '#fff', 3);
+  },
 
   kill(m) {
     state.kills++;
@@ -1399,21 +1473,56 @@ const events = {
       state.coins += drop;
     }
     audio.pop(state.combo);
-    particles.poof(m.x, m.y, m.color);
-    particles.scoreText(m.x, m.y - m.r, `+${pts}`);
+    audio.shatter();
+    // Shatterlings break apart into crystal shards in their stage color.
+    const tint = state.levelDef?.monsterTint;
+    const shardColor = tint?.primary || m.color;
+    particles.shatter(m.x, m.y, shardColor, m.r, m.boss ? 40 : m.elite ? 18 : 8);
+    particles.shatter(m.x, m.y, tint?.glow || '#ffffff', m.r * 0.6, m.boss ? 14 : 3);
+    particles.ring(m.x, m.y, tint?.glow || '#ffffff', m.r * 1.8, 0.28, 3);
+    particles.scoreText(m.x, m.y - m.r, `+${pts}`, m.elite ? '#ffd23d' : '#ffe9a8', m.elite || m.boss ? 24 : 16);
+
+    // XP gems (see systems/runUpgrades.js)
+    if (state.run && m.isShip !== true) dropGems(state.run, m.x, m.y, m.boss ? 40 : m.elite ? 10 : m.type === 'troll' ? 3 : m.type === 'skeleton' ? 2 : 1);
+
+    if (m.elite) {
+      slowmo(0.25, 0.35);
+      particles.addShake(5);
+      particles.ring(m.x, m.y, '#ffd23d', 70, 0.45, 5);
+      state.coins += 3;
+      particles.scoreText(m.x, m.y - m.r - 22, '+3 coins', '#ffd23d', 15);
+    }
+    if (m.boss) {
+      slowmo(0.9, 0.2);
+      particles.addShake(12);
+      audio.bigBoom();
+      for (let i = 0; i < 3; i++) particles.ring(m.x, m.y, ['#ffffff', '#ffd23d', '#ff7ad9'][i], 120 + i * 60, 0.6 + i * 0.15, 8 - i * 2);
+      state.enemyBullets.length = 0;
+    }
+
+    // FEVER — a 25+ kill chain supercharges the Guardian for a few seconds.
+    if (state.run && state.combo >= 25 && state.run.feverReady) {
+      state.run.fever = 7;
+      state.run.feverReady = false;
+      audio.fever();
+      announcer.show('FEVER!', 'Rainbow fire unleashed!', '#ff7ad9', 1.3);
+      particles.ring(state.player.x, state.player.y, '#ff7ad9', 160, 0.5, 6);
+    }
   },
 
+  // A Shatterling crossed the gate line — costs one heart, always.
   breach(m) {
+    if (mode !== 'PLAYING') return; // run already ended this frame
     state.lives--;
-    // A breach costs a gate outright. Blood and gates are separate pools
-    // now — a breach no longer refills the blood line (used to reset it to
-    // full here), so whatever buffer is left carries over as-is.
     state.combo = 0;
-    state.gateFlash = 0.35;
+    state.gateFlash = 0.5;
     audio.crack();
     particles.addShake(10);
-    particles.poof(m.x, Math.min(m.y, CONFIG.height - 20), '#ff5c7a');
+    particles.shatter(m.x, CONFIG.gateY, '#ff5c7a', 14, 10);
+    particles.ring(m.x, CONFIG.gateY, '#ff5c7a', 120, 0.45, 6);
+    particles.scoreText(m.x, CONFIG.gateY - 20, '-1 ♥', '#ff5c7a', 22);
     state.player.hurtFlash = 0.4;
+    if (state.lives > 1) announcer.show('GATE BREACHED!', `${state.lives} hearts left`, '#ff5c7a', 1.1);
     if (state.lives === 1) announcer.show('LAST GATE!', 'Protect the gate!', '#ff5c7a', 1.3);
     if (state.lives <= 0) {
       mode = 'GAMEOVER';
@@ -1425,6 +1534,19 @@ const events = {
       ads.showInterstitial(); // ad after losing — the highest-value placement
       syncBanner(); // GAMEOVER screen — banner comes back once the interstitial dismisses
     }
+  },
+
+  // A Shatterling crashed into the Guardian — it explodes (no score), and
+  // the blast hits the blood line hard. Shielded? It just shatters.
+  rammed(m) {
+    particles.shatter(m.x, m.y, m.color, m.r, 8);
+    particles.ring(m.x, m.y, '#ff5d7a', m.r * 2.4, 0.3, 4);
+    const p = state.player;
+    if (p.shieldTime > 0) { events.kill(m); return; }
+    particles.addShake(6);
+    audio.grazed();
+    p.invuln = 0;
+    if (p.takeHit((m.damage || 20) * (m.elite ? 3 : 2))) events.bloodLost(p);
   },
 
   // Every gate is a gift now — no more curse/bad portal. Either a fire-rate
@@ -1464,6 +1586,9 @@ const events = {
   // auto-refills — so it only comes back via a blood-gift gate.
   bloodLost(who) {
     state.lives--;
+    // Losing a heart restores half the blood line — prevents a drained
+    // Guardian from chain-losing every heart in a single bullet volley.
+    if (who === state.player) { who.blood = who.maxBlood * 0.5; who.invuln = 1.5; }
     state.gateFlash = 0.35;
     audio.crack();
     particles.addShake(6);
@@ -1509,6 +1634,7 @@ function update(dt) {
     mapDragging = false;
   }
 
+  if (mode === 'LEVELUP' && state?.run) state.run.choiceT += dt;
   if (mode !== 'PLAYING') return;
   const st = state;
   const def = st.levelDef;
@@ -1539,13 +1665,20 @@ function update(dt) {
     return;
   }
 
-  st.player.update(dt, input);
+  st.player.runRateMult = rateMult(st.run);
+  // window.__autopilot (debug/playtest bot only) can steer instead of touch.
+  const ap = window.__autopilot && window.__autopilot(st);
+  st.player.update(dt, ap ? { targetX: () => ap.x, targetY: () => ap.y } : input);
   if (st.player.tryFire()) {
     const { x: muzzleX, y: muzzleY } = gunnerMuzzle(st.player);
-    st.spells.push(new Spell(muzzleX, muzzleY, st.player.damage));
-    particles.sparkle(muzzleX, muzzleY, '#ffe9a8');
-    particles.addShake(1.5);
+    runFire(st.run, muzzleX, muzzleY, st.player.damage, st.spells);
+    particles.sparkle(muzzleX, muzzleY, st.run.fever > 0 ? `hsl(${(st.levelTime * 400) % 360},100%,70%)` : '#ffe9a8', 2);
+    particles.addShake(0.6);
     audio.zap();
+  }
+  // footstep dust while the Guardian is moving quickly
+  if (Math.hypot(st.player.vx, st.player.vy) > 160 && Math.random() < dt * 30) {
+    particles.dust(st.player.x, st.player.y + st.player.size * 1.2);
   }
 
   for (const a of st.angels) a.update(dt, st.player, st.spells);
@@ -1556,10 +1689,14 @@ function update(dt) {
   st.monsters.forEach((m) => {
     m.update(dt);
     if (m.tryShoot()) {
-      st.enemyBullets.push(new EnemyBullet(m.x, m.y + m.r, m.damage));
-      audio.enemyShot();
+      if (m.boss) bossVolley(m);
+      else {
+        st.enemyBullets.push(new EnemyBullet(m.x, m.y + m.r, m.damage));
+        audio.enemyShot();
+      }
     }
   });
+  applySeparation(st.monsters, dt); // bodies push apart softly, never overlap
   st.obstacles.forEach((o) => o.update(dt));
   st.gates.forEach((g) => g.update(dt));
   st.enemyBullets.forEach((b) => b.update(dt));
@@ -1582,12 +1719,20 @@ function update(dt) {
   st.turrets.forEach((t) => {
     t.update(dt);
     if (t.tryShoot()) {
-      st.spells.push(new Spell(t.x, t.y - t.r, CONFIG.turret.damage));
+      st.spells.push(new Spell(t.x, t.y - t.r, t.damage, { kind: 'turret' }));
       audio.zap();
     }
   });
 
   resolveCollisions(st, events, dt);
+  if (mode !== 'PLAYING') return; // a breach just ended the run
+
+  if (runUpdate(dt, st.run, st, { damageMonster, particles, audio })) {
+    mode = 'LEVELUP';
+    syncBanner();
+    audio.levelUp();
+    particles.ring(st.player.x, st.player.y, '#d27bff', 120, 0.5, 6);
+  }
 
   st.enemyBullets = st.enemyBullets.filter((b) => !b.dead);
   st.ships = st.ships.filter((sh) => !sh.dead);
@@ -1596,7 +1741,7 @@ function update(dt) {
 
   if (st.comboTimer > 0) {
     st.comboTimer -= dt;
-    if (st.comboTimer <= 0) st.combo = 0;
+    if (st.comboTimer <= 0) { st.combo = 0; if (st.run.fever <= 0) st.run.feverReady = true; }
   }
   if (st.bombFlash > 0) st.bombFlash -= dt;
   if (st.gateFlash > 0) st.gateFlash -= dt;
@@ -1630,9 +1775,10 @@ function update(dt) {
 
   if (st.levelClearPending) {
     st.levelClearTimer -= dt;
+    st.run.vacuum = true; // pull every remaining gem in before the dialog
   }
 
-  if (st.levelClearPending && st.levelClearTimer <= 0) {
+  if (st.levelClearPending && st.levelClearTimer <= 0 && mode === 'PLAYING') {
     st.levelClearPending = false;
     if (st.levelIndex >= LEVELS.length - 1) {
       mode = 'VICTORY';
@@ -1738,142 +1884,6 @@ function drawGateWall(ctx, state) {
     ctx.fillRect(0, y0 - 6, CONFIG.width, barH + 12);
   }
 }
-
-// --- Distinct procedural shapes for the non-sprite Shatterlings -----------
-// skeleton/troll/ogreBoss used to all share one generic "circle with two
-// eyes" fallback — the only thing that changed between them was fill color.
-// Each now gets its own real silhouette, still pure canvas vector art (no
-// new image assets needed), and all three take a `tint` = the active
-// stage's monsterTint.primary/dark/glow so they read as belonging to
-// whichever environment they're currently marching through.
-
-// Skeleton — tall, narrow, boxy: a skull, a ribcage of horizontal bars, and
-// crossed bone-like arms. Reads as gaunt/disciplined next to the troll's
-// bulk, matching its "steady, marching" movement personality.
-function drawSkeletonShape(m, tint) {
-  const bone = tint?.primary || '#cfe8f0';
-  const dark = tint?.dark || '#2a3a40';
-  const glow = tint?.glow || '#eaffff';
-  const r = m.r;
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.14);
-  ctx.lineCap = 'round';
-  // crossed arms behind the ribcage
-  ctx.strokeStyle = bone;
-  ctx.beginPath(); ctx.moveTo(-r * 0.75, -r * 0.05); ctx.lineTo(r * 0.55, r * 0.55); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(r * 0.75, -r * 0.05); ctx.lineTo(-r * 0.55, r * 0.55); ctx.stroke();
-  // ribcage — a few horizontal bars over a narrow torso
-  ctx.fillStyle = 'rgba(0,0,0,0.001)'; // (torso is implied by the ribs only, no fill — gaunt look)
-  ctx.strokeStyle = bone;
-  ctx.lineWidth = Math.max(1.5, r * 0.1);
-  for (let i = 0; i < 3; i++) {
-    const y = -r * 0.05 + i * r * 0.22;
-    const w = r * (0.52 - i * 0.08);
-    ctx.beginPath(); ctx.moveTo(-w, y); ctx.lineTo(w, y); ctx.stroke();
-  }
-  // spine
-  ctx.beginPath(); ctx.moveTo(0, -r * 0.15); ctx.lineTo(0, r * 0.6); ctx.stroke();
-  // skull
-  ctx.fillStyle = bone;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.1);
-  ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  // jaw
-  ctx.beginPath(); ctx.roundRect(-r * 0.22, -r * 0.28, r * 0.44, r * 0.18, 3); ctx.fill(); ctx.stroke();
-  // glowing eye sockets
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(-r * 0.16, -r * 0.58, r * 0.1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.16, -r * 0.58, r * 0.1, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-}
-
-// Troll — big, hunched, asymmetric silhouette with heavy shoulders and a
-// club, matching its slow/heavy movement personality (low freq, wide amp
-// lumbering sway in data/monsters.js).
-function drawTrollShape(m, tint) {
-  const skin = tint?.primary || '#6a5c9e';
-  const dark = tint?.dark || '#2a2048';
-  const glow = tint?.glow || '#e2c8ff';
-  const r = m.r;
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  // club, held low and behind
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(3, r * 0.16);
-  ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(r * 0.7, r * 0.1); ctx.lineTo(r * 1.15, r * 0.75); ctx.stroke();
-  ctx.fillStyle = dark;
-  ctx.beginPath(); ctx.ellipse(r * 1.18, r * 0.8, r * 0.22, r * 0.15, 0.6, 0, Math.PI * 2); ctx.fill();
-  // hunched body — wider at the shoulders than the waist, lopsided
-  ctx.fillStyle = skin;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2.5, r * 0.1);
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.85, r * 0.15);
-  ctx.quadraticCurveTo(-r * 0.95, -r * 0.35, -r * 0.35, -r * 0.55);
-  ctx.quadraticCurveTo(r * 0.15, -r * 0.7, r * 0.6, -r * 0.35);
-  ctx.quadraticCurveTo(r * 0.95, -r * 0.05, r * 0.7, r * 0.35);
-  ctx.quadraticCurveTo(r * 0.5, r * 0.75, -r * 0.1, r * 0.8);
-  ctx.quadraticCurveTo(-r * 0.7, r * 0.75, -r * 0.85, r * 0.15);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  // small sunken eyes, low brow
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(-r * 0.1, -r * 0.15, r * 0.09, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.28, -r * 0.2, r * 0.09, 0, Math.PI * 2); ctx.fill();
-  // brow ridge + tusk
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.08);
-  ctx.beginPath(); ctx.moveTo(-r * 0.25, -r * 0.28); ctx.lineTo(r * 0.4, -r * 0.35); ctx.stroke();
-  ctx.fillStyle = '#fff8ec';
-  ctx.beginPath(); ctx.moveTo(r * 0.1, r * 0.05); ctx.lineTo(r * 0.18, r * 0.22); ctx.lineTo(r * 0.02, r * 0.15); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
-// Boss (ogreBoss) — a bigger, more ominous silhouette: broad horned
-// shoulders, a wide snarling head, glowing eyes, and a rim-light outline so
-// it reads as the level's threat centerpiece at a glance.
-function drawBossShape(m, tint) {
-  const skin = tint?.primary || '#7a3fa0';
-  const dark = tint?.dark || '#2a1040';
-  const glow = tint?.glow || '#ffd23d';
-  const r = m.r;
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  // rim-light halo — makes the boss pop out of a busy screen
-  ctx.strokeStyle = glow;
-  ctx.globalAlpha = 0.35;
-  ctx.lineWidth = r * 0.22;
-  ctx.beginPath(); ctx.arc(0, 0, r * 0.95, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 1;
-  // broad body
-  ctx.fillStyle = skin;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(3, r * 0.08);
-  ctx.beginPath();
-  ctx.ellipse(0, r * 0.1, r * 0.82, r * 0.72, 0, 0, Math.PI * 2);
-  ctx.fill(); ctx.stroke();
-  // horns
-  ctx.fillStyle = dark;
-  ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.45); ctx.lineTo(-r * 0.78, -r * 0.95); ctx.lineTo(-r * 0.28, -r * 0.55); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(r * 0.5, -r * 0.45); ctx.lineTo(r * 0.78, -r * 0.95); ctx.lineTo(r * 0.28, -r * 0.55); ctx.closePath(); ctx.fill();
-  // glowing eyes
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(-r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
-  // snarling mouth with tusks
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.06);
-  ctx.beginPath(); ctx.moveTo(-r * 0.32, r * 0.32); ctx.quadraticCurveTo(0, r * 0.48, r * 0.32, r * 0.32); ctx.stroke();
-  ctx.fillStyle = '#fff8ec';
-  ctx.beginPath(); ctx.moveTo(-r * 0.24, r * 0.34); ctx.lineTo(-r * 0.16, r * 0.5); ctx.lineTo(-r * 0.08, r * 0.34); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(r * 0.24, r * 0.34); ctx.lineTo(r * 0.16, r * 0.5); ctx.lineTo(r * 0.08, r * 0.34); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
-const SHAPE_MONSTERS = { skeleton: drawSkeletonShape, troll: drawTrollShape, ogreBoss: drawBossShape };
 
 // --- Obstacle ("falling stone") shapes, one per stage decor -------------
 // These used to be one identical purple rounded rect with a rune everywhere.
@@ -2015,71 +2025,27 @@ function drawObstacle(o, def) {
 
 // --- Render ------------------------------------------------------
 function drawMonster(m) {
-  const sprite = MONSTER_SPRITE[m.type];
-  const size = m.r * 2.4;
-  const batImg = m.type === 'imp' && BAT_FRAMES.length
-    ? BAT_FRAMES[Math.floor(m.wobble * 1.5) % BAT_FRAME_COUNT]
-    : null;
-  // Current stage's enemy palette (see STAGE_THEMES[].monsterTint in
-  // data/levels.js, threaded onto each level def by buildStage()) — falls
-  // back to undefined (no tint applied) outside of an active level, e.g.
-  // on the sticker/menu preview paths that also happen to call drawMonster.
+  // Fully procedural, animated Shatterlings (see render/creatures.js): walk
+  // cycles, blinking eyes that track the Guardian, lean into turns, squash
+  // + knockback on hit, glowing shot wind-ups. The flying imp keeps its
+  // hand-made bat wing-flap frames, now tinted correctly per stage.
   const tint = state?.levelDef?.monsterTint;
-  const shapeFn = SHAPE_MONSTERS[m.type];
-  // Per-type squash-and-stretch bob (m.bobAmp — see MONSTERS.<type>.movement
-  // in data/monsters.js) layered on top of the actual path movement, so
-  // every monster reads as alive/bouncing in place even during the eased
-  // straight stretches of its path, not just when it's curving.
-  const bobActive = (m.bobAmp || 0) > 0;
-  if (bobActive) {
-    const s = Math.sin(m.wobble * 2.2);
-    ctx.save();
-    ctx.translate(m.x, m.y);
-    ctx.scale(1 - s * m.bobAmp * 0.4, 1 + s * m.bobAmp);
-    ctx.translate(-m.x, -m.y);
+  const p = state?.player;
+  let look = { x: 0, y: 1 };
+  if (p) {
+    const dx = p.x - m.x, dy = p.y - m.y, d = Math.hypot(dx, dy) || 1;
+    look = { x: dx / d, y: dy / d };
   }
-  if (batImg) {
-    // Animated ice-bat wing-flap cycle (user-supplied AI art) for the
-    // flying "imp" enemy, instead of one rigid static sprite — driven by
-    // the monster's own wobble phase so a clump of imps doesn't flap in
-    // lockstep, and freezes correctly whenever the game is paused. Tinted
-    // per-stage the same way as the other sprite-based enemies.
-    const bw = size * (batImg.width / batImg.height);
-    drawTintedImage(batImg, m.x, m.y, bw, size, tint);
-  } else if (sprite && SPRITES[sprite]) {
-    drawTintedImage(SPRITES[sprite], m.x, m.y, size, size, tint);
-  } else if (shapeFn) {
-    // skeleton / troll / ogreBoss — dedicated procedural silhouettes
-    // instead of the old shared "circle with two eyes" placeholder.
-    shapeFn(m, tint);
-  } else {
-    ctx.fillStyle = m.color;
-    ctx.strokeStyle = '#2a1f4d';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(m.x - m.r * 0.3, m.y - m.r * 0.15, m.r * 0.18, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(m.x + m.r * 0.3, m.y - m.r * 0.15, m.r * 0.18, 0, 7); ctx.fill();
-    ctx.fillStyle = '#2a1f4d';
-    ctx.beginPath(); ctx.arc(m.x - m.r * 0.3, m.y - m.r * 0.12, m.r * 0.09, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(m.x + m.r * 0.3, m.y - m.r * 0.12, m.r * 0.09, 0, 7); ctx.fill();
-  }
-  if (bobActive) ctx.restore();
-  if (m.hitFlash > 0) {
-    ctx.globalAlpha = m.hitFlash * 6;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  }
+  const batImg = m.type === 'imp' && BAT_FRAMES.length
+    ? BAT_FRAMES[Math.floor(m.anim * 1.2 + m.seed) % BAT_FRAME_COUNT]
+    : null;
+  drawCreature(ctx, m, tint, state ? state.levelTime : performance.now() / 1000, look, batImg);
   // Blood-line: every enemy that takes more than one hit shows it, always
   // visible (not just after first damage) so toughness reads at a glance in
   // later stages. Low hp counts use tiny pips (matches the wizard/ward
   // motif); very tanky late-stage enemies (trolls, bosses) fall back to a
   // slim bar so the row doesn't overflow the sprite.
-  if (m.maxHp > 1) {
+  if (m.maxHp > 1 && !m.boss) {
     const py = m.y - m.r - 9;
     if (m.maxHp <= 8) {
       const pipW = 4, gap = 1.5;
@@ -2261,6 +2227,75 @@ function drawTurret(t) {
   }
 }
 
+function drawSpell(s) {
+  const ang = Math.atan2(s.vx, -s.vy);
+  let col, core = '#ffffff';
+  if (s.kind === 'fever') col = `hsl(${(s.hue + s.age * 600) % 360},100%,62%)`;
+  else if (s.kind === 'seeker') col = '#ff9a3d';
+  else if (s.kind === 'turret') col = '#ffd23d';
+  else col = '#7fd8ff';
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(ang);
+  // trail
+  const len = s.kind === 'seeker' ? 20 : 26;
+  const grad = ctx.createLinearGradient(0, 0, 0, len);
+  grad.addColorStop(0, col);
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = s.r * 0.9;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, len); ctx.lineTo(0, 0); ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  drawGlow(ctx, s.x, s.y, s.r * 1.7, s.kind === 'fever' ? '#ff7ad9' : col, 0.45);
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(ang);
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  if (s.kind === 'seeker') {
+    ctx.roundRect(-3, -8, 6, 14, 3);
+  } else {
+    ctx.moveTo(0, -s.r * 1.3); ctx.lineTo(s.r * 0.45, 0); ctx.lineTo(0, s.r * 0.9); ctx.lineTo(-s.r * 0.45, 0);
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.ellipse(0, -s.r * 0.15, s.r * 0.18, s.r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  if (s.kind === 'seeker' && Math.random() < 0.5) particles.dust(s.x, s.y, 'rgba(255,200,150,0.5)');
+}
+
+// Boss health bar under the top HUD while a boss is alive.
+function drawBossBar(st) {
+  const boss = st.monsters.find((m) => m.boss && !m.dead);
+  if (!boss) return;
+  const x = 90, w = CONFIG.width - 180, y = 104, h = 10;
+  const frac = Math.max(0, boss.hp / boss.maxHp);
+  boss._shownFrac = boss._shownFrac === undefined ? frac : boss._shownFrac + (frac - boss._shownFrac) * 0.08;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,4,20,0.75)';
+  ctx.beginPath(); ctx.roundRect(x - 3, y - 3, w + 6, h + 6, 8); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.roundRect(x, y, w * boss._shownFrac, h, 6); ctx.fill();
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, boss.enraged ? '#ff2d4a' : '#b358e0');
+  grad.addColorStop(1, boss.enraged ? '#ff8a3d' : '#ff5c9a');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.roundRect(x, y, Math.max(0.01, w * frac), h, 6); ctx.fill();
+  ctx.font = '13px "Luckiest Guy", Arial';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#1a0d30';
+  const label = boss.enraged ? 'BRUNCLE — ENRAGED!' : 'BRUNCLE, THE GATE-BREAKER';
+  ctx.strokeText(label, CONFIG.width / 2, y - 6);
+  ctx.fillStyle = boss.enraged ? '#ff8a8a' : '#ffd23d';
+  ctx.fillText(label, CONFIG.width / 2, y - 6);
+  ctx.restore();
+}
+
 function render() {
   ctx.save();
   if (particles.shake > 0.3) {
@@ -2284,7 +2319,7 @@ function render() {
 
   if (mode === 'UPGRADES') {
     renderBackground(LEVELS[0], 0);
-    renderUpgrades(ctx, saveData);
+    renderUpgrades(ctx, saveData, armorySel, performance.now() / 1000, SPRITES.gunner_07, armoryFlash);
     ctx.restore();
     return;
   }
@@ -2300,7 +2335,7 @@ function render() {
   // there's no `state` to draw gameplay behind it. Render it as its own
   // plain page instead of falling through to the PLAYING-mode gameplay
   // render below (which would crash reading state.levelDef on null).
-  if (mode === 'SHOP' && !state) {
+  if (mode === 'SHOP' && (!state || modeBeforeShop !== 'PLAYING')) {
     renderBackground(LEVELS[0], 0);
     renderShop(ctx, { coins: saveData.coins || 0 }, iap.enabled);
     ctx.restore();
@@ -2316,6 +2351,7 @@ function render() {
 
   const st = state;
   renderBackground(st.levelDef, st.levelTime);
+  renderAtmosphereBack(ctx, st.levelDef, st.levelTime);
 
   // Obstacles — each stage gets its own drifting hazard silhouette (see
   // drawObstacle above) instead of one identical purple rune block.
@@ -2349,28 +2385,13 @@ function render() {
     ctx.fillText(g.kind === 'blood' ? '♥' : `×${g.mult}`, g.x, g.y + 5);
   }
 
-  // Spells — a short trailing glow behind each shard makes rapid fire read
-  // as a solid stream of light instead of separate faint dots.
-  for (const s of st.spells) {
-    ctx.save();
-    const grad = ctx.createLinearGradient(s.x, s.y, s.x, s.y + 26);
-    grad.addColorStop(0, 'rgba(154, 230, 255, 0)');
-    grad.addColorStop(1, 'rgba(154, 230, 255, 0.5)');
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = s.r * 0.9;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y + 26);
-    ctx.lineTo(s.x, s.y);
-    ctx.stroke();
-    ctx.restore();
+  // Spells — glowing crystal bolts oriented along their flight path, with a
+  // light trail. FEVER bolts cycle through the rainbow; seekers are orange
+  // missiles with a smoke tail; turret shots are golden.
+  for (const sp of st.spells) drawSpell(sp);
 
-    if (SPRITES['fireball']) drawSprite('fireball', s.x, s.y, s.r * 4.4);
-    else {
-      ctx.fillStyle = '#ff8a3d';
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+  // XP gems (under the monsters so the horde stays readable)
+  renderRunWorld(ctx, { ...st.run, picks: {} }, st.player, st.levelTime);
 
   // Ships (Sea War only) — drawn before monsters so falling Shatterlings
   // read as being in front of/closer than the ships out on the water.
@@ -2410,12 +2431,12 @@ function render() {
 
   // Enemy bullets (dark bolts — visually distinct from the wizard's orange fire)
   for (const b of st.enemyBullets) {
-    ctx.fillStyle = '#b358e0';
-    ctx.strokeStyle = '#3d1f5c';
-    ctx.lineWidth = 1.5;
+    const pulse = 1 + Math.sin(b.age * 14) * 0.15;
+    drawGlow(ctx, b.x, b.y, b.r * 2.6 * pulse, b.big ? '#ff4d8a' : '#c25cff', 0.75);
+    ctx.fillStyle = b.big ? '#ffd0e4' : '#f0d4ff';
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
+    ctx.arc(b.x, b.y, b.r * 0.55 * pulse, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Angels
@@ -2440,31 +2461,55 @@ function render() {
     ctx.restore();
   }
 
-  // Automaton Gunner (p declared above, at the shield-ring check)
+  // Automaton Gunner — 2-frame firing cycle, plus motion: leans into its
+  // movement, kicks back on every shot (recoil squash), hovers on a soft
+  // ground shadow, and flashes a muzzle star when it fires.
   if (p.hurtFlash > 0 && Math.floor(p.hurtFlash * 12) % 2 === 0) ctx.globalAlpha = 0.5;
-
-  // Simple 2-frame animation: just alternates between two clean "aiming
-  // up" gunner frames on a fixed clock, no wobble/sway/tilt/bob layered on
-  // top — kept intentionally minimal per request.
+  if (p.invuln > 0 && p.hurtFlash <= 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.6;
   const gunnerSprite = Math.floor(st.levelTime * 6) % 2 === 0 ? 'gunner_07' : 'gunner_08';
   {
     const img = SPRITES[gunnerSprite];
+    const footY = p.y + p.size * 1.25;
+    const prevA = ctx.globalAlpha;
+    ctx.globalAlpha = 0.28 * prevA;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(p.x, footY + 2, p.size * 0.55, p.size * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = prevA;
     if (img) {
-      // These sprites are tall/narrow (not square), and the two frames
-      // aren't the same height (the firing frame's flame sticks up higher)
-      // — scale by width only and anchor the FEET at a fixed line so the
-      // character doesn't appear to bob between frames, only the flame
-      // grows taller.
+      // Tall/narrow frames — scale by width, anchor the FEET on a fixed line.
       const dispW = p.size * GUNNER_DISP_MULT;
       const dispH = dispW * (img.naturalHeight / img.naturalWidth);
-      const footY = p.y + p.size * 1.25;
+      const lean = Math.max(-0.22, Math.min(0.22, p.vx / 1600));
+      const kick = p.recoil * p.recoil;
       ctx.save();
       ctx.translate(p.x, footY);
+      ctx.rotate(lean);
+      ctx.scale(1 + kick * 0.05, 1 - kick * 0.06);
       if (p.facing === -1) ctx.scale(-1, 1);
       ctx.drawImage(img, -dispW / 2, -dispH, dispW, dispH);
       ctx.restore();
     }
+    if (p.recoil > 0.55) {
+      const mz = gunnerMuzzle(p);
+      const f = (p.recoil - 0.55) / 0.45;
+      const col = st.run.fever > 0 ? `hsl(${(st.levelTime * 400) % 360},100%,70%)` : '#ffe9a8';
+      drawGlow(ctx, mz.x, mz.y, 10 + f * 10, st.run.fever > 0 ? '#ff7ad9' : col, f); // fixed key — glow sprites are cached per color
+      ctx.save();
+      ctx.translate(mz.x, mz.y);
+      ctx.rotate(st.levelTime * 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = f;
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const rr = i % 2 === 0 ? 7 * f + 2 : 2;
+        ctx.lineTo(Math.cos((i / 8) * Math.PI * 2) * rr, Math.sin((i / 8) * Math.PI * 2) * rr);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
   }
+  // Orbit blades circle the Guardian (drawn over him)
+  renderRunWorld(ctx, { ...st.run, gems: [] }, p, st.levelTime);
 
   ctx.globalAlpha = 1;
 
@@ -2505,9 +2550,12 @@ function render() {
     ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
   }
 
+  renderAtmosphereFront(ctx, st, st.levelTime, st.run.fever);
   particles.render(ctx);
   announcer.render(ctx);
   renderHUD(ctx, st, ads.isRewardedReady());
+  renderXPBar(ctx, st.run);
+  drawBossBar(st);
 
   if (mode === 'LEVELCLEAR') renderLevelClear(ctx, st, LEVELS[st.levelIndex + 1].name);
   if (mode === 'VICTORY') renderVictory(ctx, st, saveData.best || 0);
@@ -2515,18 +2563,55 @@ function render() {
   if (mode === 'SHOP') renderShop(ctx, st, iap.enabled);
   if (mode === 'PAUSED') renderPause(ctx);
   if (mode === 'PLAYING' && st.placePaused && !st.placing) renderPlacementBanner(ctx);
+  if (mode === 'LEVELUP') renderLevelUp(ctx, st.run, performance.now() / 1000);
 
   ctx.restore();
 }
 
 // Debug/test hook (harmless in production)
-window.__game = { get mode() { return mode; }, get state() { return state; }, buyWeapon };
+window.__game = {
+  get mode() { return mode; }, get state() { return state; }, buyWeapon,
+  start(i = 0) { newGame(i); mode = 'PLAYING'; syncBanner(); },
+  pick(i = 0) {
+    if (mode !== 'LEVELUP') return false;
+    const again = applyPick(state.run, state.run.choices[i], state);
+    if (!again) { mode = 'PLAYING'; syncBanner(); }
+    return true;
+  },
+  next() { if (mode === 'LEVELCLEAR') { startLevel(state.levelIndex + 1); mode = 'PLAYING'; syncBanner(); } },
+  // Steps + renders one frame (for driving the game when rAF is throttled).
+  frame(dt = 1 / 60) { update(dt); particles.update(dt); announcer.update(dt); render(); },
+  // Headless fast-forward for balance testing: steps the simulation without
+  // rendering. picker(choices) → index decides level-up cards.
+  sim(seconds, picker = () => 0) {
+    const steps = Math.round(seconds * 60);
+    // muted while fast-forwarding: hundreds of synth blips per second would
+    // pile up as audio nodes (and stall the page if audio isn't unlocked yet)
+    const wasMuted = audio.isMuted();
+    audio.setMuted(true);
+    try {
+      for (let i = 0; i < steps; i++) {
+        if (mode === 'LEVELUP') this.pick(picker(state.run.choices));
+        else if (mode === 'LEVELCLEAR') this.next();
+        else if (mode !== 'PLAYING') break;
+        update(1 / 60);
+        particles.update(1 / 60);
+      }
+    } finally {
+      audio.setMuted(wasMuted);
+    }
+    return mode;
+  },
+};
 
 // --- Loop --------------------------------------------------------
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const rawDt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  if (slowmoT > 0) slowmoT -= rawDt;
+  else timeScale += (1 - timeScale) * Math.min(1, rawDt * 6);
+  const dt = rawDt * timeScale;
   update(dt);
   particles.update(dt);
   announcer.update(dt);

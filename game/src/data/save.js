@@ -12,6 +12,7 @@ export function load() {
       ...d,
       ...raw,
       permanent: { ...d.permanent, ...(raw.permanent || {}) },
+      units: { ...d.units, ...(raw.units || {}) },
       leaderboard: Array.isArray(raw.leaderboard) ? raw.leaderboard : d.leaderboard,
       progress: { ...d.progress, ...(raw.progress || {}) },
       settings: { ...d.settings, ...(raw.settings || {}) },
@@ -54,7 +55,9 @@ function defaults() {
     // Permanent meta-upgrades, bought with coins from the main-menu Upgrades
     // screen (separate from the in-run coin shop). Each is a level 0..UPGRADE_MAX
     // (see data/upgrades.js) that persists across every run.
-    permanent: { power: 0, speed: 0, fireRate: 0 },
+    permanent: { power: 0, speed: 0, fireRate: 0, blood: 0 },
+    // Armory levels for every other unit: { angel: { power, fireRate, blood }, ... }
+    units: {},
     // Stickers are heroes/tools the player owns. They provide stats like blood (HP) and damage.
     stickers: [{ id: 'hero1', name: 'Starter Hero', blood: 200, damage: 120, equipped: true }],
     streak: { wins: 0, losses: 0 },  // for adaptive difficulty

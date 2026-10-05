@@ -5,11 +5,14 @@
 import { CONFIG } from '../config.js';
 
 export class Turret {
-  constructor(x, y) {
+  // up = Armory levels { power, fireRate, hp } (data/upgrades.js)
+  constructor(x, y, up = {}) {
     this.x = x;
     this.y = y;
     this.r = CONFIG.turret.size / 2;
-    this.hp = CONFIG.turret.hp;
+    this.damage = CONFIG.turret.damage * (1 + 0.25 * (up.power || 0));
+    this.fireInterval = CONFIG.turret.fireRate / (1 + 0.1 * (up.fireRate || 0));
+    this.hp = CONFIG.turret.hp * (1 + 0.25 * (up.hp || 0));
     this.maxHp = this.hp;
     this.hitFlash = 0;
     this.dead = false;
@@ -26,7 +29,7 @@ export class Turret {
   tryShoot() {
     if (this.dead) return false;
     if (this.shootTimer <= 0) {
-      this.shootTimer = CONFIG.turret.fireRate;
+      this.shootTimer = this.fireInterval;
       this.barrelRecoil = 1;
       return true;
     }

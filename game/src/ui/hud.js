@@ -27,6 +27,7 @@ export const BUTTONS = {
 // Hearts moved down to y=46 (from the old y=14) to make room for the pause
 // button now sitting in that top-right corner above them.
 const HEART_Y = 46;
+let comboShown = 0, comboPop = 0;
 
 export function buttonAt(x, y) {
   for (const k in BUTTONS) {
@@ -322,7 +323,7 @@ export function renderHUD(ctx, state, adsReady = false) {
 
   // Lives (top-right, below the pause button)
   for (let i = 0; i < CONFIG.gateHealth; i++) {
-    heart(ctx, CONFIG.width - 26 - i * 30, HEART_Y, 20, i < state.lives);
+    heart(ctx, CONFIG.width - 22 - i * 25, HEART_Y, 18, i < state.lives);
   }
 
   // Pause button (top-right corner)
@@ -339,11 +340,33 @@ export function renderHUD(ctx, state, adsReady = false) {
   }
 
   // Combo
+  // Combo — punchy counter that pops on every kill and heats up from icy
+  // blue toward hot pink as it nears the FEVER threshold (25).
+  if (state.combo !== comboShown) { if (state.combo > comboShown) comboPop = 1; comboShown = state.combo; }
+  comboPop *= 0.88;
   if (state.combo >= 3) {
+    const heat = Math.min(1, state.combo / 25);
+    const col = `hsl(${195 + heat * 135},100%,${65 + heat * 5}%)`;
+    const sc = 1 + comboPop * 0.45;
+    ctx.save();
+    ctx.translate(16, 92);
+    ctx.scale(sc, sc);
     ctx.textAlign = 'left';
-    ctx.font = `17px ${F_BODY}`;
-    ctx.fillStyle = '#7fd8ff';
-    ctx.fillText(`combo ×${state.combo}`, 14, 82);
+    ctx.font = `24px ${F_TITLE}`;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(20,10,40,0.8)';
+    ctx.strokeText(`×${state.combo}`, 0, 0);
+    ctx.fillStyle = col;
+    ctx.fillText(`×${state.combo}`, 0, 0);
+    ctx.restore();
+    ctx.font = `11px ${F_TITLE}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.textAlign = 'left';
+    ctx.fillText('COMBO', 16, 104);
+    // combo timer bar — how long until the chain drops
+    const tw = 54 * Math.max(0, Math.min(1, state.comboTimer / 1.2));
+    ctx.fillStyle = col;
+    ctx.fillRect(16, 108, tw, 3);
   }
 
   // Active gate effect
