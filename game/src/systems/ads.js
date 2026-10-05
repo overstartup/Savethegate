@@ -73,11 +73,25 @@ export const ads = {
       return; // running in a normal browser tab — ads stay disabled
     }
     try {
-      const core = await import('@capacitor-community/admob');
-      AdMob = core.AdMob;
-      BannerAdPosition = core.BannerAdPosition;
-      BannerAdSize = core.BannerAdSize;
+      // The game ships as one inlined HTML file with no bundler, so a bare
+      // `import('@capacitor-community/admob')` can't resolve inside the
+      // WebView. Capacitor registers every native plugin on
+      // window.Capacitor.Plugins, so use that. The enum values are plain strings.
+      AdMob = window.Capacitor.Plugins?.AdMob;
+      if (!AdMob) throw new Error('AdMob plugin not registered');
+      BannerAdPosition = { BOTTOM_CENTER: 'BOTTOM_CENTER' };
+      BannerAdSize = { ADAPTIVE_BANNER: 'ADAPTIVE_BANNER' };
       platform = window.Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+
+      // iOS 14+: ask for App Tracking Transparency before the first ad
+      // request (App Store requirement when ads use the IDFA). Declining
+      // still serves ads, just non-personalized ones.
+      if (platform === 'ios') {
+        try {
+          const { status } = await AdMob.trackingAuthorizationStatus();
+          if (status === 'notDetermined') await AdMob.requestTrackingAuthorization();
+        } catch { /* older plugin / iOS — ignore */ }
+      }
 
       await AdMob.initialize({
         testingDevices: [],
