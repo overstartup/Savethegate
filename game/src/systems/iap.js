@@ -2,7 +2,8 @@ import { API_BASE_URL } from './backend.js';
 
 let storeReady = false;
 
-// Direct Google Play Billing Integration via cordova-plugin-purchase (CdvPurchase).
+// Direct store integration via cordova-plugin-purchase (CdvPurchase):
+// Google Play Billing on Android, StoreKit (App Store) on iOS.
 export const iap = {
   enabled: false,
 
@@ -13,19 +14,27 @@ export const iap = {
 
     try {
       const { store, Platform, ProductType } = window.CdvPurchase;
+      const isIOS = window.Capacitor.getPlatform() === 'ios';
+      const storePlatform = isIOS ? Platform.APPLE_APPSTORE : Platform.GOOGLE_PLAY;
 
-      // Register all the Google Play products
+      // Register all products. Product IDs must match exactly in both
+      // Google Play Console and App Store Connect.
       store.register([
-        { id: 'remove_ads', type: ProductType.NON_RENEWING_SUBSCRIPTION, platform: Platform.GOOGLE_PLAY },
-        { id: 'coins_small', type: ProductType.CONSUMABLE, platform: Platform.GOOGLE_PLAY },
-        { id: 'coins_medium', type: ProductType.CONSUMABLE, platform: Platform.GOOGLE_PLAY },
-        { id: 'coins_large', type: ProductType.CONSUMABLE, platform: Platform.GOOGLE_PLAY },
+        // App Store: a one-time unlock must be a Non-Consumable to be restorable.
+        { id: 'remove_ads', type: isIOS ? ProductType.NON_CONSUMABLE : ProductType.NON_RENEWING_SUBSCRIPTION, platform: storePlatform },
+        { id: 'coins_small', type: ProductType.CONSUMABLE, platform: storePlatform },
+        { id: 'coins_medium', type: ProductType.CONSUMABLE, platform: storePlatform },
+        { id: 'coins_large', type: ProductType.CONSUMABLE, platform: storePlatform },
       ]);
 
-      // When a purchase is approved by Google Play, verify it with our C# backend
+      // When a purchase is approved by the store, verify it with our C# backend
       store.when().approved(async (transaction) => {
         try {
-          const token = transaction.products[0].transactionId || transaction.transactionId;
+          // Google: the purchase token. Apple: the base64 app receipt, which
+          // the backend posts to Apple's verifyReceipt endpoint.
+          const token = isIOS
+            ? transaction.parentReceipt?.nativeData?.appStoreReceipt
+            : (transaction.products[0].transactionId || transaction.transactionId);
           const productId = transaction.products[0].id;
           
           // Get the playerId from localStorage (set by main.js / save.js)
@@ -40,7 +49,7 @@ export const iap = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               PlayerId: saveData.playerId,
-              Platform: 'google',
+              Platform: isIOS ? 'apple' : 'google',
               ProductId: productId,
               ReceiptToken: token,
               TransactionId: transaction.transactionId,
@@ -48,7 +57,7 @@ export const iap = {
           });
 
           if (response.ok) {
-            // Verification succeeded! Tell Google Play to finalize the purchase
+            // Verification succeeded! Tell the store to finalize the purchase
             transaction.verify();
             transaction.finish();
           } else {
@@ -59,7 +68,7 @@ export const iap = {
         }
       });
 
-      await store.initialize([Platform.GOOGLE_PLAY]);
+      await store.initialize([storePlatform]);
       storeReady = true;
       this.enabled = true;
     } catch (err) {
@@ -95,7 +104,7 @@ export const iap = {
            // Basic error/cancel handling would go here in a robust app
         });
 
-        // Start the native Google Play purchase flow
+        // Start the native store purchase flow
         await store.order(offer);
 
         // Fallback timeout in case the overlay is closed without triggering events

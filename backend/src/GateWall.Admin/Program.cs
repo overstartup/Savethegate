@@ -208,7 +208,8 @@ app.MapPost("/api/store/verify", async (StoreVerificationRequest req, GateWallDb
             if (string.IsNullOrEmpty(secret)) return Results.StatusCode(500);
             
             var client = httpClientFactory.CreateClient();
-            var payload = new { receipt_data = req.ReceiptToken, password = secret };
+            // Apple's field name is hyphenated, so it can't be an anonymous-type property.
+            var payload = new Dictionary<string, string> { ["receipt-data"] = req.ReceiptToken, ["password"] = secret };
             var response = await client.PostAsJsonAsync("https://buy.itunes.apple.com/verifyReceipt", payload);
             var json = await response.Content.ReadFromJsonAsync<JsonNode>();
             

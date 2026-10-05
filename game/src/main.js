@@ -27,7 +27,9 @@ import { ads } from './systems/ads.js';
 import { iap } from './systems/iap.js';
 import { backend } from './systems/backend.js';
 
-ads.init(); // no-op in a plain browser; activates real AdMob inside the native app
+// no-op in a plain browser; activates real AdMob inside the native app.
+// Re-sync once ready: the on-load syncBanner() below runs before init resolves.
+ads.init().then(() => syncBanner());
 iap.init(); // no-op in a plain browser; activates real purchases inside the native app
 
 // Belt-and-suspenders audio unlock: the canvas's own pointerdown handler
