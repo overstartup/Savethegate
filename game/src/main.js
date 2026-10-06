@@ -17,7 +17,7 @@ import { resolveCollisions } from './systems/collision.js';
 import { Particles } from './systems/particles.js';
 import { audio } from './systems/audio.js';
 import { renderHUD, buttonAt } from './ui/hud.js';
-import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, UNIT_DIALOG, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
+import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, UNIT_DIALOG, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, MENU_PLAY_BUTTON, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
 import { Announcer } from './ui/announce.js';
 import { LEVELS, WEAPONS, STAGE_SIZE, STAGE_COUNT } from './data/levels.js';
 import { COIN_PACKS } from './data/shop.js';
@@ -823,7 +823,9 @@ function syncBanner() {
 syncBanner(); // MENU on load — show immediately
 let state = null;
 let resetArmed = false; // "tap RESET PROGRESS twice" confirmation guard
-let continueDismissed = false; // home page: collapses the continue card to a slim strip
+// The How-to-play card only greets brand-new players; anyone who has played
+// before lands straight on the map with its big PLAY button.
+let continueDismissed = (saveData.progress?.levelIndex || 0) > 0 || (saveData.best || 0) > 0;
 
 // Stage road-map scrolling — the map lays out nodes at a fixed size/spacing
 // regardless of how many stages exist, so once there are more than fit on
@@ -1241,6 +1243,12 @@ input.onTap((x, y) => {
     if (hit(MENU_BUTTONS.coins, x, y)) { openShop(); return; }
     if (navTap(x, y)) return;
     if (!continueDismissed && hit(CONTINUE_CLOSE_BUTTON, x, y)) { continueDismissed = true; return; }
+    if (continueDismissed && hit(MENU_PLAY_BUTTON, x, y)) {
+      newGame(saveData.progress?.levelIndex || 0);
+      mode = 'PLAYING';
+      syncBanner();
+      return;
+    }
 
     // Only two things start a run from here: tapping the continue dialog
     // (while it's open — it floats over the map, same as the game-over

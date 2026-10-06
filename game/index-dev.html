@@ -30,7 +30,9 @@
     body {
       margin: 0;
       padding: 0;
-      background: #0d0820;
+      /* Fills the bands above/below the fixed-aspect canvas on tall phones:
+         top half matches the home header strip, bottom half the nav bar. */
+      background: linear-gradient(to bottom, #170f33 0%, #170f33 50%, #0e091c 50%, #0e091c 100%);
       height: 100%;
       overflow: hidden;
       overscroll-behavior: none;

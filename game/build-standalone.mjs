@@ -184,6 +184,11 @@ code = code
   .replace('img.src = `assets/sprites/bat_ice/bat_${String(i).padStart(2, \'0\')}.png`;', 'img.src = BAT_DATA[i];')
   .replace('img.src = `assets/sprites/cannon/cannon_${n}.png`;', 'img.src = CANNON_DATA[n];');
 
+// Inline the home-page shield emblem (src/ui/screens.js).
+const emblemUri = `data:image/png;base64,${readFileSync('assets/ui/emblem.png').toString('base64')}`;
+if (!code.includes("img.src = 'assets/ui/emblem.png';")) throw new Error('emblem src line not found in screens.js');
+code = code.replace("img.src = 'assets/ui/emblem.png';", `img.src = ${JSON.stringify(emblemUri)};`);
+
 // Inline fonts as data URIs
 const fonts = {
   "assets/fonts/luckiest-guy.woff2": null,

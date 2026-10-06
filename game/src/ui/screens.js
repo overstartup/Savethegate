@@ -46,6 +46,15 @@ ENV_THEMES.forEach((n, i) => {
   tileImg.onerror = () => { console.error('[TILE_IMAGES] failed to load', tileImg.src); };
 });
 
+// The GateWall shield emblem (same art as the app icon), shown beside the
+// wordmark on the home page. Inlined as a data URI by build-standalone.mjs.
+let EMBLEM_IMG = null;
+{
+  const img = new Image();
+  img.src = 'assets/ui/emblem.png';
+  img.onload = () => { EMBLEM_IMG = img; };
+}
+
 // Real Kenney "Fish Pack 2.0" sprites (CC0) used to animate the Sea War
 // gameplay background — rising bubbles, swaying seaweed, drifting fish —
 // instead of the static baked-in decor.
@@ -679,6 +688,12 @@ const NODE_ZIGZAG = 68;
 // room, at the cost of a bit more scrolling to see the whole map.
 const REFERENCE_VIEWPORT_STAGES = 3.6;
 
+// Big floating PLAY button over the bottom of the stage map — the home
+// page's primary action (resumes at the player's current level). main.js
+// hit-tests against this exact rect.
+export const MENU_PLAY_BUTTON = { x: W / 2 - 130, y: NAV_Y - 72, w: 260, h: 58 };
+const MENU_PLAY_PAD = 84;
+
 export function homeLayout(scrollY = 0) {
   const stageTop = HOME_STAGE_TOP;
   const stageBottom = NAV_Y - 26;
@@ -688,7 +703,9 @@ export function homeLayout(scrollY = 0) {
   // island artwork itself is drawn (see drawStageNode's TILE_DRAW_SCALE) —
   // keeping it modest is what leaves visible gaps between consecutive nodes.
   const size = Math.max(50, Math.min(66, spacing * 0.62));
-  const contentHeight = spacing * STAGE_COUNT;
+  // Extra room at the end so the last island can scroll clear of the
+  // floating PLAY button (MENU_PLAY_BUTTON) that sits over the map's bottom.
+  const contentHeight = spacing * STAGE_COUNT + MENU_PLAY_PAD;
   const scrollMax = Math.max(0, contentHeight - avail);
   const sy = Math.max(0, Math.min(scrollMax, scrollY));
   const nodes = Array.from({ length: STAGE_COUNT }, (_, i) => {
@@ -801,11 +818,22 @@ function drawStagePath(ctx, nodes, furthestLevelIndex) {
 // Flat sky backdrop for the stage map — light blue gradient with a few
 // bold, flat-shaded clouds, echoing the reference layout's sky (instead of
 // an ocean/ground image), consistent with the flat-badge island style.
+// One sky for the whole home page: starry dusk behind the header/logo,
+// brightening into daytime blue where the islands float. Defined in
+// absolute page coordinates so any sub-rect painted with it lines up.
+function homeSky(ctx) {
+  const g = ctx.createLinearGradient(0, 0, 0, NAV_Y);
+  g.addColorStop(0, '#1d1440');
+  g.addColorStop(0.13, '#302a70');
+  g.addColorStop(0.25, '#5677c4');
+  g.addColorStop(0.38, '#8fd0ee');
+  g.addColorStop(0.65, '#ade2f5');
+  g.addColorStop(1, '#d4f0f8');
+  return g;
+}
+
 function drawOceanBackdrop(ctx, top, bottom, t) {
-  const grad = ctx.createLinearGradient(0, top, 0, bottom);
-  grad.addColorStop(0, '#8fd8f0');
-  grad.addColorStop(1, '#c9ecf7');
-  ctx.fillStyle = grad;
+  ctx.fillStyle = homeSky(ctx);
   ctx.fillRect(0, top, W, bottom - top);
 
   // Fewer, softer clouds than before (was 10 at 0.85 alpha) — this is sky
@@ -1294,117 +1322,217 @@ function drawStageNode(ctx, n, i, furthestLevelIndex, t) {
 
 // Fixed star-field positions (computed once, not per-frame) so the
 // twinkle animation doesn't jitter — only opacity/size pulse with time.
-const MENU_STARS = Array.from({ length: 36 }, (_, i) => {
+// They live in the dusk band at the top of the home sky.
+const MENU_STARS = Array.from({ length: 30 }, (_, i) => {
   // Deterministic pseudo-random spread using a simple hash of i, so the
   // field looks scattered but never changes between renders.
   const h1 = Math.sin(i * 12.9898) * 43758.5453; const rx = h1 - Math.floor(h1);
   const h2 = Math.sin(i * 78.233) * 12543.789; const ry = h2 - Math.floor(h2);
   const h3 = Math.sin(i * 37.719) * 5678.123; const rp = (h3 - Math.floor(h3)) * Math.PI * 2;
-  return { x: rx * W, y: ry * (H - NAV_H) * 0.7, r: 0.6 + ((i * 7) % 5) * 0.35, phase: rp };
+  return { x: rx * W, y: 4 + ry * 120, r: 0.6 + ((i * 7) % 5) * 0.3, phase: rp };
 });
 
-// Soft glowing atmosphere behind the header/logo — twinkling stars plus a
-// big radial glow — drawn once at the top of the page so it reads as a
-// designed screen, not a flat color fill.
+// Where the stage map fades out under the logo (see renderMenu).
+const HOME_FADE_TOP = 118, HOME_FADE_H = 18;
+
+// Re-paints the dusk sky over the top of the page after the map is drawn,
+// so islands scrolled upward fade out softly under the logo instead of
+// being chopped by a hard clip edge. Then the twinkling stars + a soft glow
+// behind the emblem.
 function drawMenuAtmosphere(ctx, t) {
+  ctx.fillStyle = homeSky(ctx);
+  ctx.fillRect(0, 0, W, HOME_FADE_TOP);
   ctx.save();
+  for (let i = 0; i < HOME_FADE_H; i++) {
+    ctx.globalAlpha = 1 - (i + 1) / (HOME_FADE_H + 1);
+    ctx.fillRect(0, HOME_FADE_TOP + i, W, 1);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = '#e4f2ff';
   for (const s of MENU_STARS) {
-    const tw = 0.35 + Math.sin(t * 1.6 + s.phase) * 0.35 + 0.35;
-    ctx.globalAlpha = Math.max(0, Math.min(1, tw));
-    ctx.fillStyle = '#cfe8ff';
+    const tw = 0.55 + Math.sin(t * 1.6 + s.phase) * 0.45;
+    ctx.globalAlpha = Math.max(0, tw * (1 - s.y / 135));
     ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 
-  const glow = ctx.createRadialGradient(W / 2, 96, 10, W / 2, 96, 190);
-  glow.addColorStop(0, 'rgba(127,216,255,0.22)');
-  glow.addColorStop(1, 'rgba(127,216,255,0)');
+  const glow = ctx.createRadialGradient(W / 2, 98, 8, W / 2, 98, 170);
+  glow.addColorStop(0, 'rgba(255,214,140,0.20)');
+  glow.addColorStop(1, 'rgba(255,214,140,0)');
   ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, W, 260);
+  ctx.fillRect(0, 20, W, 160);
+}
+
+// Small coin glyph shared by the header pill and the PLAY button.
+function drawCoinGlyph(ctx, cx, cy, r) {
+  ctx.fillStyle = '#ffd23d'; ctx.strokeStyle = '#a8781a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.32, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#a8781a'; ctx.font = `bold ${Math.round(r * 1.25)}px Arial`; ctx.textAlign = 'center';
+  ctx.fillText('¢', cx, cy + r * 0.45);
+}
+
+// Header: a glass strip over the dusk sky. Left: player chip (avatar disc +
+// name + where they are in the campaign). Right: coin pill with a green +
+// (same look as the in-run HUD coin counter), the tap target for the shop.
+function drawHomeHeader(ctx, playerName, coins, stageNum, levelInStage) {
+  const hh = MENU_BUTTONS.name.h;
+  ctx.fillStyle = 'rgba(12,8,30,0.38)';
+  ctx.fillRect(0, 0, W, hh);
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, hh - 0.5); ctx.lineTo(W, hh - 0.5); ctx.stroke();
+
+  // Player chip
+  const name = playerName || 'Guardian';
+  const avR = 17, avCx = 12 + avR, avCy = hh / 2;
+  ctx.font = `15px ${F_BODY}`;
+  const nameW = Math.min(150, ctx.measureText(name).width);
+  const chipW = avR * 2 + 22 + Math.max(nameW, 78);
+  ctx.fillStyle = 'rgba(10,6,24,0.5)';
+  ctx.strokeStyle = 'rgba(154,230,255,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(8, avCy - 21, chipW, 42, 21); ctx.fill(); ctx.stroke();
+
+  const ring = ctx.createLinearGradient(0, avCy - avR, 0, avCy + avR);
+  ring.addColorStop(0, '#ffe89a'); ring.addColorStop(1, '#c98a1c');
+  ctx.fillStyle = ring;
+  ctx.beginPath(); ctx.arc(avCx, avCy, avR, 0, Math.PI * 2); ctx.fill();
+  const avGrad = ctx.createRadialGradient(avCx - 5, avCy - 5, 2, avCx, avCy, avR - 3);
+  avGrad.addColorStop(0, '#bdeeff'); avGrad.addColorStop(1, '#3f7fd0');
+  ctx.fillStyle = avGrad;
+  ctx.beginPath(); ctx.arc(avCx, avCy, avR - 3, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.font = `17px ${F_TITLE}`;
+  ctx.fillStyle = '#0d1b2a';
+  ctx.fillText(name.charAt(0).toUpperCase(), avCx, avCy + 6);
+
+  ctx.textAlign = 'left';
+  const tx = avCx + avR + 9;
+  ctx.font = `15px ${F_BODY}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.save();
+  ctx.beginPath(); ctx.rect(tx, 0, 150, hh); ctx.clip();
+  ctx.fillText(name, tx, avCy - 1);
+  ctx.restore();
+  ctx.font = `10px ${F_BODY}`;
+  ctx.fillStyle = '#9ae6ff';
+  ctx.fillText(`STAGE ${stageNum} · LV ${levelInStage}`, tx, avCy + 13);
+
+  // Coin pill + green "+"
+  const coinsStr = String(coins);
+  ctx.font = `16px ${F_TITLE}`;
+  const pillH = 34;
+  const pillW = Math.max(100, ctx.measureText(coinsStr).width + 78);
+  const pillX = W - pillW - 10, pillY = hh / 2 - pillH / 2;
+  ctx.fillStyle = 'rgba(10,6,24,0.6)';
+  ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(pillX, pillY, pillW, pillH, pillH / 2); ctx.fill(); ctx.stroke();
+  drawCoinGlyph(ctx, pillX + 18, pillY + pillH / 2, 10);
+  ctx.textAlign = 'left';
+  ctx.font = `16px ${F_TITLE}`;
+  ctx.fillStyle = '#ffe98a';
+  ctx.fillText(coinsStr, pillX + 34, pillY + pillH / 2 + 6);
+  const pcx = pillX + pillW - 17, pcy = pillY + pillH / 2;
+  ctx.fillStyle = '#3fbf6f'; ctx.strokeStyle = '#1d7a3c'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(pcx, pcy, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(pcx - 5.5, pcy); ctx.lineTo(pcx + 5.5, pcy); ctx.moveTo(pcx, pcy - 5.5); ctx.lineTo(pcx, pcy + 5.5); ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+
+// Logo lockup: the shield emblem (gently bobbing) beside the GateWall
+// wordmark, with a small tagline underneath.
+function drawHomeLogo(ctx, t) {
+  const emS = 60, gap = 8, baseY = 106;
+  ctx.font = `38px ${F_TITLE}`;
+  const tw = ctx.measureText('GateWall').width;
+  const x0 = W / 2 - (emS + gap + tw) / 2;
+
+  if (EMBLEM_IMG) {
+    const bob = Math.sin(t * 2) * 2.5;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
+    ctx.drawImage(EMBLEM_IMG, x0, baseY - emS + 17 + bob, emS, emS);
+    ctx.restore();
+  }
+
+  const tx = x0 + emS + gap;
+  ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#1a1238';
+  ctx.lineWidth = 8;
+  ctx.strokeText('GateWall', tx, baseY);
+  const lg = ctx.createLinearGradient(0, baseY - 30, 0, baseY + 2);
+  lg.addColorStop(0, '#fff6d6');
+  lg.addColorStop(0.5, '#ffd86b');
+  lg.addColorStop(1, '#e8892a');
+  ctx.fillStyle = lg;
+  ctx.fillText('GateWall', tx, baseY);
+
+  ctx.textAlign = 'center';
+  ctx.font = `11px ${F_BODY}`;
+  try { ctx.letterSpacing = '3px'; } catch { /* older canvas */ }
+  ctx.fillStyle = 'rgba(214,236,255,0.85)';
+  ctx.fillText('DEFEND THE GATE', tx + tw / 2, baseY + 18);
+  try { ctx.letterSpacing = '0px'; } catch { /* older canvas */ }
+}
+
+// The primary action: a big pulsing green PLAY button floating over the
+// bottom of the map, labelled with where the run will start.
+function drawHomePlayButton(ctx, t, stageNum, levelInStage, started) {
+  const b = MENU_PLAY_BUTTON;
+  // soft dusk vignette behind it so it lifts off the bright sky
+  const v = ctx.createLinearGradient(0, b.y - 50, 0, NAV_Y);
+  v.addColorStop(0, 'rgba(29,20,64,0)');
+  v.addColorStop(1, 'rgba(29,20,64,0.5)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, b.y - 50, W, NAV_Y - (b.y - 50));
+
+  const pulse = 1 + Math.sin(t * 3.5) * 0.025;
+  const w = b.w * pulse, h = b.h * pulse;
+  const x = b.x + (b.w - w) / 2, y = b.y + (b.h - h) / 2;
+
+  // chunky base + face, like a physical game button
+  ctx.fillStyle = '#1d7a3c';
+  ctx.beginPath(); ctx.roundRect(x, y + 5, w, h, h / 2); ctx.fill();
+  ctx.save();
+  ctx.shadowColor = '#58e07f'; ctx.shadowBlur = 16;
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, '#7dfaa5'); g.addColorStop(1, '#34b45a');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, h / 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = '#1d7a3c'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, h / 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.beginPath(); ctx.roundRect(x + 14, y + 5, w - 28, h * 0.32, h * 0.16); ctx.fill();
+
+  // play glyph in a dark disc on the left
+  const pcx = x + h / 2 + 4, pcy = y + h / 2;
+  ctx.fillStyle = 'rgba(14,60,30,0.35)';
+  ctx.beginPath(); ctx.arc(pcx, pcy, h / 2 - 9, 0, Math.PI * 2); ctx.fill();
+  drawPlayIcon(ctx, pcx + 2, pcy, 11, '#ffffff');
+
+  ctx.textAlign = 'center';
+  const lx = x + w / 2 + 18;
+  ctx.font = `25px ${F_TITLE}`;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#1d7a3c'; ctx.lineWidth = 5;
+  const label = started ? 'CONTINUE' : 'PLAY';
+  ctx.strokeText(label, lx, y + h / 2 + 3);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, lx, y + h / 2 + 3);
+  ctx.font = `11px ${F_BODY}`;
+  ctx.fillStyle = 'rgba(10,50,24,0.9)';
+  ctx.fillText(`STAGE ${stageNum} · LEVEL ${levelInStage}`, lx, y + h / 2 + 18);
 }
 
 export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex = 0, continueDismissed = false, mapScrollY = 0) {
   const t = performance.now() / 1000;
-
-  drawMenuAtmosphere(ctx, t);
-
-  // Header bar — player identity on the left (avatar + name, tap to
-  // rename), current coin balance on the right, sitting on a gradient
-  // strip with a glowing bottom edge so it reads as real app chrome.
-  const nb = MENU_BUTTONS.name;
-  const hdrGrad = ctx.createLinearGradient(0, 0, 0, nb.h);
-  hdrGrad.addColorStop(0, 'rgba(38,26,68,0.92)');
-  hdrGrad.addColorStop(1, 'rgba(20,13,40,0.8)');
-  ctx.fillStyle = hdrGrad;
-  ctx.fillRect(nb.x, nb.y, nb.w, nb.h);
-  ctx.save();
-  ctx.shadowColor = '#7fd8ff'; ctx.shadowBlur = 8;
-  ctx.strokeStyle = 'rgba(127,216,255,0.55)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(0, nb.h); ctx.lineTo(W, nb.h); ctx.stroke();
-  ctx.restore();
-
-  // Avatar badge — first letter of the player's name on a glowing crystal disc.
-  const avR = 17, avCx = 28, avCy = nb.h / 2;
-  const avGrad = ctx.createRadialGradient(avCx - 5, avCy - 5, 2, avCx, avCy, avR);
-  avGrad.addColorStop(0, '#bdeeff'); avGrad.addColorStop(1, '#4a8fd6');
-  ctx.fillStyle = avGrad;
-  ctx.beginPath(); ctx.arc(avCx, avCy, avR, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#e8f9ff'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.textAlign = 'center';
-  ctx.font = `bold 16px ${F_TITLE}`;
-  ctx.fillStyle = '#0d1b2a';
-  ctx.fillText((playerName || 'G').charAt(0).toUpperCase(), avCx, avCy + 6);
-
-  ctx.textAlign = 'left';
-  ctx.font = `14px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.fillText(`${playerName || 'Guardian'}`, avCx + avR + 10, avCy + 5);
-
-  // Coin balance pill, top-right
-  const coinsStr = String(coins);
-  ctx.font = `13px ${F_BODY}`;
-  const pillW = Math.max(58, ctx.measureText(coinsStr).width + 44), pillH = 26;
-  const pillX = W - pillW - 12, pillY = nb.h / 2 - pillH / 2;
-  ctx.fillStyle = 'rgba(255,210,61,0.14)';
-  ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(pillX, pillY, pillW, pillH, pillH / 2); ctx.fill(); ctx.stroke();
-  const coinCx = pillX + 15, coinCy = pillY + pillH / 2;
-  ctx.fillStyle = '#ffd23d'; ctx.strokeStyle = '#a8781a'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(coinCx, coinCy, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#a8781a'; ctx.font = `bold 10px Arial`; ctx.textAlign = 'center';
-  ctx.fillText('¢', coinCx, coinCy + 3.5);
-  ctx.textAlign = 'left';
-  ctx.font = `13px ${F_TITLE}`;
-  ctx.fillStyle = '#ffe98a';
-  ctx.fillText(coinsStr, coinCx + 13, coinCy + 5);
-
-  // Logo — bigger, with a soft glow banner behind it and more sparkle.
-  ctx.textAlign = 'center';
-  ctx.save();
-  ctx.translate(W / 2, 100 + Math.sin(t * 2) * 3);
-  ctx.font = `36px ${F_TITLE}`;
-  ctx.strokeStyle = '#1c3a5c';
-  ctx.lineWidth = 7;
-  ctx.strokeText('GateWall', 0, 0);
-  const lg = ctx.createLinearGradient(0, -24, 0, 12);
-  lg.addColorStop(0, '#ffffff');
-  lg.addColorStop(0.45, '#bdeeff');
-  lg.addColorStop(0.75, '#7fd8ff');
-  lg.addColorStop(1, '#b358e0');
-  ctx.fillStyle = lg;
-  ctx.fillText('GateWall', 0, 0);
-  // thin glowing underline flourish
-  ctx.save();
-  ctx.shadowColor = '#7fd8ff'; ctx.shadowBlur = 6;
-  ctx.strokeStyle = 'rgba(127,216,255,0.8)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(-92, 14); ctx.lineTo(92, 14); ctx.stroke();
-  ctx.restore();
-  ctx.restore();
-  crystal(ctx, W / 2 - 140, 96, 11, '#7fd8ff', t * 0.5);
-  crystal(ctx, W / 2 + 140, 96, 11, '#7fd8ff', -t * 0.5);
-  crystal(ctx, W / 2 - 108, 108, 6, '#b358e0', -t * 0.7);
-  crystal(ctx, W / 2 + 108, 108, 6, '#b358e0', t * 0.7);
 
   // Where the player currently stands.
   const idx = Math.max(0, Math.min(LEVELS.length - 1, progressLevelIndex));
@@ -1415,45 +1543,36 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
 
   const layout = homeLayout(mapScrollY);
 
-  // Island-chain stage map — an ocean backdrop with a sailing route between
-  // themed islands — always visible underneath, drawn first so the
-  // continue dialog (below) floats right over it, same as it would over
-  // any other screen. Clipped to the map viewport so stages scrolled above/
-  // below the visible band don't bleed into the header or nav bar.
+  // Island-chain stage map on the shared home sky. Clipped to the area
+  // between the logo and the nav bar; drawMenuAtmosphere() then repaints
+  // the dusk sky over the top so islands scrolled upward fade out softly.
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, layout.stageTop - 34, W, layout.stageBottom - (layout.stageTop - 34));
+  ctx.rect(0, HOME_FADE_TOP, W, NAV_Y - HOME_FADE_TOP);
   ctx.clip();
-  drawOceanBackdrop(ctx, layout.stageTop - 30, NAV_Y, t);
+  drawOceanBackdrop(ctx, HOME_FADE_TOP, NAV_Y, t);
   drawStagePath(ctx, layout.nodes, idx);
   layout.nodes.forEach((n, i) => drawStageNode(ctx, n, i, idx, t));
   ctx.restore();
 
+  drawMenuAtmosphere(ctx, t);
+  drawHomeHeader(ctx, playerName, coins, stageNum, levelInStage);
+  drawHomeLogo(ctx, t);
+
   // Scroll affordance — a thin track + thumb on the right edge of the map,
   // only shown once there's actually more than one screenful of stages.
   if (layout.scrollMax > 0) {
-    const trackX = W - 8, trackY = layout.stageTop - 20, trackH = layout.stageBottom - trackY;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    const trackX = W - 8, trackY = layout.stageTop - 6;
+    const trackH = MENU_PLAY_BUTTON.y - 14 - trackY;
+    ctx.fillStyle = 'rgba(20,13,40,0.18)';
     ctx.beginPath(); ctx.roundRect(trackX, trackY, 4, trackH, 2); ctx.fill();
     const thumbH = Math.max(24, trackH * (trackH / (trackH + layout.scrollMax)));
     const thumbY = trackY + (trackH - thumbH) * (layout.scrollY / layout.scrollMax);
-    ctx.fillStyle = 'rgba(127,216,255,0.75)';
+    ctx.fillStyle = 'rgba(48,42,112,0.6)';
     ctx.beginPath(); ctx.roundRect(trackX, thumbY, 4, thumbH, 2); ctx.fill();
-    // A gentle bounce-hint arrow the first time there's more to see below.
-    if (layout.scrollY < layout.scrollMax - 4) {
-      const bounce = Math.sin(t * 3) * 4;
-      ctx.save();
-      ctx.globalAlpha = 0.6;
-      ctx.fillStyle = '#7fd8ff';
-      ctx.beginPath();
-      ctx.moveTo(W / 2 - 8, layout.stageBottom - 6 + bounce);
-      ctx.lineTo(W / 2 + 8, layout.stageBottom - 6 + bounce);
-      ctx.lineTo(W / 2, layout.stageBottom + 4 + bounce);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
   }
+
+  if (continueDismissed) drawHomePlayButton(ctx, t, stageNum, levelInStage, started);
 
   if (!continueDismissed) {
     // Same big dialog as GAME OVER / VICTORY / LEVEL CLEAR (ribbon banner,

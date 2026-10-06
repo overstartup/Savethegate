@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "game",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "python3",
       "runtimeArgs": ["-c", "import http.server,functools,sys;H=type('H',(http.server.SimpleHTTPRequestHandler,),{'end_headers':lambda s:(s.send_header('Cache-Control','no-store'),http.server.SimpleHTTPRequestHandler.end_headers(s))[1]});http.server.ThreadingHTTPServer(('',8124),functools.partial(H,directory='game')).serve_forever()"],
       "port": 8124
     }
