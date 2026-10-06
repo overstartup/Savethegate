@@ -36,7 +36,7 @@ Then pick a simulator or your iPhone in Xcode and press Run ▶.
 | Bundle ID | `com.turtoo.gatewall` (same as Android) |
 | Version | 1.1 (build 2) |
 | Min iOS | 13.0 |
-| Orientation | Portrait only (iPhone + iPad, full screen) |
+| Devices | iPhone only, portrait (runs on iPad in iPhone compatibility mode) |
 | Status bar | Hidden |
 | App icon / splash | Built from `graphics/logo_transparent.png` on the game's dark purple |
 | AdMob App ID | Google's **test** iOS App ID (`Info.plist` → `GADApplicationIdentifier`) |
@@ -79,9 +79,9 @@ The game sends the base64 App Store receipt to `/api/store/verify` with
 - **App Privacy**: declare *Identifiers → Device ID* (advertising) and
   *Usage Data → Advertising Data*, used for third-party advertising, and
   *Purchases*. The Google Mobile Ads SDK ships its own privacy manifest.
-- Screenshots: `store-assets/screenshots/` are 420×740 and too small. App
-  Store Connect requires 1320×2868 (6.9") images. Take them from the
-  iPhone 17 Pro Max simulator (⌘S in Simulator).
+- Screenshots: use `store-assets/ios-screenshots/` (1320×2868, 6.9").
+- All listing text, age rating, privacy answers and IAP definitions are in
+  [APP_STORE_LISTING.md](APP_STORE_LISTING.md).
 
 ### 5. Archive & upload
 In Xcode: select **Any iOS Device (arm64)** → **Product → Archive** →

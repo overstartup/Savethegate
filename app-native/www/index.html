@@ -226,7 +226,7 @@ const CONFIG = {
     speed: 420,          // px/sec horizontal drag speed cap
     y: 640,              // fixed vertical position (kept a bit above the buy-button row clamp)
     size: 36,
-    fireRate: 6,         // spells per second (base)
+    fireRate: 7,         // spells per second (base)
     // "blood line" hit-buffer — depleting it costs 1 heart, then refills.
     // This is only a fallback for the rare case a run somehow starts with no
     // equipped sticker (normally the sticker's own `blood` — e.g. 200 —
@@ -234,6 +234,7 @@ const CONFIG = {
     // each) always take several hits to cost a heart, never just one.
     maxBlood: 200,
     invulnAfterHit: 0.8, // seconds of immunity after taking a blood-line hit (no instant double-hits)
+    stickerDamagePerBolt: 120, // sticker damage rating that equals 1 bolt damage (see Player)
   },
 
   // Spells
@@ -326,8 +327,13 @@ const CONFIG = {
     rowHeight: 64,
   },
 
-  // GateWall (base health)
-  gateHealth: 3,
+  // GateWall — hearts. EVERY Shatterling that crosses the gate line costs
+  // one heart, so the level pacing (systems/spawner.js) is tuned to keep
+  // leaks rare and the player's power climbing faster than the horde.
+  gateHealth: 5,
+  // The gate line sits just above the buy-button row so crossings are
+  // visible (render/atmosphere.js draws it as an energy barrier).
+  gateY: 740 - 66 - 12,
 
   // Adaptive difficulty
   adaptive: {
@@ -411,48 +417,28 @@ const WAVES = [
 // The 10 levels inside a stage are still a difficulty ramp (same enemy/
 // duration/interval progression as before), just reskinned with flavor
 // names + art that all belong to that one theme.
-// interval  = seconds between monster clumps (lower = harder)
 // speed     = monster speed multiplier
 // hpMult    = multiplies every spawned monster's base hp (see data/monsters.js)
 // decor     = animated background effect (moving objects)
-// attackers = a FIXED attacker quota for the level — this (not a clock) is
-//             what ends the level: once this many enemies have been sent out
-//             AND every last one of them (plus the boss, if any) is dealt
-//             with, the level clears. Ramps up level-to-level here, then
-//             buildStage() below multiplies it further per stage so Stage 1
-//             opens light and the final stage throws far more (and tougher)
-//             attackers at the gate.
-// Attacker counts bumped up (~1.8x) across the board so every level runs
-// through meaningfully more enemies before it clears — the level is still
-// purely evil-count-based (see buildStage()'s attackersMult below and
-// Spawner.allSpawned() in systems/spawner.js), never a clock; this just
-// raises how many evils that count actually is, so a level takes longer to
-// get through without ever adding an artificial timer.
-// Attacker quotas are now a proper HORDE scale — 500 at level 1, growing
-// ~20% per level within a stage (500 * 1.2^n), landing around 2,580 by
-// level 10. That's a ~27x jump from the old 18-58 range, so two things had
-// to change alongside it or a level would take many minutes to clear:
-//   1. Intervals (seconds between spawn pulses) are roughly halved across
-//      the board — see buildStage() below too — so pulses fire more often.
-//   2. Spawner.update() (systems/spawner.js) no longer picks a small
-//      near-constant clump size — it now sizes each clump off
-//      totalAttackers ÷ a target wave count, so a 500-attacker level and a
-//      2,580-attacker level both resolve in a similar number of pulses,
-//      just with far denser clumps in the bigger one. That's what actually
-//      delivers the "swarm" feel instead of just a much longer grind.
+// attackers = a FIXED attacker quota for the level — once this many have
+//             been sent and every one (plus the boss, if any) is dealt with,
+//             the level clears. Every Shatterling that crosses the gate costs
+//             a heart, so quotas start small and climb step by step; the
+//             spawner (systems/spawner.js) also caps how many are alive at
+//             once so the player is never swamped before they've grown.
+// New enemy types are introduced one at a time (goblins → slimes → bats →
+// skeletons → trolls) so each level teaches one new threat.
 const LEVEL_PROGRESSION = [
-  // A couple of imps from level 1 on, so the "enemies shoot back" mechanic
-  // is visible right away instead of only showing up two levels in.
-  { attackers: 500,  spawns: { goblin: 6, slime: 3, imp: 1 }, interval: 1.33, speed: 1.0, boss: false, movingObstacles: false },
-  { attackers: 600,  spawns: { goblin: 4, slime: 4, imp: 2 }, interval: 1.19, speed: 1.1, boss: false, movingObstacles: false },
-  { attackers: 720,  spawns: { slime: 5, goblin: 3, imp: 2 }, interval: 1.09, speed: 1.2, boss: false, movingObstacles: true },
-  { attackers: 860,  spawns: { goblin: 4, imp: 3, skeleton: 2 }, interval: 0.98, speed: 1.3, boss: true, movingObstacles: true },
-  { attackers: 1040, spawns: { slime: 4, skeleton: 3, imp: 2 }, interval: 0.91, speed: 1.4, boss: false, movingObstacles: true },
-  { attackers: 1240, spawns: { imp: 4, skeleton: 3, troll: 1 }, interval: 0.84, speed: 1.5, boss: false, movingObstacles: true },
-  { attackers: 1490, spawns: { slime: 4, skeleton: 3, troll: 2 }, interval: 0.77, speed: 1.6, boss: true, movingObstacles: true },
-  { attackers: 1790, spawns: { imp: 6, goblin: 3, troll: 2 }, interval: 0.70, speed: 1.7, boss: false, movingObstacles: true },
-  { attackers: 2150, spawns: { imp: 4, skeleton: 4, troll: 3 }, interval: 0.60, speed: 1.85, boss: false, movingObstacles: true },
-  { attackers: 2580, spawns: { imp: 4, skeleton: 4, troll: 4 }, interval: 0.49, speed: 2.0, boss: true, movingObstacles: true },
+  { attackers: 30,  spawns: { goblin: 1 }, speed: 0.8, boss: false, movingObstacles: false },
+  { attackers: 40,  spawns: { goblin: 5, slime: 2 }, speed: 0.85, boss: false, movingObstacles: false },
+  { attackers: 50,  spawns: { goblin: 4, slime: 3, imp: 1 }, speed: 0.9, boss: false, movingObstacles: false },
+  { attackers: 60,  spawns: { goblin: 4, slime: 3, imp: 2, skeleton: 1 }, speed: 0.95, boss: true, movingObstacles: false },
+  { attackers: 75,  spawns: { slime: 4, skeleton: 2, imp: 2, goblin: 2 }, speed: 1.0, boss: false, movingObstacles: true },
+  { attackers: 90,  spawns: { imp: 3, skeleton: 3, troll: 1, goblin: 2 }, speed: 1.05, boss: false, movingObstacles: true },
+  { attackers: 105, spawns: { slime: 3, skeleton: 3, troll: 2, imp: 2 }, speed: 1.1, boss: true, movingObstacles: true },
+  { attackers: 125, spawns: { imp: 4, goblin: 3, troll: 2, skeleton: 2 }, speed: 1.15, boss: false, movingObstacles: true },
+  { attackers: 145, spawns: { imp: 4, skeleton: 4, troll: 3 }, speed: 1.2, boss: false, movingObstacles: true },
+  { attackers: 170, spawns: { imp: 4, skeleton: 4, troll: 4 }, speed: 1.3, boss: true, movingObstacles: true },
 ];
 
 // One theme per stage — sky gradient, animated background decor, and 10
@@ -617,17 +603,11 @@ function buildStage(stageIdx) {
   // a longer clock, so "Stage 5, Level 1" is a real step up from "Stage 1,
   // Level 1" even in its own theme.
   const theme = STAGE_THEMES[stageIdx];
-  const hpMult = +(1 + stageIdx * 0.6).toFixed(2);
-  const speedBump = +(1 + stageIdx * 0.12).toFixed(2);
-  // How much bigger each stage's attacker quota is than Stage 1's. Toned
-  // down further (was +0.35/stage) now that waves are small, readable groups
-  // of 5-20 with genuine per-monster entry timing (see systems/spawner.js) —
-  // that pacing model means total playtime scales directly with attacker
-  // count, so stacking a steep per-stage multiplier on top of Stage 1's own
-  // already-huge 500-2,580 base would have pushed late-stage levels into
-  // 30-40+ minutes each. Cross-stage difficulty now leans on hpMult/speedBump
-  // (tougher, faster enemies) rather than an ever-larger horde.
-  const attackersMult = 1 + stageIdx * 0.03;
+  const hpMult = +(1 + stageIdx * 0.5).toFixed(2);
+  const speedBump = +(1 + stageIdx * 0.06).toFixed(2);
+  // Each later stage sends a few more attackers (+15%/stage) on top of
+  // tougher (hpMult) and slightly faster (speedBump) Shatterlings.
+  const attackersMult = 1 + stageIdx * 0.15;
 
   return LEVEL_PROGRESSION.map((lvl, i) => ({
     ...lvl,
@@ -639,12 +619,6 @@ function buildStage(stageIdx) {
     groundPalette: theme.groundPalette,
     stage: stageIdx + 1,
     attackers: Math.round(lvl.attackers * attackersMult),
-    // Tightens the cadence slightly per stage; floor lowered to 0.3 (was
-    // 0.6) to give later stages room to actually speed up now that their
-    // attacker quotas are so much bigger — see Spawner's wave-count-based
-    // clump sizing (systems/spawner.js), which is what keeps a level's real
-    // duration bounded regardless of how huge totalAttackers gets.
-    interval: +Math.max(0.3, lvl.interval - stageIdx * 0.04).toFixed(2),
     speed: +(lvl.speed * speedBump).toFixed(2),
     hpMult,
     spawns: remapSpawns(lvl.spawns, theme.typeSwap),
@@ -698,22 +672,113 @@ const COIN_PACKS = [
 
 
 // ===== src/data/upgrades.js =====
-// Permanent Guardian upgrades — bought with coins from the main-menu Upgrades
-// screen (NOT the in-run coin shop). Each level is permanent and persists
-// across every run via saveData.permanent. This is how the player gets
-// stronger over time: more damage to down tougher Shatterlings, more speed
-// to dodge enemy fire, and faster casting.
-const UPGRADE_MAX = 5;
+// Permanent ARMORY upgrades — bought with coins from the main-menu Upgrades
+// page (NOT the in-run coin shop). Every unit the player fights with — the
+// Guardian, Ward Sprite, Cannon, Stone Wall, Bomb, Shield — has its own
+// stats, each upgraded separately. Costs grow EXPONENTIALLY per level
+// (base × growth^level), so early levels are cheap but a truly strong
+// character takes a lot of coins — earned slowly in play, or bought in the
+// coin shop.
+//
+// Storage: the Guardian's levels live in saveData.permanent (keys power /
+// speed / fireRate kept from older saves, + blood); every other unit lives
+// in saveData.units[unitKey][statKey].
+//
+// per  = bonus per level. fmt 'pct' → +per×level as a percentage
+//        multiplier; 'add' → +per×level in `unit` (e.g. hits, seconds).
 
-const UPGRADES = {
-  power:    { label: 'POWER',     tagline: 'Hit harder — down tougher Shatterlings.', baseCost: 40, costStep: 25, color: '#ff8a3d', perLevel: '+1 dmg' },
-  speed:    { label: 'SWIFTNESS', tagline: 'Move faster to dodge enemy fire.',        baseCost: 35, costStep: 20, color: '#58e07f', perLevel: '+8% speed' },
-  fireRate: { label: 'HASTE',     tagline: 'Cast spells more often.',                 baseCost: 45, costStep: 25, color: '#7fd8ff', perLevel: '+8% cast rate' },
+const UPGRADE_MAX = 20;
+
+const UNITS = {
+  hero: {
+    name: 'GUARDIAN', role: 'Your hero — fires on its own', color: '#ffd23d',
+    stats: {
+      power:    { label: 'POWER',     desc: 'Bolt damage',      per: 0.15, fmt: 'pct', base: 40, growth: 1.35, max: 20 },
+      fireRate: { label: 'HASTE',     desc: 'Shots per second', per: 0.08, fmt: 'pct', base: 45, growth: 1.35, max: 20 },
+      blood:    { label: 'VITALITY',  desc: 'Blood line (HP)',  per: 0.15, fmt: 'pct', base: 35, growth: 1.35, max: 20 },
+      speed:    { label: 'SWIFTNESS', desc: 'Flying speed',     per: 0.08, fmt: 'pct', base: 30, growth: 1.4,  max: 10 },
+    },
+  },
+  angel: {
+    name: 'WARD SPRITE', role: 'Flies beside you and shoots', color: '#9ae6ff',
+    stats: {
+      power:    { label: 'POWER',  desc: 'Bolt damage',        per: 0.25, fmt: 'pct', base: 60, growth: 1.38, max: 15 },
+      fireRate: { label: 'HASTE',  desc: 'Shots per second',   per: 0.12, fmt: 'pct', base: 60, growth: 1.38, max: 15 },
+      blood:    { label: 'GUARD',  desc: 'Bullets it can soak', per: 1, fmt: 'add', unit: ' hits', base: 80, growth: 1.55, max: 8 },
+    },
+  },
+  turret: {
+    name: 'CANNON', role: 'Placed turret, fires on its own', color: '#ffd88a',
+    stats: {
+      power:    { label: 'POWER', desc: 'Shot damage',      per: 0.25, fmt: 'pct', base: 70, growth: 1.38, max: 15 },
+      fireRate: { label: 'HASTE', desc: 'Shots per second', per: 0.10, fmt: 'pct', base: 70, growth: 1.38, max: 15 },
+      hp:       { label: 'ARMOR', desc: 'Cannon health',    per: 0.25, fmt: 'pct', base: 55, growth: 1.38, max: 15 },
+    },
+  },
+  wall: {
+    name: 'STONE WALL', role: 'Blocks the lane', color: '#c8a06a',
+    stats: {
+      hp:     { label: 'STONE',  desc: 'Wall health',             per: 0.25, fmt: 'pct', base: 45, growth: 1.38, max: 15 },
+      thorns: { label: 'THORNS', desc: 'Damage to foes touching it', per: 0.30, fmt: 'pct', base: 50, growth: 1.38, max: 15 },
+    },
+  },
+  bomb: {
+    name: 'BOMB', role: 'Blasts the nearest foes', color: '#ff8a3d',
+    stats: {
+      power: { label: 'BLAST', desc: 'Blast power', per: 0.20, fmt: 'pct', base: 50, growth: 1.4, max: 15 },
+    },
+  },
+  shield: {
+    name: 'SHIELD', role: 'Blocks all enemy bullets', color: '#7fd8ff',
+    stats: {
+      duration: { label: 'DURATION', desc: 'Shield time', per: 1.5, fmt: 'add', unit: 's', base: 45, growth: 1.4, max: 12 },
+    },
+  },
 };
 
-function upgradeCost(key, level) {
-  const u = UPGRADES[key];
-  return u.baseCost + level * u.costStep;
+const UNIT_ORDER = ['hero', 'angel', 'turret', 'wall', 'bomb', 'shield'];
+
+function unitLevel(save, unit, stat) {
+  if (unit === 'hero') return save.permanent?.[stat] || 0;
+  return save.units?.[unit]?.[stat] || 0;
+}
+
+function setUnitLevel(save, unit, stat, level) {
+  if (unit === 'hero') { save.permanent[stat] = level; return; }
+  save.units = save.units || {};
+  save.units[unit] = { ...(save.units[unit] || {}), [stat]: level };
+}
+
+// Exponential cost curve, rounded to a friendly multiple of 5.
+function statCost(unit, stat, level) {
+  const s = UNITS[unit].stats[stat];
+  return Math.round((s.base * Math.pow(s.growth, level)) / 5) * 5;
+}
+
+// Multiplier (pct) or flat bonus (add) at a given level.
+function statBonus(unit, stat, level) {
+  const s = UNITS[unit].stats[stat];
+  return s.fmt === 'pct' ? 1 + s.per * level : s.per * level;
+}
+
+function statLabel(unit, stat, level) {
+  const s = UNITS[unit].stats[stat];
+  if (s.fmt === 'pct') return `+${Math.round(s.per * level * 100)}%`;
+  const v = +(s.per * level).toFixed(1);
+  return `+${v}${s.unit || ''}`;
+}
+
+// All of one unit's levels as a plain object (for entity constructors).
+function unitStats(save, unit) {
+  const out = {};
+  for (const stat in UNITS[unit].stats) out[stat] = unitLevel(save, unit, stat);
+  return out;
+}
+
+function unitTotalLevel(save, unit) {
+  let t = 0;
+  for (const stat in UNITS[unit].stats) t += unitLevel(save, unit, stat);
+  return t;
 }
 
 
@@ -732,6 +797,7 @@ function load() {
       ...d,
       ...raw,
       permanent: { ...d.permanent, ...(raw.permanent || {}) },
+      units: { ...d.units, ...(raw.units || {}) },
       leaderboard: Array.isArray(raw.leaderboard) ? raw.leaderboard : d.leaderboard,
       progress: { ...d.progress, ...(raw.progress || {}) },
       settings: { ...d.settings, ...(raw.settings || {}) },
@@ -774,7 +840,9 @@ function defaults() {
     // Permanent meta-upgrades, bought with coins from the main-menu Upgrades
     // screen (separate from the in-run coin shop). Each is a level 0..UPGRADE_MAX
     // (see data/upgrades.js) that persists across every run.
-    permanent: { power: 0, speed: 0, fireRate: 0 },
+    permanent: { power: 0, speed: 0, fireRate: 0, blood: 0 },
+    // Armory levels for every other unit: { angel: { power, fireRate, blood }, ... }
+    units: {},
     // Stickers are heroes/tools the player owns. They provide stats like blood (HP) and damage.
     stickers: [{ id: 'hero1', name: 'Starter Hero', blood: 200, damage: 120, equipped: true }],
     streak: { wins: 0, losses: 0 },  // for adaptive difficulty
@@ -882,20 +950,29 @@ class Player {
     this.fireRateMultTime = 0;  // seconds remaining on gate effect
     this.hurtFlash = 0;
     this.facing = 1; // 1 for right, -1 for left
+    this.vx = 0;        // smoothed velocity → lean / dust (render only)
+    this.vy = 0;
+    this.recoil = 0;    // 1 right after a shot, decays → kick + muzzle flash
+    this.runRateMult = 1; // in-run upgrades + FEVER (see systems/runUpgrades.js)
 
     // Permanent upgrade effects
     this.speedMult = 1 + (upgrades.speed || 0) * 0.08;      // SWIFTNESS: +8%/level
     this.fireRateBonus = 1 + (upgrades.fireRate || 0) * 0.08; // HASTE: +8%/level
     
     // Base stats come from the equipped sticker, plus power upgrades
-    const baseDmg = activeSticker ? activeSticker.damage : CONFIG.spell.damage;
-    this.damage = baseDmg + (upgrades.power || 0); // POWER: +1 dmg/level
+    // Sticker damage is a power RATING (the starter hero is 120) — scaled
+    // so 120 = 1 bolt damage against monster hp of 1-6 (data/monsters.js).
+    // Using the raw 120 one-shot every enemy at every stage, which made hp,
+    // pips, stage toughness and damage upgrades all meaningless.
+    const baseDmg = activeSticker ? activeSticker.damage / CONFIG.player.stickerDamagePerBolt : CONFIG.spell.damage;
+    this.damage = baseDmg * (1 + 0.15 * (upgrades.power || 0)); // POWER: +15% dmg/level
 
     // Blood line — a hit-buffer against enemy bullets.
     // The active sticker defines max blood (e.g., 200 HP).
     const baseBlood = activeSticker ? activeSticker.blood : CONFIG.player.maxBlood;
-    this.blood = baseBlood;
-    this.maxBlood = baseBlood;
+    const maxBlood = Math.round(baseBlood * (1 + 0.15 * (upgrades.blood || 0))); // VITALITY: +15%/level
+    this.blood = maxBlood;
+    this.maxBlood = maxBlood;
     this.invuln = 0;
 
     // Shield — a timed buff (bought with coins, see WEAPONS.shield) that
@@ -908,6 +985,7 @@ class Player {
     // Free 2D movement — fly anywhere on screen; you shoot from wherever you
     // are. Simple straight-line pursuit of the touch point, no extra sway
     // or wobble layered on top — kept intentionally minimal per request.
+    const px0 = this.x, py0 = this.y;
     const tx = input.targetX(this.x);
     const ty = input.targetY(this.y);
     const dx = tx - this.x, dy = ty - this.y;
@@ -936,6 +1014,11 @@ class Player {
     const maxY = CONFIG.height - CONFIG.hud.rowBottomOffset - footOffset - 20;
     this.y = Math.max(half + 40, Math.min(maxY, this.y)); // 40 = HUD zone
 
+    const k = Math.min(1, dt * 10);
+    this.vx += ((this.x - px0) / Math.max(dt, 1e-4) - this.vx) * k;
+    this.vy += ((this.y - py0) / Math.max(dt, 1e-4) - this.vy) * k;
+    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - dt * 9);
+
     // Gate effect timer
     if (this.fireRateMultTime > 0) {
       this.fireRateMultTime -= dt;
@@ -943,6 +1026,13 @@ class Player {
     }
     if (this.hurtFlash > 0) this.hurtFlash -= dt;
     if (this.invuln > 0) this.invuln -= dt;
+    // Out-of-combat regen: after a few seconds without a hit, the blood
+    // line slowly refills (2%/s) — so a drained Guardian recovers by
+    // playing well, not only via blood-gift gates.
+    this.sinceHit = (this.sinceHit || 0) + dt;
+    if (this.sinceHit > 3.5 && this.blood < this.maxBlood) {
+      this.blood = Math.min(this.maxBlood, this.blood + this.maxBlood * 0.02 * dt);
+    }
     if (this.shieldTime > 0) this.shieldTime -= dt;
 
     this.fireTimer -= dt;
@@ -958,7 +1048,8 @@ class Player {
   // Returns true when it's time to cast a spell
   tryFire() {
     if (this.fireTimer <= 0) {
-      this.fireTimer = 1 / (CONFIG.player.fireRate * this.fireRateMult * this.fireRateBonus);
+      this.fireTimer = 1 / (CONFIG.player.fireRate * this.fireRateMult * this.fireRateBonus * this.runRateMult);
+      this.recoil = 1;
       return true;
     }
     return false;
@@ -989,39 +1080,73 @@ class Player {
     if (this.invuln > 0) return false;
     this.invuln = CONFIG.player.invulnAfterHit;
     this.hurtFlash = 0.15;
-    const hadBlood = this.blood > 0;
+    this.sinceHit = 0;
+    // Already drained? This hit goes straight through to a heart (with a
+    // longer grace window) — previously a drained Guardian was immune.
+    if (this.blood <= 0) {
+      this.invuln = 1.5;
+      return true;
+    }
     this.blood = Math.max(0, this.blood - damage);
-    return hadBlood && this.blood <= 0;
+    return this.blood <= 0;
   }
 }
 
 
 // ===== src/entities/spell.js =====
-// Spell projectile — travels straight up.
+// Spell projectile — travels along (vx, vy); default is straight up.
+// pierce: how many extra monsters it can pass through. kind picks the look
+// ('bolt' player shot, 'fever' rainbow, 'seeker' homing missile, 'turret').
 
 class Spell {
-  constructor(x, y, damage = CONFIG.spell.damage) {
+  constructor(x, y, damage = CONFIG.spell.damage, opts = {}) {
     this.x = x;
     this.y = y;
-    this.r = CONFIG.spell.size;
+    this.r = opts.r || CONFIG.spell.size;
     this.damage = damage;
+    const speed = opts.speed || CONFIG.spell.speed;
+    const ang = opts.angle || 0; // radians off vertical, + = right
+    this.vx = Math.sin(ang) * speed;
+    this.vy = -Math.cos(ang) * speed;
+    this.speed = speed;
+    this.pierce = opts.pierce || 0;
+    this.kind = opts.kind || 'bolt';
+    this.homing = !!opts.homing;
+    this.hue = opts.hue || 0;
+    this.hitSet = null;
+    this.age = 0;
     this.dead = false;
   }
 
   update(dt) {
-    this.y -= CONFIG.spell.speed * dt;
-    if (this.y < -30) this.dead = true;
+    this.age += dt;
+    if (this.homing && this.target && !this.target.dead) {
+      // steer toward the target, capped turn rate so missiles arc nicely
+      const want = Math.atan2(this.target.x - this.x, -(this.target.y - this.y));
+      const cur = Math.atan2(this.vx, -this.vy);
+      let d = want - cur;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const turn = Math.max(-6 * dt, Math.min(6 * dt, d));
+      const a = cur + turn;
+      this.vx = Math.sin(a) * this.speed;
+      this.vy = -Math.cos(a) * this.speed;
+    }
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    if (this.y < -30 || this.y > CONFIG.height + 30 || this.x < -30 || this.x > CONFIG.width + 30) this.dead = true;
   }
 }
 
 
 // ===== src/entities/monster.js =====
-// Monster — travels a "path" from its spawn point toward a target point at
-// the bottom of the screen, with a wave/curve overlay riding on top. This is
-// what lets clumps carve diagonal or swooping lines across the lane instead
-// of just dropping straight down — a whole clump can share the same path so
-// they move together like a flock. Slimes split when killed; ranged types
-// (shootInterval set in data/monsters.js) fire back periodically.
+// Monster — a physics body. Group members are spring-damped toward their
+// slot in a Flock formation (systems/flocks.js); singles wander down the
+// lane on smooth layered-sine "noise" with a per-type personality (goblins
+// dart, imps swoop, slimes hop, trolls lumber). Hits are real impulses that
+// shove the body back, and separation keeps bodies from overlapping.
+// Slimes split when killed; ranged types (shootInterval in
+// data/monsters.js) fire back periodically.
 
 class Monster {
   constructor(type, x, y, speedMult = 1, path = null, hpMult = 1) {
@@ -1053,73 +1178,118 @@ class Monster {
     // the bomb behaves consistently across every stage.
     this.power = d.power ?? 50;
 
-    // Movement path — { targetX, curveAmp, curveFreq, phase }. Default is the
-    // old behavior: a gentle in-place waddle straight down (randomized phase
-    // so solo monsters don't all wobble identically). Group clumps get an
-    // explicit shared path from the spawner — in that case the phase must be
-    // used EXACTLY as given (no extra randomness added), or the sine overlay
-    // desyncs between members and the "move together" effect is lost.
-    const basePath = path || { targetX: x, curveAmp: 14, curveFreq: 6, phase: Math.random() * Math.PI * 2 };
-    // Every type gets its own movement "personality" (see MONSTERS.<type>.
-    // movement) layered on top of whatever shared clump path was assigned —
-    // this is what makes a goblin dart, a slime bounce, a skeleton march,
-    // and a troll lumber differently even when spawned in the same clump
-    // heading the same direction, instead of every monster on screen moving
-    // identically.
-    const mv = d.movement || { amp: 1, freq: 1, bob: 0 };
-    if (basePath.type === 'circle') {
-      // Circle/spiral formation (see spawner.js's flyCircle pattern) — orbits
-      // a fixed center point while still falling at normal speed, instead of
-      // lerping toward a targetX. Personality amp/freq don't apply to the
-      // orbit itself (would just distort the circle) so this path is left
-      // as-is rather than run through the curveAmp/curveFreq multiply below.
-      this.path = { ...basePath };
-      this.age = 0;
-    } else {
-      this.path = {
-        ...basePath,
-        curveAmp: (basePath.curveAmp ?? 14) * mv.amp,
-        curveFreq: (basePath.curveFreq ?? 6) * mv.freq,
-      };
-    }
-    this.bobAmp = mv.bob || 0;
+    this.speedMult = speedMult;
+    // `path` is only used by the boss now (its weave amplitude/frequency);
+    // everyone else moves by physics — see _move().
+    this.path = path || { curveAmp: 120, curveFreq: 1.3, phase: Math.random() * Math.PI * 2 };
     this.wobble = this.path.phase ?? 0;
+    const mv = d.movement || { amp: 1, freq: 1, bob: 0 };
+    this.bobAmp = mv.bob || 0;
+    // Physics state + single-wanderer personality (smooth noise = two
+    // incommensurate sines, so the drift never visibly repeats).
+    this.pvx = 0;
+    this.pvy = this.speed;
+    this.flock = null;
+    this.wander = {
+      a1: 34 * mv.amp, f1: 0.9 * mv.freq, p1: Math.random() * 6.28,
+      a2: 14 * mv.amp, f2: 2.3 * mv.freq, p2: Math.random() * 6.28,
+    };
+    this.hopping = type === 'slime' || type === 'slimeSmall';
+    this.age = 0;
+
+    // --- Motion-graphics state (read by render/creatures.js) ---------------
+    // anim: walk/flap cycle phase, advanced by distance travelled so feet
+    // never "skate". vx: smoothed lateral velocity → lean into turns.
+    // knock: spring-back offset after a hit. spawnT: pop-in timer.
+    this.anim = Math.random() * 10;
+    this.seed = Math.random() * 100;
+    this.vx = 0;
+    this.knock = 0;
+    this.squish = 0;
+    this.spawnT = 0;
+    this.slowT = 0;      // Frost Nova slow (seconds remaining)
+    this.elite = false;
+    this.boss = !!d.boss;
+    this.flying = !!d.flying;
+    this.fireFlash = 0;  // mouth-glow right after a shot
 
     this.shootInterval = d.shootInterval || null;
     // stagger first shot so a whole clump doesn't fire in sync
     this.shootTimer = this.shootInterval ? this.shootInterval * (0.4 + Math.random() * 0.8) : null;
   }
 
+  // Elite variant — tougher, bigger, golden aura, pays out a gem burst.
+  makeElite() {
+    this.elite = true;
+    this.hp = this.maxHp = Math.max(3, Math.round(this.maxHp * 3));
+    this.r *= 1.3;
+    this.score *= 4;
+    this.power *= 2;
+  }
+
   update(dt) {
-    if (this.path.type === 'circle') {
-      // Fly-circle formation — orbits a fixed center point while still
-      // falling at the normal per-monster speed, instead of lerping toward a
-      // targetX. This is what makes the "fly circle" pattern read as a real
-      // spinning ring/spiral of monsters rather than just a wobbly line.
-      this.age += dt;
-      this.y = this.startY + this.speed * this.age;
-      const angle = (this.path.phase || 0) + this.age * (this.path.angularSpeed || 3);
-      this.x = this.path.centerX + Math.cos(angle) * this.path.radius;
+    const prevX = this.x, prevY = this.y;
+    this.spawnT += dt;
+    if (this.slowT > 0) { this.slowT -= dt; dt *= 0.45; }
+    this._move(dt);
+    if (this.squish > 0) this.squish = Math.max(0, this.squish - dt * 5);
+    if (this.fireFlash > 0) this.fireFlash -= dt;
+    const realDt = Math.max(1e-4, dt);
+    const ivx = (this.x - prevX) / realDt;
+    this.vx += (ivx - this.vx) * Math.min(1, dt * 8);
+    const travelled = Math.hypot(this.x - prevX, this.y - prevY);
+    this.anim += travelled * 0.09 + dt * 2;
+  }
+
+  _move(dt) {
+    if (this.boss) {
+      // Bosses descend to a hover line near the top and fight from there —
+      // weaving side to side and raining bullet patterns (see bossVolley in
+      // main.js) instead of slowly sinking into the gate.
+      this.age = (this.age || 0) + dt;
+      const hoverY = 150;
+      if (this.y < hoverY) this.y = Math.min(hoverY, this.y + Math.max(40, this.speed * 3) * dt);
+      else this.y = hoverY + Math.sin(this.age * 0.9) * 14;
+      this.wobble += dt * (this.path.curveFreq ?? 1.3) * (this.enraged ? 1.5 : 1);
+      this.x = CONFIG.width / 2 + Math.sin(this.wobble) * (this.path.curveAmp ?? 120);
       this.x = Math.max(this.r, Math.min(CONFIG.width - this.r, this.x));
       if (this.hitFlash > 0) this.hitFlash -= dt;
       if (this.shootTimer !== null) this.shootTimer -= dt;
       return;
     }
-
-    this.y += this.speed * dt;
-    this.wobble += dt * (this.path.curveFreq ?? 6);
-
-    // Ease (smoothstep) the lateral drift from spawn point to target point as
-    // the monster falls, so a clump can start in one corner and finish in
-    // another — the sine overlay on top gives it a carved, swooping feel
-    // rather than a straight diagonal line.
-    const span = Math.max(1, CONFIG.height - this.startY);
-    const progress = Math.max(0, Math.min(1, (this.y - this.startY) / span));
-    const eased = progress * progress * (3 - 2 * progress);
-    const baseX = this.startX + (this.path.targetX - this.startX) * eased;
-    this.x = baseX + Math.sin(this.wobble) * (this.path.curveAmp ?? 14);
-
-    this.x = Math.max(this.r, Math.min(CONFIG.width - this.r, this.x));
+    this.age += dt;
+    const W = CONFIG.width;
+    let ax, ay;
+    if (this.flock && !this.flock.dead) {
+      // Critically-damped spring toward the formation slot, damped relative
+      // to the leader's own velocity → the group glides as one body.
+      const tgt = this.flock.target(this);
+      const k = 14, c = 2 * Math.sqrt(k);
+      ax = k * (tgt.x - this.x) - c * (this.pvx - this.flock.vx);
+      ay = k * (tgt.y - this.y) - c * (this.pvy - this.flock.vy);
+    } else {
+      // Lone wanderer: steer toward a smoothly varying desired velocity.
+      const w = this.wander, t = this.age;
+      let dvx = Math.cos(t * w.f1 + w.p1) * w.a1 + Math.cos(t * w.f2 + w.p2) * w.a2;
+      // soft walls — turn back well before the edge instead of clamping
+      const edge = 40 + this.r;
+      if (this.x < edge) dvx += (edge - this.x) * 4;
+      if (this.x > W - edge) dvx -= (this.x - (W - edge)) * 4;
+      let dvy = this.speed;
+      if (this.hopping) dvy *= 0.35 + 1.3 * Math.abs(Math.sin(this.anim * 0.35 * Math.PI)); // hop rhythm
+      ax = (dvx - this.pvx) * 3;
+      ay = (dvy - this.pvy) * 3;
+    }
+    this.pvx += ax * dt;
+    this.pvy += ay * dt;
+    // speed limit so catch-ups and shoves stay graceful
+    const maxV = this.speed * 3 + 120;
+    const v = Math.hypot(this.pvx, this.pvy);
+    if (v > maxV) { this.pvx *= maxV / v; this.pvy *= maxV / v; }
+    this.x += this.pvx * dt;
+    this.y += this.pvy * dt;
+    if (this.x < this.r) { this.x = this.r; this.pvx = Math.abs(this.pvx) * 0.5; }
+    if (this.x > W - this.r) { this.x = W - this.r; this.pvx = -Math.abs(this.pvx) * 0.5; }
     if (this.hitFlash > 0) this.hitFlash -= dt;
     if (this.shootTimer !== null) this.shootTimer -= dt;
   }
@@ -1128,24 +1298,42 @@ class Monster {
   tryShoot() {
     if (this.shootTimer === null || this.dead) return false;
     if (this.shootTimer <= 0 && this.y > 10) {
-      this.shootTimer = this.shootInterval;
+      this.shootTimer = this.shootInterval * (this.enraged ? 0.6 : 1);
+      this.fireFlash = 0.18;
       return true;
     }
     return false;
   }
 
   // Returns array of split children when a splitter dies, else null.
+  // True while the monster is visibly "charging" a shot — the renderer
+  // draws a growing glow so the player can read incoming fire.
+  get windup() {
+    if (this.shootTimer === null || this.y < 10) return 0;
+    const w = 0.45;
+    return this.shootTimer < w ? 1 - this.shootTimer / w : 0;
+  }
+
   onHit(damage) {
     this.hp -= damage;
     this.hitFlash = 0.1;
+    this.squish = 1;
+    // real impulse: shoves the body back up the lane; its spring / steering
+    // pulls it back into place, so hits read as physical
+    if (!this.boss) this.pvy -= (this.elite ? 35 : 70) / Math.max(1, this.r / 14);
+    if (this.boss && !this.enraged && this.hp <= this.maxHp * 0.5) this.enraged = true;
     if (this.hp <= 0) {
       this.dead = true;
       if (this.splitsInto) {
-        const childPath = { targetX: this.x, curveAmp: 16, curveFreq: 7, phase: Math.random() * Math.PI * 2 };
-        return [
-          new Monster(this.splitsInto, this.x - this.r * 0.8, this.y, 1, childPath, this.hpMult),
-          new Monster(this.splitsInto, this.x + this.r * 0.8, this.y, 1, childPath, this.hpMult),
-        ];
+        const kids = [-1, 1].map((side) => {
+          const k = new Monster(this.splitsInto, this.x + side * this.r * 0.6, this.y, this.speedMult, null, this.hpMult);
+          k.isChild = true;
+          k.pvx = side * 160;   // burst apart sideways, then wander off
+          k.pvy = -60;
+          k.damage = this.damage;
+          return k;
+        });
+        return kids;
       }
     }
     return null;
@@ -1228,14 +1416,17 @@ class Gate {
 // depleting it costs one shared heart, then it refills and keeps fighting.
 
 class Angel {
-  constructor(side = 1) {
+  // up = Armory levels { power, fireRate, blood } (data/upgrades.js)
+  constructor(side = 1, up = {}) {
     this.side = side;       // -1 left, +1 right of the wizard
+    this.damage = CONFIG.spell.damage * (1 + 0.25 * (up.power || 0));
+    this.fireInterval = 0.25 / (1 + 0.12 * (up.fireRate || 0));
     this.fireTimer = 0;
     this.x = 0;
     this.y = 0;
     this.bob = 0;
-    this.blood = CONFIG.angel.maxBlood;
-    this.maxBlood = CONFIG.angel.maxBlood;
+    this.maxBlood = CONFIG.angel.maxBlood + (up.blood || 0);
+    this.blood = this.maxBlood;
     this.invuln = 0;
     this.hitFlash = 0;
     this.dead = false;
@@ -1247,8 +1438,8 @@ class Angel {
     this.y = player.y - 6 + Math.sin(this.bob) * 5;
     this.fireTimer -= dt;
     if (this.fireTimer <= 0) {
-      this.fireTimer = 0.25;
-      spells.push(new Spell(this.x, this.y - 18));
+      this.fireTimer = this.fireInterval;
+      spells.push(new Spell(this.x, this.y - 18, this.damage));
     }
     if (this.invuln > 0) this.invuln -= dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;
@@ -1318,21 +1509,27 @@ class Angel {
 
 
 // ===== src/entities/enemyBullet.js =====
-// Enemy projectile — fired by ranged monsters (see MONSTERS[type].shootInterval),
-// travels straight down. Blocked by obstacles just like the player's spells.
+// Enemy projectile — fired by ranged monsters (see MONSTERS[type].shootInterval)
+// and boss volleys. Travels along (vx, vy); default straight down.
 
 class EnemyBullet {
-  constructor(x, y, damage = 10) {
+  constructor(x, y, damage = 10, vx = 0, vy = CONFIG.enemyBullet.speed, big = false) {
     this.x = x;
     this.y = y;
+    this.vx = vx;
+    this.vy = vy;
     this.damage = damage;
-    this.r = CONFIG.enemyBullet.size;
+    this.big = big;
+    this.r = CONFIG.enemyBullet.size * (big ? 1.4 : 1);
+    this.age = Math.random() * 6;
     this.dead = false;
   }
 
   update(dt) {
-    this.y += CONFIG.enemyBullet.speed * dt;
-    if (this.y > CONFIG.height + 30) this.dead = true;
+    this.age += dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    if (this.y > CONFIG.height + 30 || this.y < -60 || this.x < -40 || this.x > CONFIG.width + 40) this.dead = true;
   }
 }
 
@@ -1408,12 +1605,14 @@ class Ship {
 // Also blocks enemy bullets (a proper barrier against enemy fire).
 
 class Wall {
-  constructor(x, y) {
+  // up = Armory levels { hp, thorns } (data/upgrades.js)
+  constructor(x, y, up = {}) {
     this.x = x;
     this.y = y;
     this.w = CONFIG.wall.width;
     this.h = CONFIG.wall.height;
-    this.hp = CONFIG.wall.hp;
+    this.hp = CONFIG.wall.hp * (1 + 0.25 * (up.hp || 0));
+    this.thorns = 1 + 0.3 * (up.thorns || 0);
     this.maxHp = this.hp;
     this.hitFlash = 0;
     this.dead = false;
@@ -1445,11 +1644,14 @@ class Wall {
 // by monsters pressing against it.
 
 class Turret {
-  constructor(x, y) {
+  // up = Armory levels { power, fireRate, hp } (data/upgrades.js)
+  constructor(x, y, up = {}) {
     this.x = x;
     this.y = y;
     this.r = CONFIG.turret.size / 2;
-    this.hp = CONFIG.turret.hp;
+    this.damage = CONFIG.turret.damage * (1 + 0.25 * (up.power || 0));
+    this.fireInterval = CONFIG.turret.fireRate / (1 + 0.1 * (up.fireRate || 0));
+    this.hp = CONFIG.turret.hp * (1 + 0.25 * (up.hp || 0));
     this.maxHp = this.hp;
     this.hitFlash = 0;
     this.dead = false;
@@ -1466,7 +1668,7 @@ class Turret {
   tryShoot() {
     if (this.dead) return false;
     if (this.shootTimer <= 0) {
-      this.shootTimer = CONFIG.turret.fireRate;
+      this.shootTimer = this.fireInterval;
       this.barrelRecoil = 1;
       return true;
     }
@@ -1477,6 +1679,219 @@ class Turret {
     this.hp -= damage;
     this.hitFlash = 0.12;
     if (this.hp <= 0) this.dead = true;
+  }
+}
+
+
+// ===== src/systems/flocks.js =====
+// ============================================================
+// Flocks — physics-driven group movement for Shatterlings.
+//
+// A Flock is a VIRTUAL leader (not a monster, so killing members never
+// breaks the group) that glides down the lane on a smooth harmonic path:
+// steady descent + a sine sway around a center that drifts and softly
+// bounces off the lane edges. Each member is pulled toward its formation
+// slot by a critically-damped spring (no jitter, no overshoot), damped
+// RELATIVE to the leader's velocity so the whole group glides as one.
+// When members die the survivors are re-slotted and smoothly "close
+// ranks". Separation (applySeparation) keeps every body from overlapping.
+// ============================================================
+
+const flRand = (a, b) => a + Math.random() * (b - a);
+
+// name → weight; later levels unlock the showier formations (see pickFormation)
+const FORMATION_INFO = {
+  vee:     { weight: 3, minLis: 0 },
+  line:    { weight: 3, minLis: 0 },
+  arc:     { weight: 2, minLis: 0 },
+  wave:    { weight: 2, minLis: 1 },
+  diamond: { weight: 2, minLis: 2 },
+  snake:   { weight: 2, minLis: 1 },
+  circle:  { weight: 2, minLis: 3 },
+};
+
+function pickFormation(lis) {
+  const list = Object.entries(FORMATION_INFO).filter(([, f]) => lis >= f.minLis);
+  let total = 0;
+  for (const [, f] of list) total += f.weight;
+  let r = Math.random() * total;
+  for (const [k, f] of list) { r -= f.weight; if (r <= 0) return k; }
+  return list[0][0];
+}
+
+class Flock {
+  // opts: { x, formation, size, speed, spacing }
+  constructor(opts) {
+    const W = CONFIG.width;
+    this.formation = opts.formation;
+    this.spacing = opts.spacing || 34;
+    this.speed = opts.speed;                 // descent px/s
+    this.t = 0;
+    this.members = [];
+    this.trail = [];                         // leader history (snake formation)
+    this.slots = new Map();
+    this.aliveCount = -1;
+
+    // Harmonic path: sway around a drifting center.
+    const n = opts.size;
+    const halfW = this.halfWidth(n);
+    const margin = 30 + halfW;
+    this.cx = Math.max(margin, Math.min(W - margin, opts.x));
+    this.margin = margin;
+    const snake = this.formation === 'snake';
+    this.amp = snake ? flRand(60, 110) : flRand(18, 46);
+    this.freq = snake ? flRand(1.2, 1.8) : flRand(0.5, 1.1);
+    this.phase = flRand(0, Math.PI * 2);
+    this.drift = (Math.random() < 0.5 ? -1 : 1) * flRand(8, 26);
+    this.spin = (Math.random() < 0.5 ? -1 : 1) * flRand(0.8, 1.3); // circle rotation
+    this.x = this.cx + Math.sin(this.phase) * this.amp;
+    this.y = -40 - this.depth(n);
+    this.vx = 0;
+    this.vy = this.speed;
+    this.heading = 0;
+    this.dead = false;
+  }
+
+  halfWidth(n) {
+    const s = this.spacing;
+    switch (this.formation) {
+      case 'line': case 'wave': return ((n - 1) / 2) * s;
+      case 'vee': return Math.ceil((n - 1) / 2) * s;
+      case 'arc': return Math.min(n, 7) * s * 0.4;
+      case 'circle': return this.ringRadius(n);
+      case 'diamond': return Math.ceil(Math.sqrt(n)) * s * 0.75;
+      case 'snake': return this.amp || 80;
+      default: return s;
+    }
+  }
+
+  depth(n) {
+    const s = this.spacing;
+    switch (this.formation) {
+      case 'vee': return Math.ceil((n - 1) / 2) * s * 0.8;
+      case 'circle': return this.ringRadius(n) * 2;
+      case 'diamond': return Math.ceil(Math.sqrt(n)) * s * 1.5;
+      case 'snake': return n * 26;
+      default: return s;
+    }
+  }
+
+  ringRadius(n) { return Math.max(this.spacing * 0.9, (n * this.spacing) / (2 * Math.PI)); }
+
+  add(m) {
+    m.flock = this;
+    this.members.push(m);
+  }
+
+  // Slot offsets (relative to the leader, +y = toward the gate) for n alive.
+  assignSlots(alive) {
+    const n = alive.length, s = this.spacing;
+    this.slots.clear();
+    alive.forEach((m, i) => {
+      let dx = 0, dy = 0;
+      switch (this.formation) {
+        case 'line': case 'wave':
+          dx = (i - (n - 1) / 2) * s; break;
+        case 'vee': {
+          const k = Math.ceil(i / 2), side = i % 2 ? -1 : 1;
+          dx = side * k * s; dy = -k * s * 0.8; break;
+        }
+        case 'arc': {
+          const a = n > 1 ? -1.0 + (2.0 * i) / (n - 1) : 0;
+          const R = Math.max(s * 1.6, (n * s) / 2.2);
+          dx = Math.sin(a) * R; dy = Math.cos(a) * R * 0.45 - R * 0.45; break;
+        }
+        case 'circle':
+          dx = i; dy = 0; break; // angle index — resolved live in target()
+        case 'diamond': {
+          const k = Math.ceil(Math.sqrt(n));
+          const row = Math.floor(i / k), col = i % k;
+          dx = (col - row) * s * 0.75;
+          dy = -(col + row) * s * 0.75 + (k - 1) * s * 0.75;
+          break;
+        }
+        case 'snake':
+          dx = i; break; // trail index — resolved live in target()
+      }
+      this.slots.set(m, { dx, dy, i });
+    });
+    this.aliveCount = n;
+  }
+
+  update(dt) {
+    const W = CONFIG.width;
+    this.t += dt;
+    // center drifts and softly reflects inside the lane
+    this.cx += this.drift * dt;
+    if (this.cx < this.margin) { this.cx = this.margin; this.drift = Math.abs(this.drift); }
+    if (this.cx > W - this.margin) { this.cx = W - this.margin; this.drift = -Math.abs(this.drift); }
+    const nx = this.cx + Math.sin(this.freq * this.t + this.phase) * this.amp;
+    this.vx = (nx - this.x) / Math.max(dt, 1e-4);
+    this.x = nx;
+    this.vy = this.speed;
+    this.y += this.speed * dt;
+    this.heading = Math.atan2(this.vx, this.vy); // 0 = straight down
+    // trail sampled by DISTANCE (every 2px) so the snake spacing holds even
+    // during slow-motion or frame drops
+    const last = this.trail[this.trail.length - 1];
+    if (!last || Math.hypot(this.x - last.x, this.y - last.y) >= 2) {
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > 600) this.trail.shift();
+    }
+
+    const alive = this.members.filter((m) => !m.dead);
+    if (alive.length !== this.aliveCount) this.assignSlots(alive);
+    if (!alive.length && this.t > 0.5) this.dead = true;
+    if (this.y > CONFIG.height + 400) this.dead = true;
+  }
+
+  // World-space target for member m.
+  target(m) {
+    const slot = this.slots.get(m);
+    if (!slot) return { x: this.x, y: this.y };
+    if (this.formation === 'snake') {
+      // follow-the-leader: each member rides the leader's own trail, a fixed
+      // distance behind — the group slithers like one creature
+      const back = Math.round((slot.i * this.spacing * 0.85) / 2);
+      const p = this.trail[Math.max(0, this.trail.length - 1 - back)];
+      return p ? { x: p.x, y: p.y } : { x: this.x, y: this.y - slot.i * this.spacing };
+    }
+    if (this.formation === 'circle') {
+      const n = Math.max(1, this.aliveCount);
+      const a = (slot.i / n) * Math.PI * 2 + this.t * this.spin;
+      const R = this.ringRadius(n);
+      return { x: this.x + Math.cos(a) * R, y: this.y + Math.sin(a) * R * 0.8 };
+    }
+    let { dx, dy } = slot;
+    if (this.formation === 'wave') dy += Math.sin(this.t * 3.2 - slot.i * 0.9) * this.spacing * 0.45;
+    // tilt the formation gently into the turn — reads like banking birds
+    const rot = -this.heading * 0.6;
+    const c = Math.cos(rot), s = Math.sin(rot);
+    return { x: this.x + dx * c - dy * s, y: this.y + dx * s + dy * c };
+  }
+}
+
+// Soft-body separation — overlapping Shatterlings push each other apart
+// through their velocities (so the springs/wander smooth it out), never by
+// snapping positions.
+function applySeparation(monsters, dt) {
+  const n = monsters.length;
+  for (let i = 0; i < n; i++) {
+    const a = monsters[i];
+    if (a.dead || a.boss) continue;
+    for (let j = i + 1; j < n; j++) {
+      const b = monsters[j];
+      if (b.dead || b.boss) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const minD = (a.r + b.r) * 1.05;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= minD * minD || d2 < 1e-6) continue;
+      const d = Math.sqrt(d2);
+      const push = ((minD - d) / minD) * 900 * dt;
+      const ux = dx / d, uy = dy / d;
+      a.pvx -= ux * push; a.pvy -= uy * push * 0.6;
+      b.pvx += ux * push; b.pvy += uy * push * 0.6;
+    }
   }
 }
 
@@ -1496,309 +1911,12 @@ function weightedPick(spawns) {
   return Object.keys(spawns)[0];
 }
 
-// --- Formation patterns ------------------------------------------------
-// Instead of dumping a whole clump on screen in the same instant, a wave
-// now picks one of these named formations and spawns its monsters ONE AFTER
-// ANOTHER on a short delay queue (see spawnQueue/update() below) — so the
-// player reads each wave as a distinct, deliberate shape (a line marching
-// across, a scattered ambush, a corner rush, a spinning ring, a sweeping
-// arc, a horizontal wall, or a small simple drop) instead of everything
-// appearing simultaneously in a formless pile.
-//
-// sizeFactor scales the wave's enemy count relative to the level's average
-// wave size (see avgClumpSize below) — bigger/slower-reading formations
-// (line, horizontal wall) get more monsters, dramatic/tight ones (circle,
-// corner) get fewer so they still read clearly on screen.
-const PATTERNS = [
-  { name: 'lineSweep', weight: 3, sizeFactor: 1.1 },
-  { name: 'randomScatter', weight: 3, sizeFactor: 0.9 },
-  { name: 'cornerDive', weight: 2, sizeFactor: 0.8 },
-  { name: 'flyCircle', weight: 2, sizeFactor: 0.6 },
-  { name: 'carveSweep', weight: 2, sizeFactor: 0.9 },
-  { name: 'topHorizontal', weight: 2, sizeFactor: 1.0 },
-  { name: 'straightDrop', weight: 2, sizeFactor: 0.5 },
-  { name: 'spiralDescent', weight: 2, sizeFactor: 0.9 },
-  { name: 'zigzagRow', weight: 2, sizeFactor: 0.8 },
-  { name: 'pincerConverge', weight: 2, sizeFactor: 0.9 },
-  { name: 'cascadeRows', weight: 2, sizeFactor: 1.1 },
-  { name: 'diagonalRain', weight: 2, sizeFactor: 0.8 },
-];
-
-function pickPattern() {
-  let total = 0;
-  for (const p of PATTERNS) total += p.weight;
-  let r = Math.random() * total;
-  for (const p of PATTERNS) { r -= p.weight; if (r <= 0) return p; }
-  return PATTERNS[0];
-}
-
-// Each builder returns an array of spawn specs: { x, y, delay, targetX,
-// curveAmp, curveFreq, phase } for the normal lerp+sine path, or
-// { x, y, delay, type: 'circle', centerX, radius, angularSpeed, phase } for
-// the orbiting fly-circle path. `delay` is seconds after the wave triggers
-// before that individual monster actually appears — this is what creates
-// the "one after another" sequenced feel instead of an instant pile-on.
-//
-// Every "marching" pattern spreads its monsters using a genuine PER-MONSTER
-// step (stepMin..stepMax seconds between each one), not a fixed total window
-// squeezed to fit however many are in the wave — so a wave really does read
-// as a countable row/line arriving one at a time instead of a whole cluster
-// materializing together in a blink. Wave sizes are also kept small (see
-// MAX_WAVE in update() below), so even the biggest wave finishes entering in
-// a few readable seconds rather than an instant pile-on OR an endless crawl.
-function sequenceDelays(count, stepMin, stepMax) {
-  const delays = [];
-  let t = 0;
-  for (let i = 0; i < count; i++) {
-    delays.push(t);
-    t += rand(stepMin, stepMax);
-  }
-  return delays;
-}
-
-// Marches across the lane in a line, entering one after another from one
-// edge and crossing to the other — "line, all one after another, moves
-// from left to right" (or right to left, direction randomized per wave).
-function lineSweep(count) {
-  const dir = Math.random() < 0.5 ? 1 : -1;
-  const startX = dir === 1 ? 20 : CONFIG.width - 20;
-  const endX = dir === 1 ? CONFIG.width - 20 : 20;
-  const delays = sequenceDelays(count, 0.16, 0.26);
-  return delays.map((delay) => ({
-    delay,
-    x: startX + rand(-15, 15),
-    y: rand(-70, -30),
-    targetX: endX,
-    curveAmp: rand(10, 20),
-    curveFreq: rand(4, 6),
-    phase: rand(0, Math.PI * 2),
-  }));
-}
-
-// Fully chaotic — random start, random target, random timing. "Move
-// random" — the ambush wave, unpredictable on purpose. Timing is
-// independent per monster (not a clean sequence), but the window now scales
-// with the wave's own size so a bigger scatter wave still visibly trickles
-// in over more time instead of all landing within the same short window.
-function randomScatter(count) {
-  const specs = [];
-  const window = Math.min(2.6, Math.max(0.8, count * 0.22));
-  for (let i = 0; i < count; i++) {
-    specs.push({
-      delay: rand(0, window),
-      x: rand(30, CONFIG.width - 30),
-      y: rand(-90, -20),
-      targetX: rand(30, CONFIG.width - 30),
-      curveAmp: rand(20, 50),
-      curveFreq: rand(2, 5),
-      phase: rand(0, Math.PI * 2),
-    });
-  }
-  return specs;
-}
-
-// A fast rush from one top corner straight to the opposite bottom corner,
-// entering one after another along the same diagonal — "move from corner
-// top to corner down."
-function cornerDive(count) {
-  const fromLeft = Math.random() < 0.5;
-  const startX = fromLeft ? 25 : CONFIG.width - 25;
-  const endX = fromLeft ? CONFIG.width - 25 : 25;
-  const delays = sequenceDelays(count, 0.18, 0.28);
-  return delays.map((delay) => ({
-    delay,
-    x: startX + rand(-10, 10),
-    y: rand(-80, -30),
-    targetX: endX,
-    curveAmp: rand(6, 14),
-    curveFreq: rand(2, 3),
-    phase: rand(0, Math.PI * 2),
-    speedMult: 1.15,
-  }));
-}
-
-// A spinning ring of monsters orbiting a shared center point as they
-// descend — "fly circle." Evenly spaced around the ring so it reads as a
-// deliberate rotating formation, not a scatter.
-function flyCircle(count) {
-  const cx = rand(CONFIG.width * 0.3, CONFIG.width * 0.7);
-  const radius = rand(50, 90);
-  const dirSign = Math.random() < 0.5 ? 1 : -1;
-  const delays = sequenceDelays(count, 0.1, 0.16);
-  return delays.map((delay, i) => ({
-    delay,
-    x: cx, y: -50,
-    type: 'circle',
-    centerX: cx,
-    radius,
-    angularSpeed: dirSign * rand(2.2, 3.2),
-    phase: (i / count) * Math.PI * 2,
-  }));
-}
-
-// A big, wide swooping arc — "carve" — same shared curve for the whole
-// wave, entering one after another so the scythe-like sweep unfurls across
-// the screen instead of appearing all at once.
-function carveSweep(count) {
-  const targetX = rand(30, CONFIG.width - 30);
-  const curveAmp = rand(50, 80);
-  const curveFreq = rand(1.4, 2.2);
-  const cx = rand(50, CONFIG.width - 50);
-  const delays = sequenceDelays(count, 0.15, 0.22);
-  return delays.map((delay) => ({
-    delay,
-    x: cx + rand(-30, 30),
-    y: rand(-90, -30),
-    targetX,
-    curveAmp,
-    curveFreq,
-    phase: rand(0, Math.PI * 2),
-  }));
-}
-
-// A wide horizontal row spread across the top of the lane, dropping down
-// together with only minor stagger — "just horizontal in top" — reads as a
-// wall of enemies descending in formation rather than a line crossing or a
-// scatter.
-function topHorizontal(count) {
-  const margin = 40;
-  const delays = sequenceDelays(count, 0.09, 0.14);
-  return delays.map((delay, i) => {
-    const x = margin + (i / Math.max(1, count - 1)) * (CONFIG.width - margin * 2);
-    return {
-      delay,
-      x,
-      y: rand(-60, -30),
-      targetX: x + rand(-20, 20),
-      curveAmp: rand(6, 12),
-      curveFreq: rand(3, 5),
-      phase: rand(0, Math.PI * 2),
-    };
-  });
-}
-
-// A small, simple near-center drop — kept as a lighter "breather" wave
-// between the bigger, busier formations so not every single wave is a
-// full-blown set piece.
-function straightDrop(count) {
-  const cx = rand(60, CONFIG.width - 60);
-  const delays = sequenceDelays(count, 0.22, 0.32);
-  return delays.map((delay) => ({
-    delay,
-    x: cx + rand(-50, 50),
-    y: rand(-70, -20),
-    targetX: cx + rand(-30, 30),
-    curveAmp: 14,
-    curveFreq: 6,
-    phase: rand(0, Math.PI * 2),
-  }));
-}
-
-// Corner-to-corner diagonal descent with a pronounced winding/spiral sway on
-// top — starts clustered in one top corner, one after another, and snakes
-// its way down to the opposite side instead of a clean straight diagonal
-// (that's cornerDive). The higher curveFreq is what reads as "winding."
-function spiralDescent(count) {
-  const fromLeft = Math.random() < 0.5;
-  const startX = fromLeft ? 20 : CONFIG.width - 20;
-  const endX = fromLeft ? CONFIG.width - 20 : 20;
-  const delays = sequenceDelays(count, 0.14, 0.22);
-  return delays.map((delay) => ({
-    delay,
-    x: startX + rand(-8, 8),
-    y: rand(-80, -30),
-    targetX: endX,
-    curveAmp: rand(35, 55),
-    curveFreq: rand(3.5, 5),
-    phase: rand(0, Math.PI * 2),
-  }));
-}
-
-// A tight column that whips sharply side to side as it falls, staying
-// roughly centered — reads as an alert, darting zigzag rather than a smooth
-// sweep or a wide spiral.
-function zigzagRow(count) {
-  const cx = rand(80, CONFIG.width - 80);
-  const delays = sequenceDelays(count, 0.12, 0.2);
-  return delays.map((delay) => ({
-    delay,
-    x: cx + rand(-20, 20),
-    y: rand(-70, -30),
-    targetX: cx,
-    curveAmp: rand(55, 75),
-    curveFreq: rand(2.5, 3.5),
-    phase: rand(0, Math.PI * 2),
-  }));
-}
-
-// Two mini-lines entering from BOTH edges at once (alternating left/right by
-// spawn order), converging toward the middle — a pincer rush rather than a
-// single-direction crossing.
-function pincerConverge(count) {
-  const delays = sequenceDelays(count, 0.15, 0.22);
-  return delays.map((delay, i) => {
-    const fromLeft = i % 2 === 0;
-    const startX = fromLeft ? 20 : CONFIG.width - 20;
-    return {
-      delay,
-      x: startX,
-      y: rand(-80, -30),
-      targetX: CONFIG.width / 2 + rand(-20, 20),
-      curveAmp: rand(10, 18),
-      curveFreq: rand(3, 4.5),
-      phase: rand(0, Math.PI * 2),
-    };
-  });
-}
-
-// Two or three successive horizontal rows, each row appearing as its own
-// mini-wall a beat after the last — a stepped cascade instead of
-// topHorizontal's single flat wall.
-function cascadeRows(count) {
-  const rows = Math.min(3, Math.max(2, Math.round(count / 6)));
-  const perRow = Math.ceil(count / rows);
-  const margin = 40;
-  const specs = [];
-  let placed = 0;
-  for (let row = 0; row < rows && placed < count; row++) {
-    const rowCount = Math.min(perRow, count - placed);
-    for (let i = 0; i < rowCount; i++) {
-      const x = margin + (rowCount > 1 ? i / (rowCount - 1) : 0.5) * (CONFIG.width - margin * 2);
-      specs.push({
-        delay: row * 0.55 + rand(0, 0.08),
-        x, y: rand(-60, -30),
-        targetX: x + rand(-15, 15),
-        curveAmp: rand(6, 10), curveFreq: rand(3, 5), phase: rand(0, Math.PI * 2),
-      });
-    }
-    placed += rowCount;
-  }
-  return specs;
-}
-
-// Independent diagonal streaks all sharing the same slant direction but
-// starting from scattered points across the top — reads as a "rain" of
-// enemies falling at an angle rather than one coherent line.
-function diagonalRain(count) {
-  const dir = Math.random() < 0.5 ? 1 : -1;
-  const delays = sequenceDelays(count, 0.1, 0.16);
-  return delays.map((delay) => {
-    const startX = rand(20, CONFIG.width - 20);
-    return {
-      delay,
-      x: startX,
-      y: rand(-90, -20),
-      targetX: Math.max(20, Math.min(CONFIG.width - 20, startX + dir * rand(80, 160))),
-      curveAmp: rand(8, 16), curveFreq: rand(3, 5), phase: rand(0, Math.PI * 2),
-    };
-  });
-}
-
-const PATTERN_BUILDERS = {
-  lineSweep, randomScatter, cornerDive, flyCircle, carveSweep, topHorizontal, straightDrop,
-  spiralDescent, zigzagRow, pincerConverge, cascadeRows, diagonalRain,
-};
-
+// Monsters arrive as FLOCKS (formations gliding on a shared harmonic path —
+// see systems/flocks.js) or as lone wanderers. Difficulty climbs step by
+// step: an alive-on-screen cap, group size and pace all start small and
+// grow with the level's place in its stage, how far through the level you
+// are, and the player's in-run power — so the Guardian is never swamped
+// before they've had a chance to grow.
 class Spawner {
   constructor(levelDef, levelIndex) {
     this.setLevel(levelDef, levelIndex);
@@ -1807,106 +1925,106 @@ class Spawner {
   setLevel(def, index) {
     this.def = def;
     this.level = index + 1;        // 1-based for display
-    this.monsterTimer = 1.2;
-    this.obstacleTimer = 3.0;
+    this.lis = index % 10;         // level-in-stage, 0..9
+    this.stageIdx = Math.floor(index / 10);
+    this.groupTimer = 1.5;
+    this.obstacleTimer = 6.0;
     this.gateTimer = 6.0;
-    this.shipTimer = rand(1.2, 2.4);
+    this.shipTimer = rand(4, 6);
     this.bossSpawned = false;
-    // Attacker-count-driven level: def.attackers is a fixed quota (not a
-    // clock) — the level runs until this many regular enemies have been
-    // sent out AND every one of them (plus the boss, if any) is cleared.
-    // See main.js's level-complete check and allSpawned() below.
+    // Attacker-count-driven level: def.attackers is a fixed quota — the level
+    // clears once all of them have been sent and dealt with (main.js).
     this.totalAttackers = def.attackers || 10;
     this.spawnedCount = 0;
-    // Delayed-spawn queue — a wave commits a whole formation's worth of
-    // monsters at once (see update() below) but each one carries its own
-    // `delay` before it actually appears, so a formation like lineSweep or
-    // cornerDive plays out as a visible sequence (one after another) instead
-    // of every monster in the wave popping in on the same frame.
-    this.spawnQueue = [];
+    this.flocks = [];
+    this.intensity = 1;
   }
 
-  // True once every attacker in this level's quota has been committed to a
-  // wave (some may still be sitting in spawnQueue or alive on screen — this
-  // only tracks the spawn schedule, not what's actually visible yet).
   allSpawned() {
     return this.spawnedCount >= this.totalAttackers;
   }
 
+  // How many regular Shatterlings may be alive at once right now.
+  maxAlive(runLvl) {
+    const progress = this.spawnedCount / Math.max(1, this.totalAttackers);
+    return Math.min(30, Math.round(4 + 1.4 * this.lis + 2.5 * this.stageIdx + 0.45 * runLvl + 2 * progress));
+  }
+
+  spawnGroup(state) {
+    const def = this.def;
+    const runLvl = state.run?.lvl || 0;
+    const progress = this.spawnedCount / Math.max(1, this.totalAttackers);
+    const left = this.totalAttackers - this.spawnedCount;
+    const hpScale = (1 + 0.1 * this.lis) * (1 + 0.02 * runLvl);
+    const hpMult = (def.hpMult || 1) * hpScale;
+    // bullets get stronger per stage, but gently — tankier foes carry the climb
+    const dmg = Math.max(5, Math.round(20 * (1 + 0.25 * this.stageIdx)));
+    const eliteChance = Math.min(0.07, 0.015 + 0.004 * this.lis + 0.006 * this.stageIdx);
+    this.intensity = 1 + 0.06 * this.lis + 0.03 * runLvl;
+
+    // Lone wanderer or a flock? Singles are common early (gentle), flocks
+    // take over as the level heats up.
+    const singleChance = Math.max(0.2, 0.55 - 0.04 * this.lis - 0.25 * progress);
+    const baseSize = 2 + 0.45 * this.lis + 1.0 * this.stageIdx + 0.15 * runLvl + 2 * progress;
+    let size = Math.random() < singleChance ? 1 : Math.round(rand(baseSize - 0.5, baseSize + 1.5));
+    size = Math.max(1, Math.min(size, 12, left));
+
+    const groupType = weightedPick(def.spawns);
+    const mk = (type, x, y) => {
+      const m = new Monster(type, x, y, def.speed, null, hpMult);
+      m.damage = dmg;
+      if (Math.random() < eliteChance) m.makeElite();
+      state.monsters.push(m);
+      return m;
+    };
+
+    if (size === 1) {
+      mk(groupType, rand(50, CONFIG.width - 50), rand(-60, -30));
+    } else {
+      const d = MONSTERS[groupType];
+      const formation = pickFormation(this.lis + this.stageIdx * 2);
+      const flock = new Flock({
+        x: rand(60, CONFIG.width - 60),
+        formation,
+        size,
+        speed: CONFIG.monster.baseSpeed * def.speed * (d?.speed || 1) * 0.9,
+        spacing: Math.max(30, (d?.size || 26) * 1.25),
+      });
+      // mostly one species per flock (reads cleaner); later a few mixed
+      const mixed = Math.random() < 0.1 + 0.03 * this.lis;
+      for (let i = 0; i < size; i++) {
+        const type = mixed && i > 0 ? weightedPick(def.spawns) : groupType;
+        // members enter staggered above their leader and spring into place
+        const m = mk(type, flock.x + rand(-20, 20), flock.y - 40 - i * 22);
+        flock.add(m);
+      }
+      this.flocks.push(flock);
+    }
+    this.spawnedCount += size;
+    // rest gap before the next arrival — shrinks gently as things heat up
+    this.groupTimer = (rand(1.4, 2.3) + size * 0.22) / this.intensity;
+  }
+
   update(dt, state) {
     const def = this.def;
+    const runLvl = state.run?.lvl || 0;
 
-    // Formation waves — each wave picks ONE named pattern (line sweep,
-    // random scatter, corner dive, fly circle, carve sweep, top horizontal
-    // row, or a small straight drop) and queues its monsters with individual
-    // delays so the formation plays out in a clear, readable sequence rather
-    // than the whole wave appearing in a single instant. See the PATTERNS /
-    // PATTERN_BUILDERS table above.
-    this.monsterTimer -= dt;
-    if (this.monsterTimer <= 0 && !this.allSpawned()) {
-      // Every wave is a group of 5-20 — small and deliberately bounded so it
-      // always reads as a countable formation (per the real per-monster step
-      // delays in sequenceDelays above), never a shapeless pile, regardless
-      // of how huge the level's total attacker quota is.
-      const MIN_WAVE = 5, MAX_WAVE = 20;
-      const pattern = pickPattern();
-      const desired = Math.round(rand(MIN_WAVE, MAX_WAVE) * pattern.sizeFactor);
-      // Clamp to the group-size band and to whatever's left in the level's
-      // attacker quota — the very last wave of a level is often smaller than
-      // a full one so the count lands exactly on def.attackers instead of
-      // overshooting it.
-      const count = Math.max(3, Math.min(Math.min(desired, MAX_WAVE), this.totalAttackers - this.spawnedCount));
+    for (const f of this.flocks) f.update(dt);
+    this.flocks = this.flocks.filter((f) => !f.dead);
 
-      const specs = PATTERN_BUILDERS[pattern.name](count, def);
-      let spawnSpan = 0;
-      for (const s of specs) {
-        spawnSpan = Math.max(spawnSpan, s.delay);
-        const x = Math.max(20, Math.min(CONFIG.width - 20, s.x));
-        this.spawnQueue.push({
-          type: weightedPick(def.spawns),
-          x,
-          y: s.y,
-          delay: s.delay,
-          speedMult: def.speed * (s.speedMult || 1),
-          hpMult: def.hpMult || 1,
-          path: s.type === 'circle'
-            ? { type: 'circle', centerX: s.centerX, radius: s.radius, angularSpeed: s.angularSpeed, phase: s.phase }
-            : { targetX: Math.max(20, Math.min(CONFIG.width - 20, s.targetX)), curveAmp: s.curveAmp, curveFreq: s.curveFreq, phase: s.phase },
-        });
-      }
-      this.spawnedCount += specs.length;
-
-      // The NEXT wave is not allowed to start until THIS one has fully
-      // finished entering (spawnSpan — the delay of its last-arriving
-      // monster) plus a deliberate rest gap on top. This is the actual fix
-      // for "no delay between sending evils / everything piles up
-      // together": before, the timer reset to a fixed def.interval no
-      // matter how long the current wave's formation took to finish
-      // spawning, so a wide formation and the next wave's formation would
-      // start overlapping mid-entrance, reading as one big mess. The rest
-      // gap shrinks slightly on later levels (still floored) so the pace
-      // picks up without ever losing the readable pause between groups.
-      const restGap = Math.max(0.32, rand(0.55, 0.95) - (this.level - 1) * 0.02);
-      this.monsterTimer = spawnSpan + restGap;
-    }
-
-    // Drain the delayed-spawn queue — this is what turns a committed
-    // formation into monsters actually appearing on screen one after
-    // another, on each one's own schedule, instead of all at once.
-    for (let i = this.spawnQueue.length - 1; i >= 0; i--) {
-      const item = this.spawnQueue[i];
-      item.delay -= dt;
-      if (item.delay <= 0) {
-        state.monsters.push(new Monster(item.type, item.x, item.y, item.speedMult, item.path, item.hpMult));
-        this.spawnQueue.splice(i, 1);
-      }
+    this.groupTimer -= dt;
+    if (this.groupTimer <= 0 && !this.allSpawned()) {
+      let alive = 0;
+      for (const m of state.monsters) if (!m.dead && !m.boss) alive++;
+      if (alive < this.maxAlive(runLvl)) this.spawnGroup(state);
+      else this.groupTimer = 0.4; // lane is full — wait for the player to thin it
     }
 
     // Boss (levels flagged boss:true) — spawns as the finale once the whole
     // regular attacker quota has been sent out AND the spawn queue has fully
     // drained (so the boss doesn't appear mid-formation, before the last
     // wave has actually finished entering), instead of at a fixed time.
-    if (def.boss && !this.bossSpawned && this.allSpawned() && this.spawnQueue.length === 0) {
+    if (def.boss && !this.bossSpawned && this.allSpawned()) {
       this.bossSpawned = true;
       // A big, continuous side-to-side weave (wide amplitude, unhurried
       // frequency) instead of the default near-static center drop every
@@ -1920,7 +2038,10 @@ class Spawner {
         phase: rand(0, Math.PI * 2),
       };
       const boss = new Monster('ogreBoss', CONFIG.width / 2, -80, def.speed * 0.6, bossPath);
-      boss.hp = boss.maxHp = Math.round((20 + this.level * 4) * (def.hpMult || 1));  // scales with level + stage
+      // Scales with level, stage AND the player's in-run power so the boss
+      // is always a real fight (~20s) instead of melting to a strong build.
+      const runLvl = state.run?.lvl || 0;
+      boss.hp = boss.maxHp = Math.round((100 + 35 * this.lis + 120 * this.stageIdx) * (1 + 0.2 * runLvl));
       state.monsters.push(boss);
       state.onBoss?.();
     }
@@ -1933,7 +2054,7 @@ class Spawner {
     // overboard — everything else keeps the original plank-ish default.
     this.obstacleTimer -= dt;
     if (this.obstacleTimer <= 0) {
-      this.obstacleTimer = rand(3.5, 6);
+      this.obstacleTimer = Math.max(3.5, rand(7, 11) - this.lis * 0.4); // rare early, more later
       let ow = 76, oh = 26;
       if (def.decor === 'snow') { ow = 60; oh = 60; }        // big ice block — chunky, near-square
       else if (def.decor === 'banners') { ow = 58; oh = 46; } // mountain boulder — squat and heavy
@@ -1951,7 +2072,7 @@ class Spawner {
     // whole way across. Kept deliberately rare (long spawnInterval, hard
     // maxOnScreen cap) — each one is tanky and fires a lot, so the threat
     // comes from a couple of tough ships rather than a swarm of weak ones.
-    if (def.decor === 'bubbles' && state.ships) {
+    if (def.decor === 'bubbles' && state.ships && this.lis >= 1) { // no ships on a stage's opening level
       this.shipTimer -= dt;
       if (this.shipTimer <= 0) {
         if (state.ships.length >= CONFIG.ship.maxOnScreen) {
@@ -2008,15 +2129,21 @@ function resolveCollisions(state, events, dt = 1 / 60) {
     if (s.dead) continue;
     for (const m of monsters) {
       if (m.dead) continue;
+      if (s.hitSet && s.hitSet.has(m)) continue; // piercing shot already went through this one
       const dx = s.x - m.x, dy = s.y - m.y, rr = s.r + m.r;
       if (dx * dx + dy * dy <= rr * rr) {
-        s.dead = true;
+        if (s.pierce > 0) {
+          s.pierce--;
+          (s.hitSet || (s.hitSet = new Set())).add(m);
+        } else {
+          s.dead = true;
+        }
         const children = m.onHit(s.damage);
         if (m.dead) {
-          events.kill(m);
+          events.kill(m, s);
           if (children) monsters.push(...children);
         } else {
-          events.hit(m);
+          events.hit(m, s);
         }
         break;
       }
@@ -2074,8 +2201,9 @@ function resolveCollisions(state, events, dt = 1 / 60) {
         if (w.dead) continue;
         if (w.contains(m.x, m.y, m.r)) {
           m.y = w.y - w.h / 2 - m.r; // hold it just above the wall
+          if (m.pvy > 0) m.pvy = 0;
           w.onHit(CONFIG.wall.touchDamageToWall * dt);
-          const children = m.onHit(CONFIG.wall.touchDamageToMonster * dt);
+          const children = m.onHit(CONFIG.wall.touchDamageToMonster * (w.thorns || 1) * dt);
           if (m.dead) {
             events.kill(m);
             if (children) monsters.push(...children);
@@ -2106,20 +2234,20 @@ function resolveCollisions(state, events, dt = 1 / 60) {
 
   // Monster reaches the GateWall (bottom) → lose a life
   for (const m of monsters) {
-    if (!m.dead && m.y - m.r > CONFIG.height - 24) {
+    if (!m.dead && !m.boss && m.y > CONFIG.gateY) {
       m.dead = true;
       events.breach(m);
     }
   }
 
-  // Monster ↔ player → lose a life
+  // Monster ↔ player → it explodes on the Guardian (heavy blood-line hit)
   const pr = player.size / 2;
   for (const m of monsters) {
     if (m.dead) continue;
     const dx = m.x - player.x, dy = m.y - player.y, rr = m.r + pr;
     if (dx * dx + dy * dy <= rr * rr) {
       m.dead = true;
-      events.breach(m);
+      events.rammed(m);
     }
   }
 
@@ -2187,11 +2315,18 @@ function resolveCollisions(state, events, dt = 1 / 60) {
 
 
 // ===== src/systems/particles.js =====
-// Juice: poofs, sparkles, floating score text, screen shake.
+// Juice: poofs, sparkles, crystal shatter shards, shockwave rings, lightning
+// arcs, floating score text, screen shake.
+
+// Hard cap so a huge chain of kills can never tank the frame rate.
+const MAX_PARTICLES = 700;
 
 class Particles {
   constructor() {
     this.list = [];
+    this.shards = [];
+    this.rings = [];
+    this.bolts = [];
     this.texts = [];
     this.shake = 0;
   }
@@ -2206,8 +2341,8 @@ class Particles {
     }
   }
 
-  sparkle(x, y, color = '#ffd23d') {
-    for (let i = 0; i < 6; i++) {
+  sparkle(x, y, color = '#ffd23d', n = 6) {
+    for (let i = 0; i < n; i++) {
       const a = rand(0, Math.PI * 2), sp = rand(20, 90);
       this.list.push({
         x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
@@ -2216,17 +2351,78 @@ class Particles {
     }
   }
 
-  scoreText(x, y, str, color = '#ffd23d') {
-    this.texts.push({ x, y, str, color, t: 0, life: 0.8 });
+  // Small upward dust kicked off the Guardian's feet while moving fast.
+  dust(x, y, color = 'rgba(255,255,255,0.6)') {
+    this.list.push({
+      x: x + rand(-6, 6), y, vx: rand(-20, 20), vy: rand(-30, -10),
+      r: rand(2, 4), life: rand(0.25, 0.4), t: 0, color, noGravity: true,
+    });
+  }
+
+  // Crystal shatter — spinning triangular shards flung out with gravity.
+  // This is the main "monster died" read: Shatterlings break apart.
+  shatter(x, y, color, radius = 14, count = 9) {
+    for (let i = 0; i < count; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(80, 220) * (radius / 14) ** 0.4;
+      this.shards.push({
+        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
+        rot: rand(0, Math.PI * 2), vr: rand(-12, 12),
+        s: rand(0.25, 0.55) * radius, life: rand(0.45, 0.8), t: 0, color,
+      });
+    }
+  }
+
+  // Expanding shockwave ring.
+  ring(x, y, color = '#ffffff', maxR = 40, life = 0.35, width = 4) {
+    this.rings.push({ x, y, color, maxR, life, t: 0, width });
+  }
+
+  // Jagged lightning arc through a list of points [{x,y}, ...].
+  bolt(points, color = '#bfe9ff', life = 0.18) {
+    const segs = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i], b = points[i + 1];
+      const n = 6;
+      const pts = [a];
+      for (let k = 1; k < n; k++) {
+        const f = k / n;
+        const nx = -(b.y - a.y), ny = b.x - a.x;
+        const len = Math.hypot(nx, ny) || 1;
+        const off = rand(-10, 10);
+        pts.push({ x: a.x + (b.x - a.x) * f + (nx / len) * off, y: a.y + (b.y - a.y) * f + (ny / len) * off });
+      }
+      pts.push(b);
+      segs.push(pts);
+    }
+    this.bolts.push({ segs, color, life, t: 0 });
+  }
+
+  scoreText(x, y, str, color = '#ffd23d', size = 18) {
+    this.texts.push({ x, y, str, color, t: 0, life: 0.8, size });
   }
 
   addShake(amount) { this.shake = Math.min(12, this.shake + amount); }
 
   update(dt) {
     for (const p of this.list) {
-      p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt;
+      p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      if (!p.noGravity) p.vy += 300 * dt;
     }
     this.list = this.list.filter((p) => p.t < p.life);
+    if (this.list.length > MAX_PARTICLES) this.list.splice(0, this.list.length - MAX_PARTICLES);
+
+    for (const s of this.shards) {
+      s.t += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 520 * dt; s.rot += s.vr * dt;
+      s.vx *= 0.985;
+    }
+    this.shards = this.shards.filter((s) => s.t < s.life);
+    if (this.shards.length > 400) this.shards.splice(0, this.shards.length - 400);
+
+    for (const r of this.rings) r.t += dt;
+    this.rings = this.rings.filter((r) => r.t < r.life);
+    for (const b of this.bolts) b.t += dt;
+    this.bolts = this.bolts.filter((b) => b.t < b.life);
+
     for (const t of this.texts) { t.t += dt; t.y -= 40 * dt; }
     this.texts = this.texts.filter((t) => t.t < t.life);
     this.shake *= Math.pow(0.001, dt); // fast decay
@@ -2241,16 +2437,1359 @@ class Particles {
       ctx.arc(p.x, p.y, p.r * a, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    for (const s of this.shards) {
+      const a = 1 - s.t / s.life;
+      ctx.globalAlpha = Math.min(1, a * 1.6);
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -s.s);
+      ctx.lineTo(s.s * 0.55, s.s * 0.6);
+      ctx.lineTo(-s.s * 0.55, s.s * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath();
+      ctx.moveTo(0, -s.s);
+      ctx.lineTo(s.s * 0.18, s.s * 0.2);
+      ctx.lineTo(-s.s * 0.3, s.s * 0.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    for (const r of this.rings) {
+      const f = r.t / r.life;
+      const ease = 1 - (1 - f) * (1 - f);
+      ctx.globalAlpha = (1 - f) * 0.9;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = r.width * (1 - f) + 0.5;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, Math.max(1, r.maxR * ease), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (this.bolts.length) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const b of this.bolts) {
+        const a = 1 - b.t / b.life;
+        for (const pass of [{ w: 6, c: b.color, al: 0.35 }, { w: 2, c: '#ffffff', al: 1 }]) {
+          ctx.globalAlpha = a * pass.al;
+          ctx.strokeStyle = pass.c;
+          ctx.lineWidth = pass.w;
+          for (const pts of b.segs) {
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    }
+
     ctx.globalAlpha = 1;
     ctx.textAlign = 'center';
-    ctx.font = 'bold 18px "Fredoka", Arial';
     for (const t of this.texts) {
-      ctx.globalAlpha = 1 - t.t / t.life;
+      const f = t.t / t.life;
+      // quick pop-in scale, then float + fade
+      const pop = f < 0.15 ? 0.6 + (f / 0.15) * 0.6 : 1.2 - Math.min(0.2, (f - 0.15));
+      ctx.globalAlpha = 1 - f * f;
+      ctx.font = `bold ${Math.round(t.size * pop)}px "Fredoka", Arial`;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(20,10,40,0.7)';
+      ctx.strokeText(t.str, t.x, t.y);
       ctx.fillStyle = t.color;
       ctx.fillText(t.str, t.x, t.y);
     }
     ctx.globalAlpha = 1;
   }
+}
+
+
+// ===== src/render/creatures.js =====
+// ============================================================
+// Procedural, fully animated Shatterlings (motion-graphics creatures).
+// Every enemy is drawn from vector shapes each frame — no sprite sheets —
+// so it can walk, blink, lean into turns, squash when hit, charge a glowing
+// shot before firing, and pop in when split. Colors come from the active
+// stage's monsterTint so the same cast re-skins per environment.
+//
+// Helpers here are prefixed `cr` because the standalone build concatenates
+// every module into one scope.
+// ============================================================
+
+const crClamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+function crHexToRgb(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const crMixCache = new Map();
+// Mix two hex colors (f = 0 → a, 1 → b). Cached: called many times per frame.
+function crMix(a, b, f) {
+  const key = a + b + f;
+  let v = crMixCache.get(key);
+  if (v) return v;
+  const A = crHexToRgb(a), B = crHexToRgb(b);
+  v = `rgb(${Math.round(A[0] + (B[0] - A[0]) * f)},${Math.round(A[1] + (B[1] - A[1]) * f)},${Math.round(A[2] + (B[2] - A[2]) * f)})`;
+  crMixCache.set(key, v);
+  return v;
+}
+
+function crEaseOutBack(x) {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
+// Pre-rendered soft glow dots (radial gradient baked once per color/size) —
+// drawImage of a cached canvas is far cheaper than a gradient per frame.
+const crGlowCache = new Map();
+function glowSprite(color, size = 32) {
+  const key = color + size;
+  let c = crGlowCache.get(key);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = size * 2;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size, size, 0, size, size, size);
+  grad.addColorStop(0, color);
+  grad.addColorStop(0.35, color);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.globalAlpha = 1;
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size * 2, size * 2);
+  crGlowCache.set(key, c);
+  return c;
+}
+
+function drawGlow(ctx, x, y, radius, color, alpha = 1) {
+  const img = glowSprite(color, 32);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, x - radius, y - radius, radius * 2, radius * 2);
+  ctx.restore();
+}
+
+// Correct per-sprite tinting: bake the tint into an offscreen copy of the
+// image (so 'source-atop' only touches the sprite's own pixels, never the
+// background behind it — the old in-place version painted solid colored
+// boxes over the scene).
+const crTintCache = new WeakMap();
+function tintedImage(img, tint) {
+  if (!img || !tint || !img.width) return img;
+  let byTint = crTintCache.get(img);
+  if (!byTint) { byTint = new Map(); crTintCache.set(img, byTint); }
+  let c = byTint.get(tint);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width;
+  c.height = img.naturalHeight || img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'source-atop';
+  g.globalAlpha = 0.5;
+  g.fillStyle = tint;
+  g.fillRect(0, 0, c.width, c.height);
+  byTint.set(tint, c);
+  return c;
+}
+
+function crEyes(ctx, ex, ey, er, gap, look, blink, pupilColor = '#1a1030', angry = 0, browColor = '#1a1030') {
+  for (const side of [-1, 1]) {
+    const x = ex + side * gap;
+    ctx.save();
+    ctx.translate(x, ey);
+    ctx.scale(1, blink);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(0, 0, er, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = pupilColor;
+    ctx.beginPath(); ctx.arc(look.x * er * 0.4, look.y * er * 0.4, er * 0.55, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(look.x * er * 0.4 - er * 0.2, look.y * er * 0.4 - er * 0.25, er * 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (angry) {
+      ctx.strokeStyle = browColor;
+      ctx.lineWidth = Math.max(1.5, er * 0.45);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x - side * er * 1.1, ey - er * 1.25 - angry * er * 0.1);
+      ctx.lineTo(x + side * er * 0.7, ey - er * 0.85 + angry * er * 0.25);
+      ctx.stroke();
+    }
+  }
+}
+
+function crBlink(m, t) {
+  const cyc = (t + m.seed) % 3.4;
+  return cyc < 0.12 ? 0.15 : 1;
+}
+
+// --- Grumbles — crystal gremlin: floppy ears, stubby running legs,
+//     crystal spikes on its head, toothy grin. ---------------------------
+function drawGoblin(ctx, m, pal, t, look) {
+  const r = m.r;
+  const step = Math.sin(m.anim * 2.2);
+  const bounce = Math.abs(Math.cos(m.anim * 2.2)) * r * 0.12;
+  ctx.translate(0, -bounce);
+  // legs
+  ctx.fillStyle = pal.dark;
+  for (const side of [-1, 1]) {
+    const lift = side * step;
+    ctx.beginPath();
+    ctx.ellipse(side * r * 0.38, r * 0.72 - Math.max(0, lift) * r * 0.22 + bounce, r * 0.22, r * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // ears (flop with the run cycle)
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * r * 0.62, -r * 0.25);
+    ctx.rotate(side * (0.35 + step * 0.18 * side));
+    ctx.fillStyle = pal.primary;
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.18);
+    ctx.lineTo(side * r * 0.75, -r * 0.42);
+    ctx.lineTo(0, r * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = pal.light;
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.05, -r * 0.08);
+    ctx.lineTo(side * r * 0.5, -r * 0.3);
+    ctx.lineTo(side * r * 0.05, r * 0.1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  // head crystals
+  ctx.fillStyle = pal.glow;
+  for (const [dx, h] of [[-0.28, 0.42], [0, 0.6], [0.28, 0.42]]) {
+    ctx.beginPath();
+    ctx.moveTo(dx * r - r * 0.1, -r * 0.62);
+    ctx.lineTo(dx * r, -r * (0.62 + h));
+    ctx.lineTo(dx * r + r * 0.1, -r * 0.62);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // body
+  ctx.fillStyle = pal.primary;
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = Math.max(2, r * 0.1);
+  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.82, r * 0.78, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = pal.light;
+  ctx.beginPath(); ctx.ellipse(0, r * 0.3, r * 0.48, r * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+  // face
+  crEyes(ctx, 0, -r * 0.18, r * 0.22, r * 0.3, look, crBlink(m, t), '#1a1030', 1, pal.dark);
+  // grin with teeth
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.32, r * 0.16);
+  ctx.quadraticCurveTo(0, r * (0.48 + m.windup * 0.15), r * 0.32, r * 0.16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  for (const tx of [-0.16, 0.06]) {
+    ctx.beginPath();
+    ctx.moveTo(tx * r, r * 0.17); ctx.lineTo(tx * r + r * 0.1, r * 0.17); ctx.lineTo(tx * r + r * 0.05, r * 0.28);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// --- Sir Squish — crystal ooze: hops with squash & stretch, jiggly wobbly
+//     outline, inner bubbles, shiny highlight. ----------------------------
+function drawSlime(ctx, m, pal, t, look) {
+  const r = m.r;
+  const hop = (m.anim * 0.35) % 1;                 // 0..1 hop cycle
+  const air = Math.sin(hop * Math.PI);             // 0 on ground, 1 at apex
+  const land = hop < 0.12 ? 1 - hop / 0.12 : 0;    // squash right after landing
+  const sx = 1 + land * 0.25 - air * 0.1;
+  const sy = 1 - land * 0.22 + air * 0.14;
+  ctx.translate(0, -air * r * 0.35);
+  ctx.scale(sx, sy);
+  // body — wobbly blob with flat-ish bottom
+  const N = 18;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const wob = 1 + Math.sin(a * 3 + t * 7 + m.seed) * 0.05;
+    let x = Math.cos(a) * r * 0.95 * wob;
+    let y = Math.sin(a) * r * 0.85 * wob;
+    if (y > r * 0.5) y = r * 0.5 + (y - r * 0.5) * 0.3; // flatten the base
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
+  grad.addColorStop(0, pal.light);
+  grad.addColorStop(1, pal.primary);
+  ctx.fillStyle = grad;
+  ctx.globalAlpha = 0.92;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = Math.max(2, r * 0.09);
+  ctx.stroke();
+  // inner rising bubbles
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  for (let i = 0; i < 3; i++) {
+    const ph = (t * 0.6 + i * 0.33 + m.seed) % 1;
+    ctx.beginPath();
+    ctx.arc(Math.sin(i * 2.1 + m.seed) * r * 0.4, r * 0.4 - ph * r * 0.9, r * (0.06 + i * 0.02), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath(); ctx.ellipse(-r * 0.42, -r * 0.42, r * 0.18, r * 0.1, -0.6, 0, Math.PI * 2); ctx.fill();
+  // face
+  crEyes(ctx, 0, -r * 0.08, r * 0.2, r * 0.3, look, crBlink(m, t));
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath(); ctx.ellipse(0, r * 0.25, r * (0.1 + air * 0.05), r * (0.07 + air * 0.08), 0, 0, Math.PI * 2); ctx.fill();
+}
+
+// --- Zippy — bat-winged imp (procedural fallback when bat art missing). --
+function drawImp(ctx, m, pal, t, look) {
+  const r = m.r;
+  const flap = Math.sin(t * 18 + m.seed);
+  // wings
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.scale(side, 1);
+    ctx.rotate(-0.2 + flap * 0.55);
+    ctx.fillStyle = pal.dark;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.3, -r * 0.1);
+    ctx.quadraticCurveTo(r * 1.2, -r * 1.0, r * 1.7, -r * 0.3);
+    ctx.quadraticCurveTo(r * 1.3, -r * 0.1, r * 1.35, r * 0.2);
+    ctx.quadraticCurveTo(r * 0.9, 0, r * 0.85, r * 0.35);
+    ctx.quadraticCurveTo(r * 0.55, r * 0.1, r * 0.3, r * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  // tail
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = Math.max(1.5, r * 0.12);
+  ctx.beginPath();
+  ctx.moveTo(0, r * 0.6);
+  ctx.quadraticCurveTo(Math.sin(t * 6 + m.seed) * r * 0.6, r * 1.1, Math.sin(t * 6 + m.seed + 1) * r * 0.4, r * 1.4);
+  ctx.stroke();
+  ctx.fillStyle = pal.primary;
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = Math.max(2, r * 0.1);
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // horns
+  ctx.fillStyle = pal.glow;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.3, -r * 0.55); ctx.lineTo(side * r * 0.55, -r * 1.05); ctx.lineTo(side * r * 0.55, -r * 0.45);
+    ctx.closePath(); ctx.fill();
+  }
+  crEyes(ctx, 0, -r * 0.1, r * 0.2, r * 0.26, look, crBlink(m, t), '#1a1030', 1, pal.dark);
+}
+
+// --- Rattles — marching crystal skeleton: swinging bone limbs, chattering
+//     jaw while charging a shot, pulsing eye sockets. ---------------------
+function drawSkeleton(ctx, m, pal, t) {
+  const r = m.r;
+  const step = Math.sin(m.anim * 1.8);
+  const bone = pal.primary, dark = pal.dark, glow = pal.glow;
+  ctx.lineCap = 'round';
+  // legs
+  ctx.strokeStyle = bone;
+  ctx.lineWidth = Math.max(2, r * 0.13);
+  for (const side of [-1, 1]) {
+    const sw = side * step * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.15, r * 0.5);
+    ctx.lineTo(side * r * 0.2 + Math.sin(sw) * r * 0.5, r * 0.5 + Math.cos(sw) * r * 0.5);
+    ctx.stroke();
+  }
+  // pelvis
+  ctx.fillStyle = bone;
+  ctx.beginPath(); ctx.ellipse(0, r * 0.5, r * 0.25, r * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+  // arms (swing opposite to legs); right arm holds a crystal staff
+  for (const side of [-1, 1]) {
+    const sw = -side * step * 0.5;
+    const hx = side * r * 0.55 + Math.sin(sw) * r * 0.3;
+    const hy = r * 0.3 + Math.cos(sw) * r * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.4, -r * 0.08);
+    ctx.lineTo(hx, hy);
+    ctx.stroke();
+    if (side === 1) {
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = Math.max(2, r * 0.09);
+      ctx.beginPath(); ctx.moveTo(hx, hy + r * 0.4); ctx.lineTo(hx, hy - r * 0.9); ctx.stroke();
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy - r * 1.25); ctx.lineTo(hx + r * 0.15, hy - r * 0.95); ctx.lineTo(hx, hy - r * 0.8); ctx.lineTo(hx - r * 0.15, hy - r * 0.95);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = bone;
+      ctx.lineWidth = Math.max(2, r * 0.13);
+    }
+  }
+  // ribcage + spine
+  ctx.lineWidth = Math.max(1.5, r * 0.09);
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(0, r * 0.48); ctx.stroke();
+  for (let i = 0; i < 3; i++) {
+    const y = -r * 0.08 + i * r * 0.17;
+    const w = r * (0.42 - i * 0.07);
+    ctx.beginPath(); ctx.moveTo(-w, y); ctx.quadraticCurveTo(0, y + r * 0.1, w, y); ctx.stroke();
+  }
+  // skull
+  const chatter = m.windup > 0 ? Math.abs(Math.sin(t * 40)) * r * 0.08 : 0;
+  ctx.fillStyle = bone;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(2, r * 0.08);
+  ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(-r * 0.2, -r * 0.27 + chatter, r * 0.4, r * 0.16, 3); ctx.fill(); ctx.stroke();
+  const pulse = 0.6 + 0.4 * Math.sin(t * 4 + m.seed);
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.arc(-r * 0.15, -r * 0.58, r * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.15, -r * 0.58, r * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = glow;
+  ctx.globalAlpha = pulse;
+  ctx.beginPath(); ctx.arc(-r * 0.15, -r * 0.58, r * 0.07, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.15, -r * 0.58, r * 0.07, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// --- Mossback — hulking crystal troll: heavy stomping gait, club that
+//     winds up overhead before a shot, glowing back crystals. -----------
+function drawTroll(ctx, m, pal, t, look) {
+  const r = m.r;
+  const step = Math.sin(m.anim * 1.2);
+  const stomp = Math.abs(step) * r * 0.08;
+  ctx.translate(0, stomp);
+  // feet
+  ctx.fillStyle = pal.dark;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * r * 0.45, r * 0.78 - (side * step > 0 ? step * side * r * 0.15 : 0), r * 0.28, r * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // back crystals
+  ctx.fillStyle = pal.glow;
+  for (const [dx, h, a] of [[-0.5, 0.5, -0.4], [-0.15, 0.7, -0.1], [0.25, 0.55, 0.25]]) {
+    ctx.save();
+    ctx.translate(dx * r, -r * 0.45);
+    ctx.rotate(a);
+    ctx.beginPath(); ctx.moveTo(-r * 0.12, 0); ctx.lineTo(0, -h * r); ctx.lineTo(r * 0.12, 0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // club arm: raises overhead as the shot charges
+  const raise = m.windup;
+  const armA = 0.9 - raise * 2.4 + step * 0.15;
+  ctx.save();
+  ctx.translate(r * 0.62, -r * 0.05);
+  ctx.rotate(armA);
+  ctx.strokeStyle = pal.primary;
+  ctx.lineWidth = r * 0.26;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.55); ctx.stroke();
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = r * 0.14;
+  ctx.beginPath(); ctx.moveTo(0, r * 0.45); ctx.lineTo(0, r * 1.15); ctx.stroke();
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath(); ctx.ellipse(0, r * 1.2, r * 0.22, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = pal.glow;
+  ctx.beginPath(); ctx.arc(-r * 0.1, r * 1.15, r * 0.06, 0, Math.PI * 2); ctx.arc(r * 0.1, r * 1.28, r * 0.06, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // body
+  ctx.fillStyle = pal.primary;
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = Math.max(2.5, r * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.85, r * 0.2);
+  ctx.quadraticCurveTo(-r * 0.95, -r * 0.4, -r * 0.3, -r * 0.6);
+  ctx.quadraticCurveTo(r * 0.3, -r * 0.72, r * 0.72, -r * 0.3);
+  ctx.quadraticCurveTo(r * 0.92, r * 0.1, r * 0.65, r * 0.5);
+  ctx.quadraticCurveTo(0, r * 0.85, -r * 0.65, r * 0.6);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = pal.light;
+  ctx.beginPath(); ctx.ellipse(0, r * 0.25, r * 0.45, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  // left arm swinging
+  ctx.save();
+  ctx.translate(-r * 0.7, -r * 0.05);
+  ctx.rotate(-0.5 - step * 0.35);
+  ctx.strokeStyle = pal.primary;
+  ctx.lineWidth = r * 0.26;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.6); ctx.stroke();
+  ctx.restore();
+  // face
+  crEyes(ctx, r * 0.05, -r * 0.25, r * 0.13, r * 0.2, look, crBlink(m, t), '#1a1030', 1.2, pal.dark);
+  ctx.fillStyle = '#fff8ec';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(r * 0.05 + side * r * 0.18, r * 0.02);
+    ctx.lineTo(r * 0.05 + side * r * 0.12, -r * 0.14);
+    ctx.lineTo(r * 0.05 + side * r * 0.06, r * 0.04);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// --- Bruncle, the Gate-Breaker — boss: breathing bulk, crystal crown,
+//     swinging fists, eyes and maw flare when it fires, enraged red glow
+//     under half health. ------------------------------------------------
+function drawBoss(ctx, m, pal, t, look) {
+  const r = m.r;
+  const breathe = Math.sin(t * 2.2) * 0.04;
+  const rage = m.enraged ? 1 : 0;
+  const glow = rage ? '#ff4d5a' : pal.glow;
+  ctx.scale(1 + breathe, 1 - breathe);
+  // fists
+  for (const side of [-1, 1]) {
+    const sw = Math.sin(t * 2.4 + side) * 0.25;
+    ctx.save();
+    ctx.translate(side * r * 0.85, r * 0.1);
+    ctx.rotate(side * (0.3 + sw));
+    ctx.strokeStyle = pal.primary;
+    ctx.lineWidth = r * 0.28;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(0, r * 0.4); ctx.stroke();
+    ctx.fillStyle = pal.dark;
+    ctx.beginPath(); ctx.arc(0, r * 0.52, r * 0.22, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, r * 0.52, r * 0.07, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // body
+  const grad = ctx.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r * 0.9);
+  grad.addColorStop(0, pal.light);
+  grad.addColorStop(1, pal.primary);
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = pal.dark;
+  ctx.lineWidth = Math.max(3, r * 0.06);
+  ctx.beginPath(); ctx.ellipse(0, r * 0.08, r * 0.8, r * 0.7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // crown of crystals
+  for (let i = -2; i <= 2; i++) {
+    const h = r * (0.35 + (2 - Math.abs(i)) * 0.14);
+    const cx = i * r * 0.2;
+    ctx.fillStyle = glow;
+    ctx.globalAlpha = 0.85 + 0.15 * Math.sin(t * 5 + i);
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.09, -r * 0.5);
+    ctx.lineTo(cx, -r * 0.5 - h);
+    ctx.lineTo(cx + r * 0.09, -r * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // horns
+  ctx.fillStyle = pal.dark;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.5, -r * 0.4);
+    ctx.quadraticCurveTo(side * r * 1.0, -r * 0.6, side * r * 0.85, -r * 1.05);
+    ctx.lineTo(side * r * 0.3, -r * 0.52);
+    ctx.closePath(); ctx.fill();
+  }
+  // eyes — glow intensifies with the shot windup / rage
+  const eyeHeat = Math.max(m.windup, m.fireFlash > 0 ? 1 : 0, rage * 0.6);
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = pal.dark;
+    ctx.beginPath(); ctx.ellipse(side * r * 0.28, -r * 0.08, r * 0.17, r * 0.12, side * 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(side * r * 0.28 + look.x * r * 0.04, -r * 0.07 + look.y * r * 0.03, r * (0.08 + eyeHeat * 0.04), 0, Math.PI * 2); ctx.fill();
+    // angry brow
+    ctx.strokeStyle = pal.dark;
+    ctx.lineWidth = r * 0.08;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(side * r * 0.48, -r * 0.28); ctx.lineTo(side * r * 0.12, -r * 0.16); ctx.stroke();
+  }
+  // maw opens on fire
+  const open = Math.max(m.windup * 0.6, m.fireFlash > 0 ? 1 : 0);
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.35, r * 0.32, r * (0.06 + open * 0.14), 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (open > 0.1) {
+    ctx.fillStyle = glow;
+    ctx.globalAlpha = open;
+    ctx.beginPath(); ctx.ellipse(0, r * 0.37, r * 0.18, r * 0.06 * open, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = '#fff8ec';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * r * 0.24, r * 0.28); ctx.lineTo(side * r * 0.17, r * 0.48); ctx.lineTo(side * r * 0.1, r * 0.28);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+const CREATURE_DRAW = {
+  goblin: drawGoblin,
+  slime: drawSlime,
+  slimeSmall: drawSlime,
+  imp: drawImp,
+  skeleton: drawSkeleton,
+  troll: drawTroll,
+  ogreBoss: drawBoss,
+};
+
+// Main entry. look = {x, y} unit-ish vector toward the Guardian so eyes
+// track the player. batImg (optional) = current bat-art frame for imps.
+function drawCreature(ctx, m, tint, t, look, batImg = null) {
+  const primary = tint?.primary || m.color;
+  const dark = tint?.dark || '#2a1f4d';
+  const glow = tint?.glow || '#ffffff';
+  // Hit flash: full white pop for small fry, but a subtle tint for bosses
+  // and elites — they're hit near-constantly, and a permanent white-out
+  // would hide all their animation.
+  const flash = m.hitFlash > 0;
+  const fa = (m.boss || m.elite) ? 0.3 : 0.85;
+  const pal = {
+    primary: flash ? crMix(primary, '#ffffff', fa) : primary,
+    light: crMix(primary, '#ffffff', flash ? Math.min(1, 0.4 + fa) : 0.4),
+    dark: flash ? crMix(dark, '#ffffff', fa * 0.6) : dark,
+    glow,
+  };
+  const r = m.r;
+
+  // ground shadow (flyers cast a smaller, fainter one further below)
+  ctx.save();
+  ctx.globalAlpha = m.flying ? 0.14 : 0.26;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(m.x, m.y + r * (m.flying ? 1.8 : 0.95), r * (m.flying ? 0.5 : 0.8), r * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // elite aura — rotating golden rune ring + soft glow
+  if (m.elite) {
+    drawGlow(ctx, m.x, m.y, r * 2.1, '#ffcc33', 0.35 + 0.15 * Math.sin(t * 5));
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(t * 1.8);
+    ctx.strokeStyle = '#ffd23d';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.35, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+  if (m.boss) drawGlow(ctx, m.x, m.y, r * 1.6, m.enraged ? '#ff3344' : glow, 0.3 + 0.1 * Math.sin(t * 3));
+  if (m.slowT > 0) drawGlow(ctx, m.x, m.y, r * 1.4, '#9fe8ff', 0.4);
+
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.rotate(crClamp(m.vx / 320, -0.32, 0.32) * (m.boss ? 0.25 : 1));
+  const pop = m.isChild ? crEaseOutBack(Math.min(1, m.spawnT / 0.3)) : 1;
+  const sq = m.squish * 0.2;
+  ctx.scale(pop * (1 + sq), pop * (1 - sq));
+
+  if (batImg && m.type === 'imp') {
+    const img = tintedImage(batImg, tint?.primary);
+    const size = r * 2.4;
+    const bw = size * (batImg.width / batImg.height);
+    ctx.drawImage(img, -bw / 2, -size / 2, bw, size);
+    if (flash) {
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  } else {
+    (CREATURE_DRAW[m.type] || drawGoblin)(ctx, m, pal, t, look);
+  }
+  ctx.restore();
+
+  // charging-shot telegraph — a growing glow orb where the shot comes from
+  const w = m.windup;
+  if (w > 0) {
+    const oy = m.y + r * (m.boss ? 0.4 : 0.55);
+    drawGlow(ctx, m.x, oy, 4 + w * r * (m.boss ? 0.9 : 0.6), m.enraged ? '#ff4d5a' : '#e07bff', 0.5 + w * 0.5);
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = w;
+    ctx.beginPath(); ctx.arc(m.x, oy, 1.5 + w * 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+
+// ===== src/render/atmosphere.js =====
+// ============================================================
+// Stage atmosphere — motion layers drawn over every stage's backdrop so the
+// battlefield always feels alive: swaying god-rays tinted by the stage,
+// drifting fog banks, depth motes streaming past, a cinematic vignette, a
+// red danger pulse when Shatterlings close in on the gate, and a rainbow
+// border during FEVER.
+// ============================================================
+
+let atVignette = null;
+function atGetVignette() {
+  if (atVignette) return atVignette;
+  const c = document.createElement('canvas');
+  c.width = CONFIG.width; c.height = CONFIG.height;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(CONFIG.width / 2, CONFIG.height * 0.45, CONFIG.height * 0.3, CONFIG.width / 2, CONFIG.height * 0.45, CONFIG.height * 0.78);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, c.width, c.height);
+  atVignette = c;
+  return c;
+}
+
+const atFogCache = new Map();
+function atFogBand(color) {
+  let c = atFogCache.get(color);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = 512; c.height = 120;
+  const g = c.getContext('2d');
+  // a few soft overlapping puffs → a seamless-ish cloud band
+  for (let i = 0; i < 14; i++) {
+    const x = (i / 14) * 512 + Math.random() * 30, y = 60 + (Math.random() - 0.5) * 40, r = 40 + Math.random() * 40;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+    // wrap copy so it tiles horizontally
+    g.fillRect(x - r - 512, y - r, r * 2, r * 2);
+    g.fillRect(x - r + 512, y - r, r * 2, r * 2);
+  }
+  atFogCache.set(color, c);
+  return c;
+}
+
+function atHexA(hex, a) {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((x) => x + x).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+const atMotes = [];
+for (let i = 0; i < 26; i++) {
+  atMotes.push({ x: Math.random() * CONFIG.width, y: Math.random() * CONFIG.height, z: 0.3 + Math.random() * 0.9, ph: Math.random() * 6 });
+}
+
+// Back layer: drawn right after the stage background, before gameplay.
+function renderAtmosphereBack(ctx, def, t) {
+  const W = CONFIG.width, H = CONFIG.height;
+  const col = def.decorColor || '#ffffff';
+
+  // god rays from the top, slowly swaying
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 4; i++) {
+    const baseX = W * (0.15 + i * 0.25) + Math.sin(t * 0.25 + i * 1.7) * 30;
+    const spread = 50 + 20 * Math.sin(t * 0.4 + i);
+    const a = 0.05 + 0.03 * Math.sin(t * 0.7 + i * 2.1);
+    const grad = ctx.createLinearGradient(0, 0, 0, H * 0.75);
+    grad.addColorStop(0, atHexA(col, a));
+    grad.addColorStop(1, atHexA(col, 0));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(baseX - 14, -10);
+    ctx.lineTo(baseX + 14, -10);
+    ctx.lineTo(baseX + spread + 60, H * 0.75);
+    ctx.lineTo(baseX - spread + 60, H * 0.75);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // drifting fog banks at two depths
+  const fog = atFogBand(atHexA(col, 0.16));
+  for (const [y, speed, alpha] of [[H * 0.3, 9, 0.7], [H * 0.62, -14, 0.5]]) {
+    const off = ((t * speed) % 512 + 512) % 512;
+    ctx.globalAlpha = alpha;
+    for (let x = -off; x < W; x += 512) ctx.drawImage(fog, x, y - 60);
+  }
+  ctx.globalAlpha = 1;
+
+  // depth motes streaming down — sells the feeling of marching forward
+  ctx.fillStyle = col;
+  for (const m of atMotes) {
+    const y = ((m.y + t * m.z * 38) % (H + 20)) - 10;
+    const x = m.x + Math.sin(t * 0.8 + m.ph) * 10 * m.z;
+    ctx.globalAlpha = 0.12 + 0.18 * m.z;
+    ctx.beginPath();
+    ctx.arc(x, y, 0.8 + m.z * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Front layer: vignette + danger + fever, drawn after gameplay, before HUD.
+function renderAtmosphereFront(ctx, st, t, fever) {
+  const W = CONFIG.width, H = CONFIG.height;
+  ctx.drawImage(atGetVignette(), 0, 0);
+
+  // danger: how close is the nearest Shatterling to the gate?
+  let maxY = 0;
+  for (const m of st.monsters) if (!m.dead && !m.boss && m.y > maxY) maxY = m.y;
+  const danger = Math.max(0, Math.min(1, (maxY - H * 0.55) / (H * 0.3)));
+  if (danger > 0) {
+    const pulse = 0.55 + 0.45 * Math.sin(t * 9);
+    const grad = ctx.createLinearGradient(0, H, 0, H * 0.6);
+    grad.addColorStop(0, `rgba(255,40,70,${0.42 * danger * pulse})`);
+    grad.addColorStop(1, 'rgba(255,40,70,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H * 0.6, W, H * 0.4);
+  }
+
+  // The gate line — a living energy barrier the Shatterlings must not cross.
+  {
+    const gy = CONFIG.gateY;
+    const hurt = Math.min(1, (st.gateFlash || 0) * 2);
+    const low = st.lives <= 1;
+    const base = hurt > 0 || low ? '255,92,122' : '127,216,255';
+    const pulse = 0.55 + 0.25 * Math.sin(t * (low ? 9 : 3));
+    const grad = ctx.createLinearGradient(0, gy - 26, 0, gy + 4);
+    grad.addColorStop(0, `rgba(${base},0)`);
+    grad.addColorStop(1, `rgba(${base},${0.28 * pulse + hurt * 0.4})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, gy - 26, W, 30);
+    ctx.save();
+    ctx.strokeStyle = `rgba(${base},${0.75 * pulse + hurt * 0.25})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 8) {
+      const y = gy + Math.sin(x * 0.05 + t * 4) * 1.5 + Math.sin(x * 0.13 - t * 6) * hurt * 4;
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // runes travelling along the barrier
+    ctx.fillStyle = `rgba(255,255,255,${0.6 * pulse})`;
+    for (let i = 0; i < 6; i++) {
+      const x = ((t * 40 + i * (W / 6)) % (W + 20)) - 10;
+      ctx.beginPath(); ctx.arc(x, gy, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // gate hit flash along the bottom edge
+  if (st.gateFlash > 0) {
+    const grad = ctx.createLinearGradient(0, H, 0, H - 160);
+    grad.addColorStop(0, `rgba(255,70,90,${Math.min(0.7, st.gateFlash * 2)})`);
+    grad.addColorStop(1, 'rgba(255,70,90,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - 160, W, 160);
+  }
+
+  if (fever > 0) {
+    const hue = (t * 240) % 360;
+    ctx.save();
+    ctx.lineWidth = 8;
+    ctx.globalAlpha = 0.55 + 0.25 * Math.sin(t * 12);
+    ctx.strokeStyle = `hsl(${hue},100%,65%)`;
+    ctx.strokeRect(4, 4, W - 8, H - 8);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `hsl(${(hue + 120) % 360},100%,75%)`;
+    ctx.strokeRect(10, 10, W - 20, H - 20);
+    ctx.restore();
+  }
+}
+
+
+// ===== src/systems/runUpgrades.js =====
+// ============================================================
+// In-run progression (the Survivor.io-style layer from the blueprint):
+// every kill drops an XP gem; fill the bar → the battle pauses and you pick
+// 1 of 3 upgrades. Upgrades last for the whole run (across levels) and
+// stack into builds: fans of bolts, piercing shards, orbiting blades that
+// also eat enemy bullets, chain lightning, homing seekers, frost novas.
+// ============================================================
+
+const RUN_UPGRADES = {
+  multishot: { name: 'Twin Bolts', desc: '+1 bolt in every volley', max: 4, icon: '✦', color: '#7fd8ff', weight: 4 },
+  rapid:     { name: 'Haste Rune', desc: '+20% fire rate', max: 5, icon: '⚡', color: '#ffd23d', weight: 4 },
+  power:     { name: 'Power Crystal', desc: '+35% bolt damage', max: 5, icon: '◆', color: '#ff7ad9', weight: 4 },
+  pierce:    { name: 'Piercing Shards', desc: 'Bolts pass through +1 foe', max: 3, icon: '➤', color: '#c8a2ff', weight: 3 },
+  side:      { name: 'Wing Cannons', desc: 'Extra diagonal bolts', max: 2, icon: '⋎', color: '#58e07f', weight: 3 },
+  orbit:     { name: 'Orbit Blades', desc: 'Spinning blades cut foes & block bullets', max: 4, icon: '✺', color: '#9ae6ff', weight: 3 },
+  chain:     { name: 'Chain Lightning', desc: 'Lightning leaps between foes', max: 3, icon: 'ϟ', color: '#bfe9ff', weight: 3 },
+  seeker:    { name: 'Seeker Missiles', desc: 'Homing missiles hunt foes', max: 3, icon: '➶', color: '#ff9a3d', weight: 3 },
+  nova:      { name: 'Frost Nova', desc: 'Pulses freeze & slow nearby foes', max: 2, icon: '❄', color: '#aef2ff', weight: 2 },
+  magnet:    { name: 'Gem Magnet', desc: 'Pull gems from much further', max: 2, icon: '◎', color: '#ffe680', weight: 2 },
+  heal:      { name: 'Mend', desc: 'Restore 60% of your blood line', max: 99, icon: '♥', color: '#ff5c7a', weight: 3 },
+  treasure:  { name: 'Treasure', desc: '+15 coins right now', max: 99, icon: '●', color: '#ffd23d', weight: 0 },
+};
+
+// Power climbs step by step: the first few level-ups come quickly (5, 7,
+// 13, 23 gems…) so a new run feels the Guardian grow within Level 1.
+const xpNeed = (lvl) => 5 + 2 * lvl * lvl;
+
+function createRun() {
+  return {
+    xp: 0, lvl: 0, need: xpNeed(0),
+    picks: {},
+    gems: [],
+    choices: null, choiceT: 0,
+    bladeAngle: 0,
+    chainT: 1.5, seekerT: 1, novaT: 3,
+    fever: 0, feverReady: true,
+    vacuum: false,
+    xpFlash: 0,
+  };
+}
+
+const runLevel = (run, key) => run.picks[key] || 0;
+
+function damageMult(run) { return 1 + 0.35 * runLevel(run, 'power'); }
+function rateMult(run) { return (1 + 0.2 * runLevel(run, 'rapid')) * (run.fever > 0 ? 1.6 : 1); }
+
+// Volley pattern for one trigger pull of the Guardian.
+function runFire(run, mx, my, baseDamage, spells) {
+  const dmg = baseDamage * damageMult(run);
+  const n = 1 + runLevel(run, 'multishot');
+  const pierce = runLevel(run, 'pierce');
+  const fever = run.fever > 0;
+  const kind = fever ? 'fever' : 'bolt';
+  const hue = (performance.now() / 4) % 360;
+  for (let i = 0; i < n; i++) {
+    const f = i - (n - 1) / 2;
+    spells.push(new Spell(mx + f * 9, my, dmg, { angle: f * 0.07, pierce, kind, hue: hue + i * 40 }));
+  }
+  const side = runLevel(run, 'side');
+  const angles = side >= 2 ? [0.42, 0.8] : side >= 1 ? [0.42] : [];
+  for (const a of angles) {
+    spells.push(new Spell(mx, my, dmg * 0.8, { angle: a, pierce, kind, hue }));
+    spells.push(new Spell(mx, my, dmg * 0.8, { angle: -a, pierce, kind, hue }));
+  }
+}
+
+function dropGems(run, x, y, value) {
+  // Split big values into a few gems so a boss/elite kill bursts satisfyingly.
+  const pieces = value >= 20 ? 6 : value >= 6 ? 3 : 1;
+  const each = value / pieces;
+  for (let i = 0; i < pieces; i++) {
+    const a = Math.random() * Math.PI * 2, sp = pieces > 1 ? 60 + Math.random() * 120 : 0;
+    run.gems.push({
+      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - (pieces > 1 ? 60 : 0),
+      value: each, t: 0, spin: Math.random() * 6, pulled: false,
+      tier: each >= 6 ? 2 : each >= 2 ? 1 : 0,
+    });
+  }
+  if (run.gems.length > 220) run.gems.splice(0, run.gems.length - 220);
+}
+
+function rollChoices(run, player) {
+  const pool = [];
+  for (const [key, u] of Object.entries(RUN_UPGRADES)) {
+    if (!u.weight) continue;
+    if (runLevel(run, key) >= u.max) continue;
+    if (key === 'heal' && player.blood > player.maxBlood * 0.75) continue;
+    pool.push(key);
+  }
+  const out = [];
+  while (out.length < 3 && pool.length) {
+    let total = 0;
+    for (const k of pool) total += RUN_UPGRADES[k].weight;
+    let r = Math.random() * total;
+    let idx = 0;
+    for (; idx < pool.length; idx++) { r -= RUN_UPGRADES[pool[idx]].weight; if (r <= 0) break; }
+    idx = Math.min(idx, pool.length - 1);
+    out.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  while (out.length < 3) out.push('treasure');
+  return out;
+}
+
+// Applies a chosen card. Returns true if another level-up is already queued.
+function applyPick(run, key, st) {
+  if (key === 'heal') st.player.healBlood(0.6);
+  else if (key === 'treasure') st.coins += 15;
+  else run.picks[key] = runLevel(run, key) + 1;
+  run.choices = null;
+  return checkLevelUp(run, st.player);
+}
+
+function checkLevelUp(run, player) {
+  if (run.choices) return false;
+  if (run.bonus > 0) {
+    // free hand-picked powers (Veteran Boost) — no XP cost
+    run.bonus--;
+    run.choiceTitle = 'VETERAN BOOST';
+    run.choices = rollChoices(run, player);
+    run.choiceT = 0;
+    return true;
+  }
+  if (run.xp < run.need) return false;
+  run.choiceTitle = 'LEVEL UP!';
+  run.xp -= run.need;
+  run.lvl++;
+  run.need = xpNeed(run.lvl);
+  run.choices = rollChoices(run, player);
+  run.choiceT = 0;
+  return true;
+}
+
+// Veteran Boost — a run that starts past the first level gets the powers a
+// typical run would have earned by then (so "Continue" from Level 5 isn't a
+// fresh Guardian thrown at a Level-5 horde). Most are auto-drafted; the
+// last few are hand-picked from cards as the level opens.
+function grantCatchUp(run, player, levelIndex) {
+  if (levelIndex <= 0) return 0;
+  const total = Math.min(22, Math.round(2 + 1.1 * levelIndex));
+  const manual = Math.min(3, total);
+  for (let i = 0; i < total - manual; i++) {
+    const key = rollChoices(run, player).find((k) => k !== 'heal' && k !== 'treasure');
+    if (key) run.picks[key] = runLevel(run, key) + 1;
+  }
+  run.lvl = total;
+  run.need = xpNeed(total);
+  run.bonus = manual;
+  return total;
+}
+
+const nearest = (list, x, y, maxD, skip) => {
+  let best = null, bd = maxD * maxD;
+  for (const m of list) {
+    if (m.dead || (skip && skip.has(m))) continue;
+    const d = (m.x - x) ** 2 + (m.y - y) ** 2;
+    if (d < bd) { bd = d; best = m; }
+  }
+  return best;
+};
+
+// api = { damageMonster(m, dmg), particles, audio }
+// Returns true when a level-up choice just became pending.
+function runUpdate(dt, run, st, api) {
+  const p = st.player;
+  const dmgBase = p.damage * damageMult(run);
+  if (run.fever > 0) run.fever -= dt;
+  if (run.xpFlash > 0) run.xpFlash -= dt;
+  let leveled = false;
+
+  // --- XP gems: drift, get magnetized, collect ---
+  const magR = 70 + 70 * runLevel(run, 'magnet');
+  for (const g of run.gems) {
+    g.t += dt;
+    g.spin += dt * 4;
+    const dx = p.x - g.x, dy = p.y - g.y;
+    const d = Math.hypot(dx, dy) || 1;
+    // every gem homes in after a short float, so XP is never lost — power
+    // growth stays steady even while the player is busy dodging
+    if (run.vacuum || d < magR || g.t > 2.2) g.pulled = true;
+    if (g.pulled) {
+      const sp = Math.min(900, 260 + g.t * 500);
+      g.vx += ((dx / d) * sp - g.vx) * Math.min(1, dt * 10);
+      g.vy += ((dy / d) * sp - g.vy) * Math.min(1, dt * 10);
+    } else {
+      g.vx *= Math.pow(0.05, dt);
+      g.vy += (45 - g.vy) * Math.min(1, dt * 3); // settle into a gentle downward drift
+    }
+    g.x += g.vx * dt;
+    g.y += g.vy * dt;
+    if (d < 20) {
+      g.dead = true;
+      run.xp += g.value;
+      run.xpFlash = 0.15;
+      api.audio.gem?.();
+    } else if (g.y > CONFIG.height + 20) g.dead = true;
+  }
+  run.gems = run.gems.filter((g) => !g.dead);
+  if (checkLevelUp(run, p)) leveled = true;
+
+  // --- Orbit blades: cut monsters, eat enemy bullets ---
+  const blades = runLevel(run, 'orbit');
+  if (blades) {
+    run.bladeAngle += dt * 3.6;
+    const R = 58;
+    for (let i = 0; i < blades; i++) {
+      const a = run.bladeAngle + (i / blades) * Math.PI * 2;
+      const bx = p.x + Math.cos(a) * R, by = p.y + Math.sin(a) * R * 0.85;
+      for (const m of st.monsters) {
+        if (m.dead) continue;
+        if ((m._bladeCd || 0) > st.levelTime) continue;
+        const rr = m.r + 10;
+        if ((m.x - bx) ** 2 + (m.y - by) ** 2 < rr * rr) {
+          m._bladeCd = st.levelTime + 0.3;
+          api.particles.sparkle(bx, by, '#bff4ff', 3);
+          api.damageMonster(m, dmgBase * 0.9);
+        }
+      }
+      for (const b of st.enemyBullets) {
+        if (!b.dead && (b.x - bx) ** 2 + (b.y - by) ** 2 < (b.r + 9) ** 2) {
+          b.dead = true;
+          api.particles.sparkle(b.x, b.y, '#e07bff', 4);
+        }
+      }
+    }
+  }
+
+  // --- Chain lightning ---
+  const chain = runLevel(run, 'chain');
+  if (chain) {
+    run.chainT -= dt;
+    if (run.chainT <= 0) {
+      const first = nearest(st.monsters, p.x, p.y - 40, 300);
+      if (first) {
+        run.chainT = 2.0 - 0.45 * (chain - 1);
+        const hitSet = new Set([first]);
+        const pts = [{ x: p.x, y: p.y - 30 }, { x: first.x, y: first.y }];
+        let cur = first;
+        for (let k = 0; k < 2 + chain * 2; k++) {
+          const nx = nearest(st.monsters, cur.x, cur.y, 140, hitSet);
+          if (!nx) break;
+          hitSet.add(nx);
+          pts.push({ x: nx.x, y: nx.y });
+          cur = nx;
+        }
+        api.particles.bolt(pts, '#9fdcff');
+        api.audio.zapChain?.();
+        for (const m of hitSet) api.damageMonster(m, dmgBase * 2.2);
+      } else run.chainT = 0.3;
+    }
+  }
+
+  // --- Seeker missiles ---
+  const seeker = runLevel(run, 'seeker');
+  if (seeker) {
+    run.seekerT -= dt;
+    if (run.seekerT <= 0 && st.monsters.length) {
+      run.seekerT = 1.7 - 0.35 * (seeker - 1);
+      for (let i = 0; i < seeker; i++) {
+        const s = new Spell(p.x, p.y - 20, dmgBase * 2.5, {
+          angle: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.7),
+          speed: 360, homing: true, kind: 'seeker', r: 8,
+        });
+        st.spells.push(s);
+      }
+    }
+  }
+  // assign / refresh homing targets
+  for (const s of st.spells) {
+    if (s.homing && (!s.target || s.target.dead)) s.target = nearest(st.monsters, s.x, s.y, 600);
+  }
+
+  // --- Frost nova ---
+  const nova = runLevel(run, 'nova');
+  if (nova) {
+    run.novaT -= dt;
+    if (run.novaT <= 0) {
+      run.novaT = 6.5 - 1.5 * (nova - 1);
+      const R = 160 + 70 * (nova - 1);
+      api.particles.ring(p.x, p.y, '#aef2ff', R, 0.5, 6);
+      api.particles.ring(p.x, p.y, '#ffffff', R * 0.7, 0.4, 3);
+      api.audio.nova?.();
+      for (const m of st.monsters) {
+        if (m.dead) continue;
+        if ((m.x - p.x) ** 2 + (m.y - p.y) ** 2 < R * R) {
+          m.slowT = 2.6;
+          api.damageMonster(m, dmgBase * 1.2);
+        }
+      }
+    }
+  }
+  return leveled;
+}
+
+// --- Rendering -------------------------------------------------------------
+const GEM_COLORS = ['#7fd8ff', '#58e07f', '#d27bff'];
+
+function renderRunWorld(ctx, run, p, t) {
+  for (const g of run.gems) {
+    const s = 4 + g.tier * 2.2;
+    const col = GEM_COLORS[g.tier];
+    drawGlow(ctx, g.x, g.y, s * 2.6, col, 0.45);
+    ctx.save();
+    ctx.translate(g.x, g.y + Math.sin(g.spin) * 1.5);
+    ctx.scale(Math.cos(g.spin * 0.8) * 0.4 + 0.8, 1);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 1.3); ctx.lineTo(s, 0); ctx.lineTo(0, s * 1.3); ctx.lineTo(-s, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.moveTo(0, -s * 1.3); ctx.lineTo(s * 0.35, -s * 0.1); ctx.lineTo(-s * 0.5, 0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  const blades = runLevel(run, 'orbit');
+  if (blades) {
+    const R = 58;
+    for (let i = 0; i < blades; i++) {
+      const a = run.bladeAngle + (i / blades) * Math.PI * 2;
+      const bx = p.x + Math.cos(a) * R, by = p.y + Math.sin(a) * R * 0.85;
+      drawGlow(ctx, bx, by, 18, '#7fd8ff', 0.55);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(t * 14 + i);
+      ctx.fillStyle = '#e8fbff';
+      ctx.strokeStyle = '#3a7fa8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let k = 0; k < 4; k++) {
+        const aa = (k / 4) * Math.PI * 2;
+        ctx.lineTo(Math.cos(aa) * 10, Math.sin(aa) * 10);
+        ctx.lineTo(Math.cos(aa + 0.6) * 3.5, Math.sin(aa + 0.6) * 3.5);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+// XP bar — thin glowing strip just above the buy-button row.
+function renderXPBar(ctx, run) {
+  const x = 14, w = CONFIG.width - 28, h = 7;
+  const y = CONFIG.height - CONFIG.hud.rowBottomOffset - 16;
+  const frac = Math.min(1, run.xp / run.need);
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,6,24,0.6)';
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill();
+  if (frac > 0) {
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, '#5cc8e8');
+    grad.addColorStop(1, '#d27bff');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.roundRect(x, y, Math.max(h, w * frac), h, 4); ctx.fill();
+  }
+  if (run.xpFlash > 0) {
+    ctx.globalAlpha = run.xpFlash * 4;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.stroke();
+  // level badge
+  ctx.fillStyle = '#2a1f4d';
+  ctx.strokeStyle = '#d27bff';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x + 4, y + h / 2, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '11px "Luckiest Guy", Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(String(run.lvl + 1), x + 4, y + h / 2 + 4);
+  if (run.fever > 0) {
+    ctx.font = '12px "Luckiest Guy", Arial';
+    ctx.fillStyle = `hsl(${(performance.now() / 3) % 360},100%,70%)`;
+    ctx.fillText(`FEVER ${Math.ceil(run.fever)}s`, CONFIG.width / 2, y - 5);
+  }
+  ctx.restore();
+}
+
+const CARD = { x: 34, w: CONFIG.width - 68, h: 104, gap: 16, top: 214 };
+const cardRect = (i) => ({ x: CARD.x, y: CARD.top + i * (CARD.h + CARD.gap), w: CARD.w, h: CARD.h });
+
+function levelUpTap(run, x, y) {
+  if (!run.choices || run.choiceT < 0.45) return -1; // ignore the still-held drag finger
+  for (let i = 0; i < run.choices.length; i++) {
+    const r = cardRect(i);
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i;
+  }
+  return -1;
+}
+
+const easeOutBack = (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+
+function renderLevelUp(ctx, run, t) {
+  if (!run.choices) return;
+  const ct = run.choiceT;
+  ctx.save();
+  ctx.fillStyle = `rgba(8,4,20,${Math.min(0.72, ct * 3)})`;
+  ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+
+  // radiating light behind the title
+  ctx.save();
+  ctx.translate(CONFIG.width / 2, 150);
+  ctx.rotate(t * 0.4);
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#d27bff';
+  for (let i = 0; i < 12; i++) {
+    ctx.rotate(Math.PI / 6);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-18, -260); ctx.lineTo(18, -260); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  const ts = easeOutBack(Math.min(1, ct / 0.35));
+  ctx.save();
+  ctx.translate(CONFIG.width / 2, 150);
+  ctx.scale(ts, ts);
+  ctx.textAlign = 'center';
+  ctx.font = '40px "Luckiest Guy", Arial';
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#2a1f4d';
+  const title = run.choiceTitle || 'LEVEL UP!';
+  ctx.strokeText(title, 0, 0);
+  ctx.fillStyle = '#ffd23d';
+  ctx.fillText(title, 0, 0);
+  ctx.font = '16px "Fredoka", Arial';
+  ctx.fillStyle = '#e8dcff';
+  ctx.fillText('Choose a power', 0, 30);
+  ctx.restore();
+
+  run.choices.forEach((key, i) => {
+    const u = RUN_UPGRADES[key];
+    const r = cardRect(i);
+    const local = Math.max(0, Math.min(1, (ct - 0.08 - i * 0.08) / 0.35));
+    if (local <= 0) return;
+    const e = easeOutBack(local);
+    const lvlNow = runLevel(run, key);
+    ctx.save();
+    ctx.translate(r.x + r.w / 2 + (1 - e) * 260 * (i % 2 ? 1 : -1), r.y + r.h / 2);
+    const hover = Math.sin(t * 3 + i) * 2;
+    ctx.translate(0, hover);
+    ctx.globalAlpha = Math.min(1, local * 2);
+    // card body
+    const grad = ctx.createLinearGradient(0, -r.h / 2, 0, r.h / 2);
+    grad.addColorStop(0, '#3a2a66');
+    grad.addColorStop(1, '#1e1440');
+    ctx.fillStyle = grad;
+    ctx.strokeStyle = u.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(-r.w / 2, -r.h / 2, r.w, r.h, 16); ctx.fill(); ctx.stroke();
+    // shimmering sweep
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(-r.w / 2, -r.h / 2, r.w, r.h, 16); ctx.clip();
+    const sweep = ((t * 0.6 + i * 0.3) % 1.6) * r.w * 1.4 - r.w;
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(sweep, -r.h / 2); ctx.lineTo(sweep + 40, -r.h / 2); ctx.lineTo(sweep - 10, r.h / 2); ctx.lineTo(sweep - 50, r.h / 2);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // icon orb
+    const ix = -r.w / 2 + 50;
+    drawGlow(ctx, ix, 0, 44, u.color, 0.5 + 0.2 * Math.sin(t * 4 + i));
+    ctx.fillStyle = '#140c28';
+    ctx.strokeStyle = u.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ix, 0, 30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = u.color;
+    ctx.font = '30px "Fredoka", Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(u.icon, ix, 11);
+    // text
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '21px "Luckiest Guy", Arial';
+    ctx.fillText(u.name, ix + 44, -12);
+    ctx.font = '14px "Fredoka", Arial';
+    ctx.fillStyle = '#d8ccf5';
+    ctx.fillText(u.desc, ix + 44, 12);
+    // level pips
+    if (u.max < 99) {
+      for (let k = 0; k < u.max; k++) {
+        ctx.fillStyle = k < lvlNow ? u.color : k === lvlNow ? '#ffffff' : 'rgba(255,255,255,0.18)';
+        ctx.beginPath(); ctx.arc(ix + 50 + k * 14, 34, 4.5, 0, Math.PI * 2); ctx.fill();
+      }
+      if (lvlNow === 0) {
+        ctx.fillStyle = '#ffd23d';
+        ctx.font = '12px "Luckiest Guy", Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText('NEW!', r.w / 2 - 14, -r.h / 2 + 22);
+      }
+    }
+    ctx.restore();
+  });
+  ctx.restore();
 }
 
 
@@ -2319,7 +3858,25 @@ const audio = {
   waveUp()     { tone(600, 0.12, 'sine', 0.08, 200); tone(900, 0.18, 'sine', 0.06, 200); },
   enemyShot()  { tone(180, 0.08, 'sawtooth', 0.025, -60); },
   grazed()     { tone(220, 0.07, 'square', 0.05, -40); }, // enemy bullet chips a blood line (no heart lost yet)
+  // Gem pickups rise in pitch while collected in quick succession.
+  gem() {
+    const now = performance.now();
+    if (now - gemLast < 45) return;
+    gemStreak = now - gemLast < 400 ? Math.min(gemStreak + 1, 16) : 0;
+    gemLast = now;
+    tone(900 + gemStreak * 45, 0.05, 'sine', 0.035, 200);
+  },
+  levelUp()    { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.08, 0), i * 70)); },
+  pick()       { tone(660, 0.1, 'sine', 0.09, 440); tone(990, 0.18, 'triangle', 0.05, 300); },
+  fever()      { [440, 554, 659, 880, 1109].forEach((f, i) => setTimeout(() => tone(f, 0.12, 'square', 0.04, 60), i * 55)); },
+  zapChain()   { tone(1400, 0.12, 'sawtooth', 0.035, -1000); },
+  nova()       { tone(1200, 0.35, 'sine', 0.06, -900); },
+  shatter()    { tone(1600 + Math.random() * 400, 0.07, 'triangle', 0.025, -900); },
+  bossRoar()   { tone(90, 0.7, 'sawtooth', 0.12, -40); tone(60, 0.8, 'square', 0.06, -20); },
+  bossShot()   { tone(240, 0.18, 'sawtooth', 0.05, -160); },
+  bigBoom()    { tone(70, 0.6, 'sawtooth', 0.14, -30); tone(160, 0.35, 'square', 0.06, -120); },
 };
+let gemLast = 0, gemStreak = 0;
 
 
 // ===== src/systems/ads.js =====
@@ -2769,6 +4326,7 @@ const BUTTONS = {
 // Hearts moved down to y=46 (from the old y=14) to make room for the pause
 // button now sitting in that top-right corner above them.
 const HEART_Y = 46;
+let comboShown = 0, comboPop = 0;
 
 function buttonAt(x, y) {
   for (const k in BUTTONS) {
@@ -3064,7 +4622,7 @@ function renderHUD(ctx, state, adsReady = false) {
 
   // Lives (top-right, below the pause button)
   for (let i = 0; i < CONFIG.gateHealth; i++) {
-    heart(ctx, CONFIG.width - 26 - i * 30, HEART_Y, 20, i < state.lives);
+    heart(ctx, CONFIG.width - 22 - i * 25, HEART_Y, 18, i < state.lives);
   }
 
   // Pause button (top-right corner)
@@ -3081,11 +4639,33 @@ function renderHUD(ctx, state, adsReady = false) {
   }
 
   // Combo
+  // Combo — punchy counter that pops on every kill and heats up from icy
+  // blue toward hot pink as it nears the FEVER threshold (25).
+  if (state.combo !== comboShown) { if (state.combo > comboShown) comboPop = 1; comboShown = state.combo; }
+  comboPop *= 0.88;
   if (state.combo >= 3) {
+    const heat = Math.min(1, state.combo / 25);
+    const col = `hsl(${195 + heat * 135},100%,${65 + heat * 5}%)`;
+    const sc = 1 + comboPop * 0.45;
+    ctx.save();
+    ctx.translate(16, 92);
+    ctx.scale(sc, sc);
     ctx.textAlign = 'left';
-    ctx.font = `17px ${F_BODY}`;
-    ctx.fillStyle = '#7fd8ff';
-    ctx.fillText(`combo ×${state.combo}`, 14, 82);
+    ctx.font = `24px ${F_TITLE}`;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(20,10,40,0.8)';
+    ctx.strokeText(`×${state.combo}`, 0, 0);
+    ctx.fillStyle = col;
+    ctx.fillText(`×${state.combo}`, 0, 0);
+    ctx.restore();
+    ctx.font = `11px ${F_TITLE}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.textAlign = 'left';
+    ctx.fillText('COMBO', 16, 104);
+    // combo timer bar — how long until the chain drops
+    const tw = 54 * Math.max(0, Math.min(1, state.comboTimer / 1.2));
+    ctx.fillStyle = col;
+    ctx.fillRect(16, 108, tw, 3);
   }
 
   // Active gate effect
@@ -4585,9 +6165,9 @@ function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex = 0, co
     ] : [
       'Fly the Guardian anywhere —',
       'magic fires by itself!',
-      'Defend the GateWall',
-      'through 5 stages of trials.',
-      'Earn coins — buy BOMBS & ANGELS',
+      'Defend the GateWall!',
+      'Grab gems — LEVEL UP — pick powers',
+      'Chain 25 kills for FEVER!',
       best > 0 ? `★ Best score: ${best} ★` : '',
     ], started ? 'CONTINUE' : 'TAP TO PLAY');
 
@@ -4886,17 +6466,36 @@ function renderGameOver(ctx, state, best) {
   drawMenuLink(ctx);
 }
 
-// --- Guardian upgrades page (permanent, bought here) -----------------
-// Rows fill the page below the header, full width; no floating card, no
-// close button — leave via the bottom nav bar like any other page.
-const UPG_ROW_X = 16, UPG_ROW_W = W - 32, UPG_ROW_H = 116, UPG_ROW_GAP = 14, UPG_TOP = 76;
+// --- ARMORY (permanent upgrades page) ---------------------------------
+// A grid of every unit the player fights with; tapping one opens a dialog
+// where each of its stats is upgraded separately. Costs climb exponentially
+// (data/upgrades.js), and GET COINS buttons lead to the coin shop.
+const ARM_TOP = 104, ARM_GAP = 12, ARM_CW = (W - 32 - ARM_GAP) / 2, ARM_CH = 172;
 const UPGRADE_BUTTONS = {
-  buy: {
-    power:    { x: UPG_ROW_X, y: UPG_TOP + (UPG_ROW_H + UPG_ROW_GAP) * 0, w: UPG_ROW_W, h: UPG_ROW_H },
-    speed:    { x: UPG_ROW_X, y: UPG_TOP + (UPG_ROW_H + UPG_ROW_GAP) * 1, w: UPG_ROW_W, h: UPG_ROW_H },
-    fireRate: { x: UPG_ROW_X, y: UPG_TOP + (UPG_ROW_H + UPG_ROW_GAP) * 2, w: UPG_ROW_W, h: UPG_ROW_H },
-  },
+  getCoins: { x: W - 16 - 130, y: 60, w: 130, h: 32 },
+  cards: Object.fromEntries(UNIT_ORDER.map((u, i) => [u, {
+    x: 16 + (i % 2) * (ARM_CW + ARM_GAP),
+    y: ARM_TOP + Math.floor(i / 2) * (ARM_CH + ARM_GAP),
+    w: ARM_CW, h: ARM_CH,
+  }])),
 };
+const ARM_DLG = { x: 16, y: 66, w: W - 32, h: 580 };
+const UNIT_DIALOG = {
+  close: { x: ARM_DLG.x + ARM_DLG.w - 44, y: ARM_DLG.y + 10, w: 34, h: 34 },
+  getCoins: { x: W / 2 - 110, y: ARM_DLG.y + ARM_DLG.h - 56, w: 220, h: 42 },
+};
+// Row + buy-button rects for every stat of a unit's dialog.
+function unitDialogRows(unit) {
+  const out = {};
+  Object.keys(UNITS[unit].stats).forEach((stat, i) => {
+    const y = ARM_DLG.y + 132 + i * 98;
+    out[stat] = {
+      row: { x: ARM_DLG.x + 12, y, w: ARM_DLG.w - 24, h: 88 },
+      buy: { x: ARM_DLG.x + ARM_DLG.w - 128, y: y + 22, w: 106, h: 46 },
+    };
+  });
+  return out;
+}
 
 function drawCloseX(ctx, cl) {
   ctx.fillStyle = '#e0483d';
@@ -4909,54 +6508,273 @@ function drawCloseX(ctx, cl) {
   ctx.stroke();
 }
 
-function renderUpgrades(ctx, saveData) {
-  pageShell(ctx, 'GUARDIAN UPGRADES', '#7fd8ff');
-
-  ctx.textAlign = 'center';
-  ctx.font = `13px ${F_BODY}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText(`You have ${saveData.coins} coins`, W / 2, 66);
-
-  for (const key in UPGRADES) {
-    const u = UPGRADES[key];
-    const r = UPGRADE_BUTTONS.buy[key];
-    const level = saveData.permanent[key] || 0;
-    const maxed = level >= UPGRADE_MAX;
-    const cost = maxed ? 0 : upgradeCost(key, level);
-    const affordable = !maxed && saveData.coins >= cost;
-
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
-    ctx.strokeStyle = affordable ? u.color : 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 16); ctx.fill(); ctx.stroke();
-
-    ctx.textAlign = 'left';
-    ctx.font = `19px ${F_TITLE}`;
-    ctx.fillStyle = u.color;
-    ctx.fillText(u.label, r.x + 16, r.y + 28);
-
-    ctx.font = `13px ${F_BODY}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText(u.tagline, r.x + 16, r.y + 48);
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.font = `12px ${F_BODY}`;
-    ctx.fillText(u.perLevel, r.x + 16, r.y + 64);
-
-    // level pips
-    for (let i = 0; i < UPGRADE_MAX; i++) {
-      ctx.fillStyle = i < level ? u.color : 'rgba(255,255,255,0.2)';
-      ctx.beginPath();
-      ctx.arc(r.x + 18 + i * 20, r.y + 88, 7, 0, Math.PI * 2);
-      ctx.fill();
+// Animated unit portraits for the Armory (procedural, plus the real cannon
+// art and the Guardian sprite passed in from main.js).
+function drawUnitIcon(ctx, unit, x, y, s, t, heroImg) {
+  ctx.save();
+  ctx.translate(x, y);
+  const bob = Math.sin(t * 2.4) * s * 0.04;
+  switch (unit) {
+    case 'hero': {
+      if (heroImg) {
+        const h = s * 1.5, w = h * (heroImg.naturalWidth / heroImg.naturalHeight);
+        ctx.drawImage(heroImg, -w / 2, -h * 0.55 + bob, w, h);
+      } else {
+        ctx.fillStyle = '#ffd23d';
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.4, 0, 7); ctx.fill();
+      }
+      break;
     }
-
-    ctx.textAlign = 'right';
-    ctx.font = `16px ${F_TITLE}`;
-    ctx.fillStyle = maxed ? '#58e07f' : (affordable ? '#ffd23d' : '#ff9a9a');
-    ctx.fillText(maxed ? 'MAXED' : `${cost}¢`, r.x + r.w - 16, r.y + r.h - 14);
+    case 'angel': {
+      ctx.translate(0, bob * 2);
+      const flap = Math.sin(t * 10) * 0.35;
+      ctx.fillStyle = 'rgba(154,230,255,0.85)';
+      ctx.strokeStyle = '#1c3a52';
+      ctx.lineWidth = 2;
+      for (const sd of [-1, 1]) {
+        ctx.save(); ctx.scale(sd, 1); ctx.rotate(-0.3 + flap);
+        ctx.beginPath(); ctx.ellipse(s * 0.32, 0, s * 0.26, s * 0.12, 0.5, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#bdeeff';
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.24, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#7fd8ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, -s * 0.34, s * 0.18, s * 0.06, 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#1c3a52';
+      ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.02, 2.5, 0, 7); ctx.arc(s * 0.07, -s * 0.02, 2.5, 0, 7); ctx.fill();
+      break;
+    }
+    case 'turret': {
+      const img = CANNON_FRAMES[Math.sin(t * 3) > 0.85 ? 'fire' : 'idle'] || CANNON_FRAMES.idle;
+      if (img) {
+        const h = s * 1.3, w = h * (img.width / img.height);
+        ctx.drawImage(img, -w / 2, -h * 0.6, w, h);
+      }
+      break;
+    }
+    case 'wall': {
+      const w = s * 1.1, h = s * 0.5;
+      ctx.fillStyle = '#8a6a4a';
+      ctx.strokeStyle = '#4a3420';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 6); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0);
+      for (const fx of [-0.25, 0.25]) { ctx.moveTo(fx * w, -h / 2); ctx.lineTo(fx * w, 0); }
+      ctx.moveTo(0, 0); ctx.lineTo(0, h / 2);
+      ctx.stroke();
+      ctx.fillStyle = '#d8c8a8'; // thorns
+      for (let i = 0; i < 5; i++) {
+        const tx = -w / 2 + 8 + i * ((w - 16) / 4);
+        ctx.beginPath();
+        ctx.moveTo(tx - 5, -h / 2); ctx.lineTo(tx, -h / 2 - 9 - Math.sin(t * 3 + i) * 2); ctx.lineTo(tx + 5, -h / 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'bomb': {
+      ctx.translate(0, bob);
+      ctx.fillStyle = '#2a2438';
+      ctx.strokeStyle = '#120c1e';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, s * 0.05, s * 0.36, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.ellipse(-s * 0.13, -s * 0.08, s * 0.08, s * 0.12, -0.5, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#c8a06a';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(s * 0.18, -s * 0.24); ctx.quadraticCurveTo(s * 0.35, -s * 0.5, s * 0.22, -s * 0.55); ctx.stroke();
+      const sp = 0.6 + 0.4 * Math.sin(t * 22);
+      ctx.fillStyle = '#ffd23d';
+      ctx.beginPath(); ctx.arc(s * 0.22, -s * 0.57, 5 * sp + 2, 0, 7); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(s * 0.22, -s * 0.57, 2, 0, 7); ctx.fill();
+      break;
+    }
+    case 'shield': {
+      const g = 0.6 + 0.4 * Math.sin(t * 3);
+      ctx.shadowColor = '#7fd8ff';
+      ctx.shadowBlur = 16 * g;
+      ctx.fillStyle = '#3a7fa8';
+      ctx.strokeStyle = '#bdeeff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 0.42);
+      ctx.quadraticCurveTo(s * 0.36, -s * 0.36, s * 0.34, -s * 0.12);
+      ctx.quadraticCurveTo(s * 0.3, s * 0.3, 0, s * 0.46);
+      ctx.quadraticCurveTo(-s * 0.3, s * 0.3, -s * 0.34, -s * 0.12);
+      ctx.quadraticCurveTo(-s * 0.36, -s * 0.36, 0, -s * 0.42);
+      ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 0.28); ctx.lineTo(0, s * 0.3);
+      ctx.moveTo(-s * 0.2, -s * 0.05); ctx.lineTo(s * 0.2, -s * 0.05);
+      ctx.stroke();
+      break;
+    }
   }
+  ctx.restore();
+}
+
+function armCoinPill(ctx, coins) {
+  ctx.fillStyle = 'rgba(10,6,24,0.6)';
+  ctx.strokeStyle = '#ffd23d';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(16, 60, 150, 32, 16); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffd23d';
+  ctx.strokeStyle = '#a8781a';
+  ctx.beginPath(); ctx.arc(34, 76, 10, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'left';
+  ctx.font = `17px ${F_TITLE}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(String(coins), 52, 83);
+}
+
+function armButton(ctx, r, label, colors, t, glow = false) {
+  ctx.save();
+  if (glow) { ctx.shadowColor = colors[0]; ctx.shadowBlur = 10 + 6 * Math.sin(t * 5); }
+  const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+  g.addColorStop(0, colors[0]);
+  g.addColorStop(1, colors[1]);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, r.h / 2); ctx.fill();
+  ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.font = `${Math.round(r.h * 0.42)}px ${F_TITLE}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, r.x + r.w / 2, r.y + r.h * 0.66);
+}
+
+function unitAffordable(saveData, unit) {
+  for (const stat in UNITS[unit].stats) {
+    const lv = unitLevel(saveData, unit, stat);
+    if (lv < UNITS[unit].stats[stat].max && (saveData.coins || 0) >= statCost(unit, stat, lv)) return true;
+  }
+  return false;
+}
+
+// selected = unit key whose dialog is open (or null); flash = { unit, stat, t }
+// pulses a just-bought row; heroImg = the Guardian sprite from main.js.
+function renderUpgrades(ctx, saveData, selected = null, t = 0, heroImg = null, flash = null) {
+  pageShell(ctx, 'ARMORY', '#ffd23d');
+  armCoinPill(ctx, saveData.coins || 0);
+  armButton(ctx, UPGRADE_BUTTONS.getCoins, '+ GET COINS', ['#ffd23d', '#d89a1a'], t);
+
+  UNIT_ORDER.forEach((unit, i) => {
+    const u = UNITS[unit];
+    const r = UPGRADE_BUTTONS.cards[unit];
+    const total = unitTotalLevel(saveData, unit);
+    let maxTotal = 0;
+    for (const st in u.stats) maxTotal += u.stats[st].max;
+    const can = unitAffordable(saveData, unit);
+    ctx.save();
+    ctx.translate(0, Math.sin(t * 1.8 + i) * 2);
+    const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+    g.addColorStop(0, '#34265e');
+    g.addColorStop(1, '#1c1238');
+    ctx.fillStyle = g;
+    ctx.strokeStyle = can ? u.color : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = can ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 18); ctx.fill(); ctx.stroke();
+    const hg = ctx.createRadialGradient(r.x + r.w / 2, r.y + 58, 4, r.x + r.w / 2, r.y + 58, 56);
+    hg.addColorStop(0, u.color + '55');
+    hg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(r.x, r.y, r.w, 116);
+    drawUnitIcon(ctx, unit, r.x + r.w / 2, r.y + 62, 70, t + i, heroImg);
+    ctx.textAlign = 'center';
+    ctx.font = `17px ${F_TITLE}`;
+    ctx.fillStyle = u.color;
+    ctx.fillText(u.name, r.x + r.w / 2, r.y + 126);
+    const bx = r.x + 16, bw = r.w - 32, by = r.y + 138;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, 6, 3); ctx.fill();
+    ctx.fillStyle = u.color;
+    ctx.beginPath(); ctx.roundRect(bx, by, Math.max(6, bw * (total / maxTotal)), 6, 3); ctx.fill();
+    ctx.font = `12px ${F_BODY}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(`POWER LV ${total}`, r.x + r.w / 2, r.y + 160);
+    if (can) { // something here is affordable right now
+      ctx.fillStyle = '#58e07f';
+      ctx.beginPath(); ctx.arc(r.x + r.w - 16, r.y + 16, 6 + Math.sin(t * 5) * 1.5, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  });
 
   drawBottomNav(ctx, 'upgrades');
+  if (selected) renderUnitDialog(ctx, saveData, selected, t, heroImg, flash);
+}
+
+function renderUnitDialog(ctx, saveData, unit, t, heroImg, flash) {
+  const u = UNITS[unit];
+  const d = ARM_DLG;
+  ctx.fillStyle = 'rgba(8,4,20,0.78)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.shadowColor = u.color;
+  ctx.shadowBlur = 24;
+  const g = ctx.createLinearGradient(0, d.y, 0, d.y + d.h);
+  g.addColorStop(0, '#36275f');
+  g.addColorStop(1, '#1a1034');
+  ctx.fillStyle = g;
+  ctx.strokeStyle = u.color;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(d.x, d.y, d.w, d.h, 22); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  drawCloseX(ctx, UNIT_DIALOG.close);
+
+  drawUnitIcon(ctx, unit, d.x + 62, d.y + 64, 84, t, heroImg);
+  ctx.textAlign = 'left';
+  ctx.font = `24px ${F_TITLE}`;
+  ctx.fillStyle = u.color;
+  ctx.fillText(u.name, d.x + 118, d.y + 52);
+  ctx.font = `13px ${F_BODY}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillText(u.role, d.x + 118, d.y + 74);
+  ctx.fillStyle = '#ffd23d';
+  ctx.font = `15px ${F_TITLE}`;
+  ctx.fillText(`● ${saveData.coins || 0} coins`, d.x + 118, d.y + 100);
+
+  const rows = unitDialogRows(unit);
+  for (const stat in u.stats) {
+    const sdef = u.stats[stat];
+    const { row, buy } = rows[stat];
+    const lv = unitLevel(saveData, unit, stat);
+    const maxed = lv >= sdef.max;
+    const cost = maxed ? 0 : statCost(unit, stat, lv);
+    const afford = !maxed && (saveData.coins || 0) >= cost;
+    const fl = flash && flash.unit === unit && flash.stat === stat ? Math.max(0, 1 - (t - flash.t) / 0.6) : 0;
+
+    ctx.fillStyle = fl > 0 ? `rgba(255,255,255,${0.06 + fl * 0.25})` : 'rgba(255,255,255,0.05)';
+    ctx.strokeStyle = fl > 0 ? '#ffffff' : 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(row.x, row.y, row.w, row.h, 14); ctx.fill(); ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.font = `18px ${F_TITLE}`;
+    ctx.fillStyle = u.color;
+    ctx.fillText(sdef.label, row.x + 14, row.y + 26);
+    ctx.font = `12px ${F_BODY}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText(`${sdef.desc}  ·  LV ${lv}/${sdef.max}`, row.x + 14, row.y + 45);
+    ctx.font = `14px ${F_BODY}`;
+    ctx.fillStyle = '#ffffff';
+    const cur = lv === 0 ? 'base' : statLabel(unit, stat, lv);
+    ctx.fillText(maxed ? `${cur}  (max)` : `${cur}  →  ${statLabel(unit, stat, lv + 1)}`, row.x + 14, row.y + 68);
+    const tw = Math.min(150, row.w - 160);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(row.x + 14, row.y + 76, tw, 4);
+    ctx.fillStyle = u.color;
+    ctx.fillRect(row.x + 14, row.y + 76, tw * (lv / sdef.max), 4);
+
+    if (maxed) armButton(ctx, buy, 'MAX', ['#58e07f', '#2e9a52'], t);
+    else if (afford) armButton(ctx, buy, `● ${cost}`, ['#6ef598', '#38b85f'], t, true);
+    else armButton(ctx, buy, `● ${cost}`, ['#7a5a6a', '#4a3442'], t);
+  }
+  armButton(ctx, UNIT_DIALOG.getCoins, '+ GET MORE COINS', ['#ffd23d', '#d89a1a'], t);
 }
 
 // --- Settings --------------------------------------------------------
@@ -5413,7 +7231,6 @@ for (let i = 0; i < 21; i++) {
   img.src = SPRITE_DATA[name];
   img.onload = () => { SPRITES[name] = img; };
 }
-const MONSTER_SPRITE = { goblin: 'goblin', slime: 'slime', slimeSmall: 'slime', imp: 'imp' };
 
 function drawSprite(name, x, y, size, alpha = 1, flipX = false) {
   const img = SPRITES[name];
@@ -5430,30 +7247,6 @@ function drawSprite(name, x, y, size, alpha = 1, flipX = false) {
     }
   }
   ctx.globalAlpha = 1;
-}
-
-// Recolors a sprite/image to the current stage's monster palette (see
-// STAGE_THEMES[].monsterTint in data/levels.js) without needing separate art
-// per stage — draws the image normally, then paints the tint color into just
-// its opaque pixels ('source-atop') at partial alpha, so the original art's
-// shading/highlights still show through underneath the new hue. This is
-// what makes the SAME goblin/slime/imp/bat art actually read as "belonging"
-// to Glacial Peak vs. Draconic Peaks vs. The Deepwood, etc., instead of
-// every stage showing identical enemy colors.
-function drawTintedImage(img, x, y, w, h, tint, flipX = false) {
-  if (!img) return;
-  ctx.save();
-  if (flipX) { ctx.translate(x, y); ctx.scale(-1, 1); x = 0; y = 0; }
-  ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
-  if (tint) {
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = tint;
-    ctx.fillRect(x - w / 2, y - h / 2, w, h);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
 }
 
 // --- Environment decor (moving background objects) ---------------
@@ -6121,7 +7914,7 @@ let mode = 'MENU';
 // screen actually on display (single source of truth, instead of manually
 // scattering show/hide calls next to each mode change).
 function syncBanner() {
-  if (mode === 'PLAYING') ads.hideBanner();
+  if (mode === 'PLAYING' || mode === 'LEVELUP') ads.hideBanner();
   else ads.showBanner();
 }
 syncBanner(); // MENU on load — show immediately
@@ -6230,6 +8023,7 @@ function startLevel(index) {
   // quiet and the "LEVEL CLEAR!" banner before the dialog cuts in.
   state.levelClearPending = false;
   state.levelClearTimer = 0;
+  if (state.run) { state.run.vacuum = false; state.run.gems = []; }
   // NOTE: state.angels is deliberately NOT reset here — angels are a
   // permanent purchase and carry over from one level to the next.
   makeDecor(def);
@@ -6251,9 +8045,12 @@ function newGame(startIndex = 0) {
     gateFlash: 0,
     combo: 0, bestCombo: 0, comboTimer: 0,
     levelIndex: idx, levelDef: LEVELS[idx], levelTime: 0,
-    onBoss: () => { audio.crack(); announcer.show('BOSS INCOMING!', 'Defeat it to clear the level!', '#ff5c7a', 2.0); particles.addShake(8); },
+    run: createRun(),
+    onBoss: () => { audio.bossRoar(); announcer.show('BOSS INCOMING!', 'Defeat it to clear the level!', '#ff5c7a', 2.0); particles.addShake(10); },
   };
   startLevel(idx);
+  const boost = grantCatchUp(state.run, state.player, idx);
+  if (boost) announcer.show('VETERAN BOOST!', `+${boost} powers for Level ${idx + 1}`, '#ffd23d', 2.2);
 }
 
 function persistCoins() {
@@ -6290,7 +8087,7 @@ function buyWeapon(key) {
     // A wave of cheap goblins gets mostly wiped; the same bomb thrown into
     // a knot of trolls or a boss barely dents it.
     const closestFirst = state.monsters.filter(m => !m.dead).sort((a, b) => b.y - a.y);
-    let budget = WEAPONS.bomb.power;
+    let budget = WEAPONS.bomb.power * statBonus('bomb', 'power', unitLevel(saveData, 'bomb', 'power'));
     let killed = 0;
     for (const m of closestFirst) {
       if (m.power > budget) break; // power exhausted — anything farther is untouched
@@ -6306,11 +8103,11 @@ function buyWeapon(key) {
     audio.gateGood();
     announcer.show('WARD SUMMONED!', 'A crystal sprite joins you — for good!', '#bdeeff', 1.4);
     const side = state.angels.length % 2 === 0 ? 1 : -1;
-    state.angels.push(new Angel(side));
+    state.angels.push(new Angel(side, unitStats(saveData, 'angel')));
     particles.sparkle(state.player.x, state.player.y - 40, '#bdeeff');
   } else if (key === 'shield') {
     audio.gateGood();
-    const dur = WEAPONS.shield.duration;
+    const dur = WEAPONS.shield.duration + statBonus('shield', 'duration', unitLevel(saveData, 'shield', 'duration'));
     announcer.show('SHIELD UP!', `Blocks bullets for ${dur}s`, '#7fd8ff', 1.2);
     state.player.addShield(dur);
     particles.sparkle(state.player.x, state.player.y, '#7fd8ff');
@@ -6343,17 +8140,22 @@ function watchRewardedAd() {
   );
 }
 
-// --- Permanent Guardian upgrades (main menu, persists across runs) -----
-function buyUpgrade(key) {
-  const level = saveData.permanent[key] || 0;
-  if (level >= UPGRADE_MAX) return;
-  const cost = upgradeCost(key, level);
-  if (saveData.coins < cost) { audio.gateCurse(); return; }
+// --- ARMORY: permanent unit upgrades (main menu, persist across runs) ----
+let armorySel = null;    // unit whose upgrade dialog is open
+let armoryFlash = null;  // { unit, stat, t } — pulse on the row just bought
+
+function buyUnitStat(unit, stat) {
+  const def = UNITS[unit].stats[stat];
+  const level = unitLevel(saveData, unit, stat);
+  if (level >= def.max) return;
+  const cost = statCost(unit, stat, level);
+  if ((saveData.coins || 0) < cost) { audio.gateCurse(); openShop(); return; } // short — offer coins
   saveData.coins -= cost;
-  saveData.permanent[key] = level + 1;
+  setUnitLevel(saveData, unit, stat, level + 1);
   save(saveData);
   syncProfile();
-  audio.gateGood();
+  audio.pick();
+  armoryFlash = { unit, stat, t: performance.now() / 1000 };
 }
 
 // --- Remove Ads (one-time IAP) — app-only, same "no-op in a browser tab"
@@ -6425,7 +8227,7 @@ async function buyCoinPack(pack) {
     // home-screen coin pill (no active run, state is null) — credit
     // whichever coin total is live so a purchase from the menu doesn't
     // silently vanish (and isn't lost if a run is in progress either).
-    if (state) {
+    if (state && modeBeforeShop === 'PLAYING') {
       state.coins += pack.coins;
       persistCoins();
     } else {
@@ -6448,6 +8250,7 @@ async function buyCoinPack(pack) {
 // handler, before that page's own buttons.
 function navTap(x, y) {
   if (x === null) return false;
+  if (y >= MENU_BUTTONS.play.y) armorySel = null; // leaving via the nav bar closes any Armory dialog
   if (hit(MENU_BUTTONS.play, x, y)) { mode = 'MENU'; syncBanner(); return true; }
   if (hit(MENU_BUTTONS.upgrades, x, y)) { mode = 'UPGRADES'; syncBanner(); return true; }
   if (hit(MENU_BUTTONS.settings, x, y)) { resetArmed = false; mode = 'SETTINGS'; syncBanner(); return true; }
@@ -6470,9 +8273,19 @@ input.onTap((x, y) => {
 
   if (mode === 'UPGRADES') {
     if (x === null) return;
+    if (armorySel) {
+      if (hit(UNIT_DIALOG.close, x, y)) { armorySel = null; return; }
+      if (hit(UNIT_DIALOG.getCoins, x, y)) { openShop(); return; }
+      const rows = unitDialogRows(armorySel);
+      for (const stat in rows) {
+        if (hit(rows[stat].buy, x, y)) { buyUnitStat(armorySel, stat); return; }
+      }
+      return; // dialog is modal
+    }
     if (navTap(x, y)) return;
-    for (const key in UPGRADE_BUTTONS.buy) {
-      if (hit(UPGRADE_BUTTONS.buy[key], x, y)) buyUpgrade(key);
+    if (hit(UPGRADE_BUTTONS.getCoins, x, y)) { openShop(); return; }
+    for (const unit in UPGRADE_BUTTONS.cards) {
+      if (hit(UPGRADE_BUTTONS.cards[unit], x, y)) { armorySel = unit; audio.gateGood(); return; }
     }
     return;
   }
@@ -6558,7 +8371,10 @@ input.onTap((x, y) => {
     if (mode === 'GAMEOVER' && x !== null && ads.isRewardedReady() && typeof REVIVE_BUTTON !== 'undefined' && hit(REVIVE_BUTTON, x, y)) {
       ads.showRewarded(() => {
         // Reward: Full health and resume!
-        state.player.hp = state.player.maxHp;
+        state.lives = CONFIG.gateHealth;
+        state.player.blood = state.player.maxBlood;
+        state.player.invuln = 2;
+        state.enemyBullets = [];
         mode = 'PLAYING';
         syncBanner();
       }, () => {
@@ -6584,6 +8400,19 @@ input.onTap((x, y) => {
       mode = 'PLAYING';
       syncBanner();
     }
+    return;
+  }
+
+  if (mode === 'LEVELUP') {
+    if (x === null) return;
+    const i = levelUpTap(state.run, x, y);
+    if (i < 0) return;
+    const key = state.run.choices[i];
+    audio.pick();
+    particles.sparkle(CONFIG.width / 2, 300, '#ffd23d', 14);
+    const again = applyPick(state.run, key, state);
+    if (again) audio.levelUp();
+    else { mode = 'PLAYING'; syncBanner(); state.player.invuln = Math.max(state.player.invuln, 0.6); }
     return;
   }
 
@@ -6626,11 +8455,11 @@ input.onRelease((x, y) => {
   }
   const { type, x: px, y: py } = state.placing;
   if (type === 'wall') {
-    state.walls.push(new Wall(px, py));
+    state.walls.push(new Wall(px, py, unitStats(saveData, 'wall')));
     announcer.show('WALL SET!', 'Blocks attackers in its lane', '#c8a06a', 1.1);
     particles.sparkle(px, py, '#c8a06a');
   } else if (type === 'turret') {
-    state.turrets.push(new Turret(px, py));
+    state.turrets.push(new Turret(px, py, unitStats(saveData, 'turret')));
     announcer.show('TURRET SET!', 'Fires on its own until destroyed', '#ffd88a', 1.1);
     particles.sparkle(px, py, '#ffd88a');
   }
@@ -6663,8 +8492,67 @@ input.onRelease((x, y) => {
 });
 
 // --- Collision events (points, coins, lives, juice) --------------
+// Global slow-motion for big moments (elite/boss kills). update() runs on
+// dt * timeScale; it eases back to 1 on its own.
+let timeScale = 1;
+let slowmoT = 0;
+function slowmo(duration, scale = 0.3) {
+  slowmoT = Math.max(slowmoT, duration);
+  timeScale = Math.min(timeScale, scale);
+}
+
+// Single entry point for every non-collision damage source (orbit blades,
+// chain lightning, frost nova) so kills/splits/juice always behave the same.
+function damageMonster(m, dmg) {
+  if (m.dead) return;
+  const children = m.onHit(dmg);
+  if (m.dead) {
+    events.kill(m);
+    if (children) state.monsters.push(...children);
+  } else {
+    events.hit(m);
+  }
+}
+
+// Boss bullet patterns — alternates between a radial burst, an aimed fan,
+// and (once enraged under 50% hp) a rotating double spiral.
+function bossVolley(m) {
+  const st = state;
+  m.volley = (m.volley || 0) + 1;
+  const sp = CONFIG.enemyBullet.speed * (m.enraged ? 0.95 : 0.8);
+  const dmg = Math.round(m.damage * 0.75); // volleys are many bullets — each hits softer
+  const ox = m.x, oy = m.y + m.r * 0.4;
+  const pattern = m.enraged ? m.volley % 3 : m.volley % 2;
+  if (pattern === 0) {
+    const n = m.enraged ? 14 : 10;
+    const off = m.volley * 0.3;
+    for (let i = 0; i < n; i++) {
+      const a = off + (i / n) * Math.PI * 2;
+      st.enemyBullets.push(new EnemyBullet(ox, oy, dmg, Math.cos(a) * sp * 0.75, Math.sin(a) * sp * 0.75, true));
+    }
+  } else if (pattern === 1) {
+    const base = Math.atan2(st.player.y - oy, st.player.x - ox);
+    const n = m.enraged ? 5 : 3;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * 0.22;
+      st.enemyBullets.push(new EnemyBullet(ox, oy, dmg, Math.cos(a) * sp * 1.1, Math.sin(a) * sp * 1.1, true));
+    }
+  } else {
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < 6; i++) {
+        const a = m.volley * 0.5 + k * Math.PI + i * 0.18;
+        st.enemyBullets.push(new EnemyBullet(ox, oy, dmg, Math.cos(a) * sp * 0.7, Math.abs(Math.sin(a)) * sp * 0.7 + 40, true));
+      }
+    }
+  }
+  particles.ring(ox, oy, m.enraged ? '#ff4d5a' : '#e07bff', 40, 0.3, 4);
+  audio.bossShot();
+}
+
 const events = {
-  hit(m) { particles.sparkle(m.x, m.y, '#fff'); },
+  hit(m) {
+    particles.sparkle(m.x, m.y, '#fff', 3);
+  },
 
   kill(m) {
     state.kills++;
@@ -6684,21 +8572,56 @@ const events = {
       state.coins += drop;
     }
     audio.pop(state.combo);
-    particles.poof(m.x, m.y, m.color);
-    particles.scoreText(m.x, m.y - m.r, `+${pts}`);
+    audio.shatter();
+    // Shatterlings break apart into crystal shards in their stage color.
+    const tint = state.levelDef?.monsterTint;
+    const shardColor = tint?.primary || m.color;
+    particles.shatter(m.x, m.y, shardColor, m.r, m.boss ? 40 : m.elite ? 18 : 8);
+    particles.shatter(m.x, m.y, tint?.glow || '#ffffff', m.r * 0.6, m.boss ? 14 : 3);
+    particles.ring(m.x, m.y, tint?.glow || '#ffffff', m.r * 1.8, 0.28, 3);
+    particles.scoreText(m.x, m.y - m.r, `+${pts}`, m.elite ? '#ffd23d' : '#ffe9a8', m.elite || m.boss ? 24 : 16);
+
+    // XP gems (see systems/runUpgrades.js)
+    if (state.run && m.isShip !== true) dropGems(state.run, m.x, m.y, m.boss ? 40 : m.elite ? 10 : m.type === 'troll' ? 3 : m.type === 'skeleton' ? 2 : 1);
+
+    if (m.elite) {
+      slowmo(0.25, 0.35);
+      particles.addShake(5);
+      particles.ring(m.x, m.y, '#ffd23d', 70, 0.45, 5);
+      state.coins += 3;
+      particles.scoreText(m.x, m.y - m.r - 22, '+3 coins', '#ffd23d', 15);
+    }
+    if (m.boss) {
+      slowmo(0.9, 0.2);
+      particles.addShake(12);
+      audio.bigBoom();
+      for (let i = 0; i < 3; i++) particles.ring(m.x, m.y, ['#ffffff', '#ffd23d', '#ff7ad9'][i], 120 + i * 60, 0.6 + i * 0.15, 8 - i * 2);
+      state.enemyBullets.length = 0;
+    }
+
+    // FEVER — a 25+ kill chain supercharges the Guardian for a few seconds.
+    if (state.run && state.combo >= 25 && state.run.feverReady) {
+      state.run.fever = 7;
+      state.run.feverReady = false;
+      audio.fever();
+      announcer.show('FEVER!', 'Rainbow fire unleashed!', '#ff7ad9', 1.3);
+      particles.ring(state.player.x, state.player.y, '#ff7ad9', 160, 0.5, 6);
+    }
   },
 
+  // A Shatterling crossed the gate line — costs one heart, always.
   breach(m) {
+    if (mode !== 'PLAYING') return; // run already ended this frame
     state.lives--;
-    // A breach costs a gate outright. Blood and gates are separate pools
-    // now — a breach no longer refills the blood line (used to reset it to
-    // full here), so whatever buffer is left carries over as-is.
     state.combo = 0;
-    state.gateFlash = 0.35;
+    state.gateFlash = 0.5;
     audio.crack();
     particles.addShake(10);
-    particles.poof(m.x, Math.min(m.y, CONFIG.height - 20), '#ff5c7a');
+    particles.shatter(m.x, CONFIG.gateY, '#ff5c7a', 14, 10);
+    particles.ring(m.x, CONFIG.gateY, '#ff5c7a', 120, 0.45, 6);
+    particles.scoreText(m.x, CONFIG.gateY - 20, '-1 ♥', '#ff5c7a', 22);
     state.player.hurtFlash = 0.4;
+    if (state.lives > 1) announcer.show('GATE BREACHED!', `${state.lives} hearts left`, '#ff5c7a', 1.1);
     if (state.lives === 1) announcer.show('LAST GATE!', 'Protect the gate!', '#ff5c7a', 1.3);
     if (state.lives <= 0) {
       mode = 'GAMEOVER';
@@ -6710,6 +8633,19 @@ const events = {
       ads.showInterstitial(); // ad after losing — the highest-value placement
       syncBanner(); // GAMEOVER screen — banner comes back once the interstitial dismisses
     }
+  },
+
+  // A Shatterling crashed into the Guardian — it explodes (no score), and
+  // the blast hits the blood line hard. Shielded? It just shatters.
+  rammed(m) {
+    particles.shatter(m.x, m.y, m.color, m.r, 8);
+    particles.ring(m.x, m.y, '#ff5d7a', m.r * 2.4, 0.3, 4);
+    const p = state.player;
+    if (p.shieldTime > 0) { events.kill(m); return; }
+    particles.addShake(6);
+    audio.grazed();
+    p.invuln = 0;
+    if (p.takeHit((m.damage || 20) * (m.elite ? 3 : 2))) events.bloodLost(p);
   },
 
   // Every gate is a gift now — no more curse/bad portal. Either a fire-rate
@@ -6749,6 +8685,9 @@ const events = {
   // auto-refills — so it only comes back via a blood-gift gate.
   bloodLost(who) {
     state.lives--;
+    // Losing a heart restores half the blood line — prevents a drained
+    // Guardian from chain-losing every heart in a single bullet volley.
+    if (who === state.player) { who.blood = who.maxBlood * 0.5; who.invuln = 1.5; }
     state.gateFlash = 0.35;
     audio.crack();
     particles.addShake(6);
@@ -6794,6 +8733,7 @@ function update(dt) {
     mapDragging = false;
   }
 
+  if (mode === 'LEVELUP' && state?.run) state.run.choiceT += dt;
   if (mode !== 'PLAYING') return;
   const st = state;
   const def = st.levelDef;
@@ -6824,13 +8764,20 @@ function update(dt) {
     return;
   }
 
-  st.player.update(dt, input);
+  st.player.runRateMult = rateMult(st.run);
+  // window.__autopilot (debug/playtest bot only) can steer instead of touch.
+  const ap = window.__autopilot && window.__autopilot(st);
+  st.player.update(dt, ap ? { targetX: () => ap.x, targetY: () => ap.y } : input);
   if (st.player.tryFire()) {
     const { x: muzzleX, y: muzzleY } = gunnerMuzzle(st.player);
-    st.spells.push(new Spell(muzzleX, muzzleY, st.player.damage));
-    particles.sparkle(muzzleX, muzzleY, '#ffe9a8');
-    particles.addShake(1.5);
+    runFire(st.run, muzzleX, muzzleY, st.player.damage, st.spells);
+    particles.sparkle(muzzleX, muzzleY, st.run.fever > 0 ? `hsl(${(st.levelTime * 400) % 360},100%,70%)` : '#ffe9a8', 2);
+    particles.addShake(0.6);
     audio.zap();
+  }
+  // footstep dust while the Guardian is moving quickly
+  if (Math.hypot(st.player.vx, st.player.vy) > 160 && Math.random() < dt * 30) {
+    particles.dust(st.player.x, st.player.y + st.player.size * 1.2);
   }
 
   for (const a of st.angels) a.update(dt, st.player, st.spells);
@@ -6841,10 +8788,14 @@ function update(dt) {
   st.monsters.forEach((m) => {
     m.update(dt);
     if (m.tryShoot()) {
-      st.enemyBullets.push(new EnemyBullet(m.x, m.y + m.r, m.damage));
-      audio.enemyShot();
+      if (m.boss) bossVolley(m);
+      else {
+        st.enemyBullets.push(new EnemyBullet(m.x, m.y + m.r, m.damage));
+        audio.enemyShot();
+      }
     }
   });
+  applySeparation(st.monsters, dt); // bodies push apart softly, never overlap
   st.obstacles.forEach((o) => o.update(dt));
   st.gates.forEach((g) => g.update(dt));
   st.enemyBullets.forEach((b) => b.update(dt));
@@ -6867,12 +8818,20 @@ function update(dt) {
   st.turrets.forEach((t) => {
     t.update(dt);
     if (t.tryShoot()) {
-      st.spells.push(new Spell(t.x, t.y - t.r, CONFIG.turret.damage));
+      st.spells.push(new Spell(t.x, t.y - t.r, t.damage, { kind: 'turret' }));
       audio.zap();
     }
   });
 
   resolveCollisions(st, events, dt);
+  if (mode !== 'PLAYING') return; // a breach just ended the run
+
+  if (runUpdate(dt, st.run, st, { damageMonster, particles, audio })) {
+    mode = 'LEVELUP';
+    syncBanner();
+    audio.levelUp();
+    particles.ring(st.player.x, st.player.y, '#d27bff', 120, 0.5, 6);
+  }
 
   st.enemyBullets = st.enemyBullets.filter((b) => !b.dead);
   st.ships = st.ships.filter((sh) => !sh.dead);
@@ -6881,7 +8840,7 @@ function update(dt) {
 
   if (st.comboTimer > 0) {
     st.comboTimer -= dt;
-    if (st.comboTimer <= 0) st.combo = 0;
+    if (st.comboTimer <= 0) { st.combo = 0; if (st.run.fever <= 0) st.run.feverReady = true; }
   }
   if (st.bombFlash > 0) st.bombFlash -= dt;
   if (st.gateFlash > 0) st.gateFlash -= dt;
@@ -6915,9 +8874,10 @@ function update(dt) {
 
   if (st.levelClearPending) {
     st.levelClearTimer -= dt;
+    st.run.vacuum = true; // pull every remaining gem in before the dialog
   }
 
-  if (st.levelClearPending && st.levelClearTimer <= 0) {
+  if (st.levelClearPending && st.levelClearTimer <= 0 && mode === 'PLAYING') {
     st.levelClearPending = false;
     if (st.levelIndex >= LEVELS.length - 1) {
       mode = 'VICTORY';
@@ -7023,142 +8983,6 @@ function drawGateWall(ctx, state) {
     ctx.fillRect(0, y0 - 6, CONFIG.width, barH + 12);
   }
 }
-
-// --- Distinct procedural shapes for the non-sprite Shatterlings -----------
-// skeleton/troll/ogreBoss used to all share one generic "circle with two
-// eyes" fallback — the only thing that changed between them was fill color.
-// Each now gets its own real silhouette, still pure canvas vector art (no
-// new image assets needed), and all three take a `tint` = the active
-// stage's monsterTint.primary/dark/glow so they read as belonging to
-// whichever environment they're currently marching through.
-
-// Skeleton — tall, narrow, boxy: a skull, a ribcage of horizontal bars, and
-// crossed bone-like arms. Reads as gaunt/disciplined next to the troll's
-// bulk, matching its "steady, marching" movement personality.
-function drawSkeletonShape(m, tint) {
-  const bone = tint?.primary || '#cfe8f0';
-  const dark = tint?.dark || '#2a3a40';
-  const glow = tint?.glow || '#eaffff';
-  const r = m.r;
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.14);
-  ctx.lineCap = 'round';
-  // crossed arms behind the ribcage
-  ctx.strokeStyle = bone;
-  ctx.beginPath(); ctx.moveTo(-r * 0.75, -r * 0.05); ctx.lineTo(r * 0.55, r * 0.55); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(r * 0.75, -r * 0.05); ctx.lineTo(-r * 0.55, r * 0.55); ctx.stroke();
-  // ribcage — a few horizontal bars over a narrow torso
-  ctx.fillStyle = 'rgba(0,0,0,0.001)'; // (torso is implied by the ribs only, no fill — gaunt look)
-  ctx.strokeStyle = bone;
-  ctx.lineWidth = Math.max(1.5, r * 0.1);
-  for (let i = 0; i < 3; i++) {
-    const y = -r * 0.05 + i * r * 0.22;
-    const w = r * (0.52 - i * 0.08);
-    ctx.beginPath(); ctx.moveTo(-w, y); ctx.lineTo(w, y); ctx.stroke();
-  }
-  // spine
-  ctx.beginPath(); ctx.moveTo(0, -r * 0.15); ctx.lineTo(0, r * 0.6); ctx.stroke();
-  // skull
-  ctx.fillStyle = bone;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.1);
-  ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  // jaw
-  ctx.beginPath(); ctx.roundRect(-r * 0.22, -r * 0.28, r * 0.44, r * 0.18, 3); ctx.fill(); ctx.stroke();
-  // glowing eye sockets
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(-r * 0.16, -r * 0.58, r * 0.1, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.16, -r * 0.58, r * 0.1, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-}
-
-// Troll — big, hunched, asymmetric silhouette with heavy shoulders and a
-// club, matching its slow/heavy movement personality (low freq, wide amp
-// lumbering sway in data/monsters.js).
-function drawTrollShape(m, tint) {
-  const skin = tint?.primary || '#6a5c9e';
-  const dark = tint?.dark || '#2a2048';
-  const glow = tint?.glow || '#e2c8ff';
-  const r = m.r;
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  // club, held low and behind
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(3, r * 0.16);
-  ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(r * 0.7, r * 0.1); ctx.lineTo(r * 1.15, r * 0.75); ctx.stroke();
-  ctx.fillStyle = dark;
-  ctx.beginPath(); ctx.ellipse(r * 1.18, r * 0.8, r * 0.22, r * 0.15, 0.6, 0, Math.PI * 2); ctx.fill();
-  // hunched body — wider at the shoulders than the waist, lopsided
-  ctx.fillStyle = skin;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2.5, r * 0.1);
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.85, r * 0.15);
-  ctx.quadraticCurveTo(-r * 0.95, -r * 0.35, -r * 0.35, -r * 0.55);
-  ctx.quadraticCurveTo(r * 0.15, -r * 0.7, r * 0.6, -r * 0.35);
-  ctx.quadraticCurveTo(r * 0.95, -r * 0.05, r * 0.7, r * 0.35);
-  ctx.quadraticCurveTo(r * 0.5, r * 0.75, -r * 0.1, r * 0.8);
-  ctx.quadraticCurveTo(-r * 0.7, r * 0.75, -r * 0.85, r * 0.15);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  // small sunken eyes, low brow
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(-r * 0.1, -r * 0.15, r * 0.09, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.28, -r * 0.2, r * 0.09, 0, Math.PI * 2); ctx.fill();
-  // brow ridge + tusk
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.08);
-  ctx.beginPath(); ctx.moveTo(-r * 0.25, -r * 0.28); ctx.lineTo(r * 0.4, -r * 0.35); ctx.stroke();
-  ctx.fillStyle = '#fff8ec';
-  ctx.beginPath(); ctx.moveTo(r * 0.1, r * 0.05); ctx.lineTo(r * 0.18, r * 0.22); ctx.lineTo(r * 0.02, r * 0.15); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
-// Boss (ogreBoss) — a bigger, more ominous silhouette: broad horned
-// shoulders, a wide snarling head, glowing eyes, and a rim-light outline so
-// it reads as the level's threat centerpiece at a glance.
-function drawBossShape(m, tint) {
-  const skin = tint?.primary || '#7a3fa0';
-  const dark = tint?.dark || '#2a1040';
-  const glow = tint?.glow || '#ffd23d';
-  const r = m.r;
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  // rim-light halo — makes the boss pop out of a busy screen
-  ctx.strokeStyle = glow;
-  ctx.globalAlpha = 0.35;
-  ctx.lineWidth = r * 0.22;
-  ctx.beginPath(); ctx.arc(0, 0, r * 0.95, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 1;
-  // broad body
-  ctx.fillStyle = skin;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(3, r * 0.08);
-  ctx.beginPath();
-  ctx.ellipse(0, r * 0.1, r * 0.82, r * 0.72, 0, 0, Math.PI * 2);
-  ctx.fill(); ctx.stroke();
-  // horns
-  ctx.fillStyle = dark;
-  ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.45); ctx.lineTo(-r * 0.78, -r * 0.95); ctx.lineTo(-r * 0.28, -r * 0.55); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(r * 0.5, -r * 0.45); ctx.lineTo(r * 0.78, -r * 0.95); ctx.lineTo(r * 0.28, -r * 0.55); ctx.closePath(); ctx.fill();
-  // glowing eyes
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(-r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
-  // snarling mouth with tusks
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.06);
-  ctx.beginPath(); ctx.moveTo(-r * 0.32, r * 0.32); ctx.quadraticCurveTo(0, r * 0.48, r * 0.32, r * 0.32); ctx.stroke();
-  ctx.fillStyle = '#fff8ec';
-  ctx.beginPath(); ctx.moveTo(-r * 0.24, r * 0.34); ctx.lineTo(-r * 0.16, r * 0.5); ctx.lineTo(-r * 0.08, r * 0.34); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(r * 0.24, r * 0.34); ctx.lineTo(r * 0.16, r * 0.5); ctx.lineTo(r * 0.08, r * 0.34); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
-const SHAPE_MONSTERS = { skeleton: drawSkeletonShape, troll: drawTrollShape, ogreBoss: drawBossShape };
 
 // --- Obstacle ("falling stone") shapes, one per stage decor -------------
 // These used to be one identical purple rounded rect with a rune everywhere.
@@ -7300,71 +9124,27 @@ function drawObstacle(o, def) {
 
 // --- Render ------------------------------------------------------
 function drawMonster(m) {
-  const sprite = MONSTER_SPRITE[m.type];
-  const size = m.r * 2.4;
-  const batImg = m.type === 'imp' && BAT_FRAMES.length
-    ? BAT_FRAMES[Math.floor(m.wobble * 1.5) % BAT_FRAME_COUNT]
-    : null;
-  // Current stage's enemy palette (see STAGE_THEMES[].monsterTint in
-  // data/levels.js, threaded onto each level def by buildStage()) — falls
-  // back to undefined (no tint applied) outside of an active level, e.g.
-  // on the sticker/menu preview paths that also happen to call drawMonster.
+  // Fully procedural, animated Shatterlings (see render/creatures.js): walk
+  // cycles, blinking eyes that track the Guardian, lean into turns, squash
+  // + knockback on hit, glowing shot wind-ups. The flying imp keeps its
+  // hand-made bat wing-flap frames, now tinted correctly per stage.
   const tint = state?.levelDef?.monsterTint;
-  const shapeFn = SHAPE_MONSTERS[m.type];
-  // Per-type squash-and-stretch bob (m.bobAmp — see MONSTERS.<type>.movement
-  // in data/monsters.js) layered on top of the actual path movement, so
-  // every monster reads as alive/bouncing in place even during the eased
-  // straight stretches of its path, not just when it's curving.
-  const bobActive = (m.bobAmp || 0) > 0;
-  if (bobActive) {
-    const s = Math.sin(m.wobble * 2.2);
-    ctx.save();
-    ctx.translate(m.x, m.y);
-    ctx.scale(1 - s * m.bobAmp * 0.4, 1 + s * m.bobAmp);
-    ctx.translate(-m.x, -m.y);
+  const p = state?.player;
+  let look = { x: 0, y: 1 };
+  if (p) {
+    const dx = p.x - m.x, dy = p.y - m.y, d = Math.hypot(dx, dy) || 1;
+    look = { x: dx / d, y: dy / d };
   }
-  if (batImg) {
-    // Animated ice-bat wing-flap cycle (user-supplied AI art) for the
-    // flying "imp" enemy, instead of one rigid static sprite — driven by
-    // the monster's own wobble phase so a clump of imps doesn't flap in
-    // lockstep, and freezes correctly whenever the game is paused. Tinted
-    // per-stage the same way as the other sprite-based enemies.
-    const bw = size * (batImg.width / batImg.height);
-    drawTintedImage(batImg, m.x, m.y, bw, size, tint);
-  } else if (sprite && SPRITES[sprite]) {
-    drawTintedImage(SPRITES[sprite], m.x, m.y, size, size, tint);
-  } else if (shapeFn) {
-    // skeleton / troll / ogreBoss — dedicated procedural silhouettes
-    // instead of the old shared "circle with two eyes" placeholder.
-    shapeFn(m, tint);
-  } else {
-    ctx.fillStyle = m.color;
-    ctx.strokeStyle = '#2a1f4d';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(m.x - m.r * 0.3, m.y - m.r * 0.15, m.r * 0.18, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(m.x + m.r * 0.3, m.y - m.r * 0.15, m.r * 0.18, 0, 7); ctx.fill();
-    ctx.fillStyle = '#2a1f4d';
-    ctx.beginPath(); ctx.arc(m.x - m.r * 0.3, m.y - m.r * 0.12, m.r * 0.09, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(m.x + m.r * 0.3, m.y - m.r * 0.12, m.r * 0.09, 0, 7); ctx.fill();
-  }
-  if (bobActive) ctx.restore();
-  if (m.hitFlash > 0) {
-    ctx.globalAlpha = m.hitFlash * 6;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  }
+  const batImg = m.type === 'imp' && BAT_FRAMES.length
+    ? BAT_FRAMES[Math.floor(m.anim * 1.2 + m.seed) % BAT_FRAME_COUNT]
+    : null;
+  drawCreature(ctx, m, tint, state ? state.levelTime : performance.now() / 1000, look, batImg);
   // Blood-line: every enemy that takes more than one hit shows it, always
   // visible (not just after first damage) so toughness reads at a glance in
   // later stages. Low hp counts use tiny pips (matches the wizard/ward
   // motif); very tanky late-stage enemies (trolls, bosses) fall back to a
   // slim bar so the row doesn't overflow the sprite.
-  if (m.maxHp > 1) {
+  if (m.maxHp > 1 && !m.boss) {
     const py = m.y - m.r - 9;
     if (m.maxHp <= 8) {
       const pipW = 4, gap = 1.5;
@@ -7546,6 +9326,75 @@ function drawTurret(t) {
   }
 }
 
+function drawSpell(s) {
+  const ang = Math.atan2(s.vx, -s.vy);
+  let col, core = '#ffffff';
+  if (s.kind === 'fever') col = `hsl(${(s.hue + s.age * 600) % 360},100%,62%)`;
+  else if (s.kind === 'seeker') col = '#ff9a3d';
+  else if (s.kind === 'turret') col = '#ffd23d';
+  else col = '#7fd8ff';
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(ang);
+  // trail
+  const len = s.kind === 'seeker' ? 20 : 26;
+  const grad = ctx.createLinearGradient(0, 0, 0, len);
+  grad.addColorStop(0, col);
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = s.r * 0.9;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, len); ctx.lineTo(0, 0); ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  drawGlow(ctx, s.x, s.y, s.r * 1.7, s.kind === 'fever' ? '#ff7ad9' : col, 0.45);
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(ang);
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  if (s.kind === 'seeker') {
+    ctx.roundRect(-3, -8, 6, 14, 3);
+  } else {
+    ctx.moveTo(0, -s.r * 1.3); ctx.lineTo(s.r * 0.45, 0); ctx.lineTo(0, s.r * 0.9); ctx.lineTo(-s.r * 0.45, 0);
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.ellipse(0, -s.r * 0.15, s.r * 0.18, s.r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  if (s.kind === 'seeker' && Math.random() < 0.5) particles.dust(s.x, s.y, 'rgba(255,200,150,0.5)');
+}
+
+// Boss health bar under the top HUD while a boss is alive.
+function drawBossBar(st) {
+  const boss = st.monsters.find((m) => m.boss && !m.dead);
+  if (!boss) return;
+  const x = 90, w = CONFIG.width - 180, y = 104, h = 10;
+  const frac = Math.max(0, boss.hp / boss.maxHp);
+  boss._shownFrac = boss._shownFrac === undefined ? frac : boss._shownFrac + (frac - boss._shownFrac) * 0.08;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,4,20,0.75)';
+  ctx.beginPath(); ctx.roundRect(x - 3, y - 3, w + 6, h + 6, 8); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.roundRect(x, y, w * boss._shownFrac, h, 6); ctx.fill();
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, boss.enraged ? '#ff2d4a' : '#b358e0');
+  grad.addColorStop(1, boss.enraged ? '#ff8a3d' : '#ff5c9a');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.roundRect(x, y, Math.max(0.01, w * frac), h, 6); ctx.fill();
+  ctx.font = '13px "Luckiest Guy", Arial';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#1a0d30';
+  const label = boss.enraged ? 'BRUNCLE — ENRAGED!' : 'BRUNCLE, THE GATE-BREAKER';
+  ctx.strokeText(label, CONFIG.width / 2, y - 6);
+  ctx.fillStyle = boss.enraged ? '#ff8a8a' : '#ffd23d';
+  ctx.fillText(label, CONFIG.width / 2, y - 6);
+  ctx.restore();
+}
+
 function render() {
   ctx.save();
   if (particles.shake > 0.3) {
@@ -7569,7 +9418,7 @@ function render() {
 
   if (mode === 'UPGRADES') {
     renderBackground(LEVELS[0], 0);
-    renderUpgrades(ctx, saveData);
+    renderUpgrades(ctx, saveData, armorySel, performance.now() / 1000, SPRITES.gunner_07, armoryFlash);
     ctx.restore();
     return;
   }
@@ -7585,7 +9434,7 @@ function render() {
   // there's no `state` to draw gameplay behind it. Render it as its own
   // plain page instead of falling through to the PLAYING-mode gameplay
   // render below (which would crash reading state.levelDef on null).
-  if (mode === 'SHOP' && !state) {
+  if (mode === 'SHOP' && (!state || modeBeforeShop !== 'PLAYING')) {
     renderBackground(LEVELS[0], 0);
     renderShop(ctx, { coins: saveData.coins || 0 }, iap.enabled);
     ctx.restore();
@@ -7601,6 +9450,7 @@ function render() {
 
   const st = state;
   renderBackground(st.levelDef, st.levelTime);
+  renderAtmosphereBack(ctx, st.levelDef, st.levelTime);
 
   // Obstacles — each stage gets its own drifting hazard silhouette (see
   // drawObstacle above) instead of one identical purple rune block.
@@ -7634,28 +9484,13 @@ function render() {
     ctx.fillText(g.kind === 'blood' ? '♥' : `×${g.mult}`, g.x, g.y + 5);
   }
 
-  // Spells — a short trailing glow behind each shard makes rapid fire read
-  // as a solid stream of light instead of separate faint dots.
-  for (const s of st.spells) {
-    ctx.save();
-    const grad = ctx.createLinearGradient(s.x, s.y, s.x, s.y + 26);
-    grad.addColorStop(0, 'rgba(154, 230, 255, 0)');
-    grad.addColorStop(1, 'rgba(154, 230, 255, 0.5)');
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = s.r * 0.9;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y + 26);
-    ctx.lineTo(s.x, s.y);
-    ctx.stroke();
-    ctx.restore();
+  // Spells — glowing crystal bolts oriented along their flight path, with a
+  // light trail. FEVER bolts cycle through the rainbow; seekers are orange
+  // missiles with a smoke tail; turret shots are golden.
+  for (const sp of st.spells) drawSpell(sp);
 
-    if (SPRITES['fireball']) drawSprite('fireball', s.x, s.y, s.r * 4.4);
-    else {
-      ctx.fillStyle = '#ff8a3d';
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+  // XP gems (under the monsters so the horde stays readable)
+  renderRunWorld(ctx, { ...st.run, picks: {} }, st.player, st.levelTime);
 
   // Ships (Sea War only) — drawn before monsters so falling Shatterlings
   // read as being in front of/closer than the ships out on the water.
@@ -7695,12 +9530,12 @@ function render() {
 
   // Enemy bullets (dark bolts — visually distinct from the wizard's orange fire)
   for (const b of st.enemyBullets) {
-    ctx.fillStyle = '#b358e0';
-    ctx.strokeStyle = '#3d1f5c';
-    ctx.lineWidth = 1.5;
+    const pulse = 1 + Math.sin(b.age * 14) * 0.15;
+    drawGlow(ctx, b.x, b.y, b.r * 2.6 * pulse, b.big ? '#ff4d8a' : '#c25cff', 0.75);
+    ctx.fillStyle = b.big ? '#ffd0e4' : '#f0d4ff';
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
+    ctx.arc(b.x, b.y, b.r * 0.55 * pulse, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Angels
@@ -7725,31 +9560,55 @@ function render() {
     ctx.restore();
   }
 
-  // Automaton Gunner (p declared above, at the shield-ring check)
+  // Automaton Gunner — 2-frame firing cycle, plus motion: leans into its
+  // movement, kicks back on every shot (recoil squash), hovers on a soft
+  // ground shadow, and flashes a muzzle star when it fires.
   if (p.hurtFlash > 0 && Math.floor(p.hurtFlash * 12) % 2 === 0) ctx.globalAlpha = 0.5;
-
-  // Simple 2-frame animation: just alternates between two clean "aiming
-  // up" gunner frames on a fixed clock, no wobble/sway/tilt/bob layered on
-  // top — kept intentionally minimal per request.
+  if (p.invuln > 0 && p.hurtFlash <= 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.6;
   const gunnerSprite = Math.floor(st.levelTime * 6) % 2 === 0 ? 'gunner_07' : 'gunner_08';
   {
     const img = SPRITES[gunnerSprite];
+    const footY = p.y + p.size * 1.25;
+    const prevA = ctx.globalAlpha;
+    ctx.globalAlpha = 0.28 * prevA;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(p.x, footY + 2, p.size * 0.55, p.size * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = prevA;
     if (img) {
-      // These sprites are tall/narrow (not square), and the two frames
-      // aren't the same height (the firing frame's flame sticks up higher)
-      // — scale by width only and anchor the FEET at a fixed line so the
-      // character doesn't appear to bob between frames, only the flame
-      // grows taller.
+      // Tall/narrow frames — scale by width, anchor the FEET on a fixed line.
       const dispW = p.size * GUNNER_DISP_MULT;
       const dispH = dispW * (img.naturalHeight / img.naturalWidth);
-      const footY = p.y + p.size * 1.25;
+      const lean = Math.max(-0.22, Math.min(0.22, p.vx / 1600));
+      const kick = p.recoil * p.recoil;
       ctx.save();
       ctx.translate(p.x, footY);
+      ctx.rotate(lean);
+      ctx.scale(1 + kick * 0.05, 1 - kick * 0.06);
       if (p.facing === -1) ctx.scale(-1, 1);
       ctx.drawImage(img, -dispW / 2, -dispH, dispW, dispH);
       ctx.restore();
     }
+    if (p.recoil > 0.55) {
+      const mz = gunnerMuzzle(p);
+      const f = (p.recoil - 0.55) / 0.45;
+      const col = st.run.fever > 0 ? `hsl(${(st.levelTime * 400) % 360},100%,70%)` : '#ffe9a8';
+      drawGlow(ctx, mz.x, mz.y, 10 + f * 10, st.run.fever > 0 ? '#ff7ad9' : col, f); // fixed key — glow sprites are cached per color
+      ctx.save();
+      ctx.translate(mz.x, mz.y);
+      ctx.rotate(st.levelTime * 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = f;
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const rr = i % 2 === 0 ? 7 * f + 2 : 2;
+        ctx.lineTo(Math.cos((i / 8) * Math.PI * 2) * rr, Math.sin((i / 8) * Math.PI * 2) * rr);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
   }
+  // Orbit blades circle the Guardian (drawn over him)
+  renderRunWorld(ctx, { ...st.run, gems: [] }, p, st.levelTime);
 
   ctx.globalAlpha = 1;
 
@@ -7790,9 +9649,12 @@ function render() {
     ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
   }
 
+  renderAtmosphereFront(ctx, st, st.levelTime, st.run.fever);
   particles.render(ctx);
   announcer.render(ctx);
   renderHUD(ctx, st, ads.isRewardedReady());
+  renderXPBar(ctx, st.run);
+  drawBossBar(st);
 
   if (mode === 'LEVELCLEAR') renderLevelClear(ctx, st, LEVELS[st.levelIndex + 1].name);
   if (mode === 'VICTORY') renderVictory(ctx, st, saveData.best || 0);
@@ -7800,18 +9662,55 @@ function render() {
   if (mode === 'SHOP') renderShop(ctx, st, iap.enabled);
   if (mode === 'PAUSED') renderPause(ctx);
   if (mode === 'PLAYING' && st.placePaused && !st.placing) renderPlacementBanner(ctx);
+  if (mode === 'LEVELUP') renderLevelUp(ctx, st.run, performance.now() / 1000);
 
   ctx.restore();
 }
 
 // Debug/test hook (harmless in production)
-window.__game = { get mode() { return mode; }, get state() { return state; }, buyWeapon };
+window.__game = {
+  get mode() { return mode; }, get state() { return state; }, buyWeapon,
+  start(i = 0) { newGame(i); mode = 'PLAYING'; syncBanner(); },
+  pick(i = 0) {
+    if (mode !== 'LEVELUP') return false;
+    const again = applyPick(state.run, state.run.choices[i], state);
+    if (!again) { mode = 'PLAYING'; syncBanner(); }
+    return true;
+  },
+  next() { if (mode === 'LEVELCLEAR') { startLevel(state.levelIndex + 1); mode = 'PLAYING'; syncBanner(); } },
+  // Steps + renders one frame (for driving the game when rAF is throttled).
+  frame(dt = 1 / 60) { update(dt); particles.update(dt); announcer.update(dt); render(); },
+  // Headless fast-forward for balance testing: steps the simulation without
+  // rendering. picker(choices) → index decides level-up cards.
+  sim(seconds, picker = () => 0) {
+    const steps = Math.round(seconds * 60);
+    // muted while fast-forwarding: hundreds of synth blips per second would
+    // pile up as audio nodes (and stall the page if audio isn't unlocked yet)
+    const wasMuted = audio.isMuted();
+    audio.setMuted(true);
+    try {
+      for (let i = 0; i < steps; i++) {
+        if (mode === 'LEVELUP') this.pick(picker(state.run.choices));
+        else if (mode === 'LEVELCLEAR') this.next();
+        else if (mode !== 'PLAYING') break;
+        update(1 / 60);
+        particles.update(1 / 60);
+      }
+    } finally {
+      audio.setMuted(wasMuted);
+    }
+    return mode;
+  },
+};
 
 // --- Loop --------------------------------------------------------
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const rawDt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  if (slowmoT > 0) slowmoT -= rawDt;
+  else timeScale += (1 - timeScale) * Math.min(1, rawDt * 6);
+  const dt = rawDt * timeScale;
   update(dt);
   particles.update(dt);
   announcer.update(dt);
