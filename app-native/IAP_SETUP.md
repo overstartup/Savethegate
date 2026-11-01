@@ -32,8 +32,9 @@ Play / the App Store, and if the store isn't ready buying is unavailable.
 | `remove_ads`   | non-consumable (iOS) / one-time (Android) | — | set in store |
 
 The coin amounts live in two places that must agree:
-`game/src/data/shop.js` (`COIN_PACKS`) and the backend config
-`Store:CoinPacks` in `appsettings.json`. The price label in `shop.js` is only
+`game/src/data/shop.js` (`COIN_PACKS`) and the `StorePacks` table at the end
+of `backend/src/GateWall.Admin/Program.cs` (fixed in code, not a server
+setting). The price label in `shop.js` is only
 a fallback; the shop shows the store's localized price once it's loaded.
 
 ## The coin economy (all numbers in `CONFIG.economy`, `game/src/config.js`)

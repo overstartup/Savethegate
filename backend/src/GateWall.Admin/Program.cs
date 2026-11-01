@@ -348,10 +348,10 @@ app.MapPost("/api/store/verify", async (StoreVerificationRequest req, GateWallDb
         }
         else if (req.ProductId.StartsWith("coins_"))
         {
-            // coins per pack: Store:CoinPacks in config, defaults match the
-            // game (data/shop.js)
-            var defaults = new Dictionary<string, int> { ["coins_small"] = 4000, ["coins_medium"] = 9000, ["coins_large"] = 20000 };
-            var amount = config.GetValue<int?>($"Store:CoinPacks:{req.ProductId}") ?? defaults.GetValueOrDefault(req.ProductId);
+            // coins per pack — fixed here (must match game/src/data/shop.js);
+            // deliberately not read from config so a stale server setting
+            // can't pay the wrong amount
+            var amount = StorePacks.Coins.GetValueOrDefault(req.ProductId);
             if (amount <= 0) return Results.BadRequest("Unknown product.");
             player.Coins += amount;
         }
@@ -546,3 +546,14 @@ record InviteInfo(string Code, int Friends, int Unpaid, bool Invited);
 record InviteClaimRequest(int PlayerId, string Code);
 record InviteCollectRequest(int PlayerId);
 record InviteGrant(int Coins, string? InviterName);
+
+// Coins granted per store product (game/src/data/shop.js has the same table).
+static class StorePacks
+{
+    public static readonly Dictionary<string, int> Coins = new()
+    {
+        ["coins_small"] = 4000,   // $3.99
+        ["coins_medium"] = 9000,  // $7.99
+        ["coins_large"] = 20000,  // $15.99
+    };
+}
