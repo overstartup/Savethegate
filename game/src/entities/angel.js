@@ -1,25 +1,32 @@
 // Ward Sprite (class name kept as Angel for save-compat) — bought with coins;
 // a living crystal shard that flies beside the Guardian, auto-fires bolts, and
-// stays for good (persists across levels). Has its own blood-line buffer so
-// enemy fire hits the sprite first without ever "punishing" the purchase —
-// depleting it costs one shared heart, then it refills and keeps fighting.
+// stays for good (persists across levels). It soaks enemy bullets meant for
+// the Guardian; after `guard` bullets it is knocked out for a few seconds
+// (dimmed, no shots, no blocking), then recovers. It never costs a heart.
 import { Spell } from './spell.js';
 import { CONFIG } from '../config.js';
+import { statBonus } from '../data/upgrades.js';
+import { drawUnitArt } from '../render/units.js';
 
 export class Angel {
   // up = Armory levels { power, fireRate, blood } (data/upgrades.js)
   constructor(side = 1, up = {}) {
     this.side = side;       // -1 left, +1 right of the wizard
-    this.damage = CONFIG.spell.damage * (1 + 0.25 * (up.power || 0));
-    this.fireInterval = 0.25 / (1 + 0.12 * (up.fireRate || 0));
+    // damage = share of the Guardian's bolt damage (boltDamage is refreshed
+    // by main.js every frame), boosted by Armory POWER
+    this.damageMult = CONFIG.helpers.angel.damage * statBonus('angel', 'power', up.power || 0);
+    this.boltDamage = 1;
+    this.fireInterval = CONFIG.helpers.angel.shotInterval / statBonus('angel', 'fireRate', up.fireRate || 0);
     this.fireTimer = 0;
     this.x = 0;
     this.y = 0;
     this.bob = 0;
-    this.maxBlood = CONFIG.angel.maxBlood + (up.blood || 0);
+    this.maxBlood = CONFIG.helpers.angel.guard + statBonus('angel', 'blood', up.blood || 0);
+    this.stunTime = CONFIG.helpers.angel.stun / statBonus('angel', 'recover', up.recover || 0); // Armory RECOVER
     this.blood = this.maxBlood;
     this.invuln = 0;
     this.hitFlash = 0;
+    this.stun = 0;          // >0 → knocked out
     this.dead = false;
   }
 
@@ -27,24 +34,29 @@ export class Angel {
     this.bob += dt * 5;
     this.x = player.x + this.side * 46;
     this.y = player.y - 6 + Math.sin(this.bob) * 5;
+    if (this.stun > 0) { this.stun -= dt; if (this.hitFlash > 0) this.hitFlash -= dt; return; }
     this.fireTimer -= dt;
     if (this.fireTimer <= 0) {
       this.fireTimer = this.fireInterval;
-      spells.push(new Spell(this.x, this.y - 18, this.damage));
+      spells.push(new Spell(this.x, this.y - 18, this.boltDamage * this.damageMult));
     }
     if (this.invuln > 0) this.invuln -= dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;
   }
 
-  // Called when an enemy bullet touches this angel. Returns true if this hit
-  // depleted the blood line (caller should dock one heart, then refill it).
-  takeHit(damage = 1) {
+  // Can it catch bullets right now?
+  get guarding() { return this.stun <= 0; }
+
+  // Called when an enemy bullet touches this sprite: each bullet uses one
+  // guard; the last one knocks it out for a while. Returns true on knock-out.
+  takeHit() {
     if (this.invuln > 0) return false;
-    this.invuln = 0.5; // IFrames
+    this.invuln = 0.3; // IFrames
     this.hitFlash = 0.15;
-    this.blood -= damage;
+    this.blood -= 1;
     if (this.blood <= 0) {
-      this.blood = this.maxBlood; // refill — angels never die from this
+      this.blood = this.maxBlood; // recovers full once the knock-out ends
+      this.stun = this.stunTime;
       return true;
     }
     return false;
@@ -54,34 +66,13 @@ export class Angel {
     const flicker = this.invuln > 0 && Math.floor(this.invuln * 20) % 2 === 0;
     ctx.save();
     if (flicker) ctx.globalAlpha = 0.4;
-    // crystal wings (faceted, icy blue instead of white feathers)
-    ctx.fillStyle = 'rgba(154,230,255,0.85)';
-    ctx.strokeStyle = '#1c3a52';
-    ctx.lineWidth = 2;
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(this.x + s * 14, this.y + 2, 10, 5, s * 0.6, 0, Math.PI * 2);
-      ctx.fill(); ctx.stroke();
+    if (this.stun > 0) ctx.globalAlpha = 0.3; // knocked out
+    // the same crystal sprite as the Armory portrait (render/units.js)
+    drawUnitArt(ctx, 'angel', this.x, this.y, 34, this.bob / 5);
+    if (this.hitFlash > 0) { // flashes red when it soaks a bullet
+      ctx.fillStyle = 'rgba(255,90,90,0.55)';
+      ctx.beginPath(); ctx.arc(this.x, this.y, 9, 0, Math.PI * 2); ctx.fill();
     }
-    // body — a small faceted crystal shard (flashes red on hit)
-    ctx.fillStyle = this.hitFlash > 0 ? '#ff6b6b' : '#bdeeff';
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 10, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.beginPath();
-    ctx.ellipse(this.x - 3, this.y - 3, 3, 4.5, -0.3, 0, Math.PI * 2);
-    ctx.fill();
-    // ward-ring (icy blue instead of gold halo)
-    ctx.strokeStyle = '#7fd8ff';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.ellipse(this.x, this.y - 14, 8, 3, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    // face
-    ctx.fillStyle = '#1c3a52';
-    ctx.beginPath(); ctx.arc(this.x - 3, this.y - 1, 1.4, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(this.x + 3, this.y - 1, 1.4, 0, 7); ctx.fill();
     ctx.restore();
 
     // blood-line pips (tiny hearts under the angel)

@@ -110,4 +110,34 @@ export const backend = {
   async topLeaderboard(count = 20) {
     return request(`/api/leaderboard/top?count=${count}`);
   },
+
+  // Invite friends: { code, friends, unpaid, invited } or null when offline.
+  async inviteInfo(playerId) {
+    if (!playerId) return null;
+    return request(`/api/invite/${playerId}`);
+  },
+
+  // Uses a friend's code. Returns { coins, inviterName } or { error } with
+  // the server's reason ("That code doesn't work.").
+  async claimInvite(playerId, code) {
+    if (!playerId) return { error: 'Not connected yet — try again in a moment.' };
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/invite/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, code }),
+      });
+      if (res.ok) return await res.json();
+      const text = (await res.text()).replace(/^"|"$/g, '');
+      return { error: text || "That code doesn't work." };
+    } catch {
+      return { error: 'No connection — try again later.' };
+    }
+  },
+
+  // Collects the reward for friends who joined with this player's code.
+  async collectInvites(playerId) {
+    if (!playerId) return null;
+    return request('/api/invite/collect', { method: 'POST', body: JSON.stringify({ playerId }) });
+  },
 };

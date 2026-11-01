@@ -40,6 +40,32 @@ public class ScoreEntry
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+// A player who joined with a friend's invite code. One row per invitee
+// (unique), so a code can only be used once per player; InviterPaid flips
+// when the inviter collects their reward.
+public class InviteClaim
+{
+    public int Id { get; set; }
+    public int InviterId { get; set; }
+    public int InviteeId { get; set; }
+    public bool InviterPaid { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// One finished Daily Challenge run. Day is the player's calendar date
+// ("YYYY-MM-DD") the challenge belongs to — the rule of the day is picked
+// from that date, so everyone on the same date plays the same run. The
+// daily top list takes the best row per player for a day.
+public class ChallengeScore
+{
+    public int Id { get; set; }
+    public int PlayerId { get; set; }
+    public Player? Player { get; set; }
+    public string Day { get; set; } = "";
+    public int Score { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 // Tracks verified store receipts to prevent replay attacks where a user
 // sends the same valid receipt multiple times to gain infinite coins.
 public class ProcessedReceipt

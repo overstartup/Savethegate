@@ -1,67 +1,81 @@
-# Coin Shop / In-App Purchases — Landgate
+# Coin Shop / In-App Purchases — GateWall
 
-Like AdMob (see `ADMOB_SETUP.md`), real purchases only work inside the
-native app — the browser version shows the shop UI but every "buy" button
-is inert and displays "Purchases available in the app version".
+Real purchases work inside the native app (Android / iOS). In a plain
+browser tab the shop is visible but buying is off — except on the local dev
+server (`http://localhost:<port>`, outside the app), where a **test store**
+approves purchases instantly and says "TEST PURCHASE" so the whole flow can
+be tried during development (`game/src/systems/iap.js`, `testMode`). Inside
+the app (Capacitor) the test store never runs: coins only come from Google
+Play / the App Store, and if the store isn't ready buying is unavailable.
 
-## How the coin economy works now
+## How purchases work
 
-Coins are intentionally scarce so BOMB (30) and ANGEL (60) feel like real
-choices, not something you casually spam:
+1. The game opens the store sheet with `cordova-plugin-purchase`
+   (Google Play Billing / StoreKit).
+2. When the store approves, the game sends the receipt to our backend
+   (`POST /api/store/verify`, `backend/src/GateWall.Admin/Program.cs`).
+3. The backend checks it with Google / Apple (`Store:RequireRealVerification`
+   must stay `true` in production), records the transaction so it can only
+   pay once, and answers `200`. A repeated transaction answers `409`.
+4. On `200` the game grants the purchase (`iap.onGrant` in `main.js`) and
+   finishes the transaction; on `409` it finishes it without paying again.
+   The game also remembers granted transaction ids (`saveData.iapTx`).
+5. **Restore Purchases** (Settings) re-delivers `remove_ads` on a new device.
 
-- Only **35%** of kills drop 1–2 coins (`CONFIG.economy.coinDropChance` /
-  `coinDropAmount` in `game/src/config.js`). Bosses always drop a bigger sum.
-- Clearing a level pays a small flat bonus (`CONFIG.economy.levelClearBonus`,
-  default 4) — not scaled by level number anymore.
-- The free rewarded ad grants 25 coins (`CONFIG.ads.rewardedCoins`).
-- Everything else comes from the **coin shop** (tap the coin counter,
-  top-left) — three packs defined in `game/src/data/shop.js`:
-  Pouch (100 coins), Chest (550 coins, marked best value), Vault (1400 coins).
+## Products (IDs must match Play Console and App Store Connect)
 
-Tune all of this by editing those two files — no other code changes needed
-for balance passes.
+| Product        | Type                          | Coins | Price label |
+|----------------|-------------------------------|-------|-------------|
+| `coins_small`  | consumable                    | 4,000  | $3.99       |
+| `coins_medium` | consumable (POPULAR badge)    | 9,000  | $7.99       |
+| `coins_large`  | consumable (BEST VALUE badge) | 20,000 | $15.99      |
+| `remove_ads`   | non-consumable (iOS) / one-time (Android) | — | set in store |
 
-## Wiring up real purchases
+The coin amounts live in two places that must agree:
+`game/src/data/shop.js` (`COIN_PACKS`) and the backend config
+`Store:CoinPacks` in `appsettings.json`. The price label in `shop.js` is only
+a fallback; the shop shows the store's localized price once it's loaded.
 
-This project uses [RevenueCat](https://www.revenuecat.com/) via
-`@revenuecat/purchases-capacitor`, which sits on top of Google Play Billing
-(and App Store StoreKit if you ever add iOS) behind one simple API — much
-less native code than talking to Play Billing directly.
+## The coin economy (all numbers in `CONFIG.economy`, `game/src/config.js`)
 
-1. **Google Play Console**: create the app, then under
-   Monetize → Products → In-app products, create three managed products
-   with IDs matching `game/src/data/shop.js`: `coins_small`, `coins_medium`,
-   `coins_large`. Set your own prices (the `$0.99` / `$3.99` / `$7.99` in
-   `shop.js` are just display labels for now — the real price shown to
-   users comes from what you configure in Play Console).
-2. **RevenueCat**: create a free account at [app.revenuecat.com](https://app.revenuecat.com),
-   add your Android app, connect it to your Play Console app, and create an
-   "Offering" containing packages that map to the three product IDs above.
-   RevenueCat gives you a **Public SDK Key**.
-3. In `shootingstart/app-native`, install the plugin:
+One scale for everything: **10 coins = 1 cent** ($3.99 = 4,000 coins).
+
+Earned in play (a level takes ~1.5-2 minutes):
+- Clearing a level: 30 + 5 per level in the stage + 25 per stage (stage 1: 35-80).
+- 25% of kills drop 2-3 coins; a boss pays 100 + 50 per stage.
+- About 1,000 coins (~$1) over stage 1, more in later stages.
+
+Free rewards (REWARDS tab):
+- 7-day login streak: 100, 150, 200, 250, 300, 400, 800.
+- Free gift every 4 hours: 60. Rewarded videos: 30, 40, 50, 60, 80 coins
+  (each video today pays the next step; 5 per day, 260 in all).
+- 3 daily missions: 80-150 coins each.
+- Invite a friend: the friend gets 500 at once, you get 1,000 per friend
+  (backend `/api/invite/*`, config `Invite:*`; max 30 friends per code).
+
+Spent on:
+- Revives: about one level's coins: 100 + 25 per stage, doubling for each
+  revive in a run (stage 1: 100 / 200 / 400), max 3; or one free video revive.
+- Helpers in a run: 40-90 coins (about half a level).
+- Armory upgrades (`game/src/data/upgrades.js`): 1.5 x base x (1 + 0.35 x level)^2.
+
+Old saves are converted once (`econ: 2` in the save): coins x1.5, so
+savings keep the same buying power under the new prices.
+
+## Store setup checklist
+
+1. **Google Play Console** → Monetize → Products → In-app products: create
+   `coins_small`, `coins_medium`, `coins_large` (managed) and `remove_ads`.
+2. **App Store Connect** → In-App Purchases: the three coin packs as
+   Consumable, `remove_ads` as Non-Consumable.
+3. **Backend config** (Coolify environment): `Store:AppleSharedSecret`,
+   `Store:GooglePlay:PackageName`, `ServiceAccountEmail`, `PrivateKey`.
+4. Rebuild the game and copy it into the app:
    ```
-   npm install @revenuecat/purchases-capacitor
-   npx cap sync android
-   ```
-4. Open `shootingstart/game/src/systems/iap.js` and replace
-   `'YOUR-REVENUECAT-PUBLIC-SDK-KEY'` with your real public key.
-5. Rebuild and copy into the native app (same as after any game change):
-   ```
-   cd shootingstart/game
+   cd game
    node build-standalone.mjs
    cp index.html ../app-native/www/index.html
+   npx cap sync
    ```
-6. `npx cap open android` → Run. Use a Play Console **license tester**
-   account on the test device so purchases don't charge real money while
-   you verify the flow.
-
-## What's already built and works today (no setup needed)
-
-- The full shop dialog UI (3 packages, best-value badge, prices, close
-  button) — visible and browsable in the plain browser right now.
-- The economy rebalance (scarce coins) — active everywhere immediately.
-- The "buy vs. locked" indicator on the BOMB/ANGEL buttons: a green check
-  badge when you can afford it, a red "+" badge when you can't — tapping an
-  unaffordable button automatically opens the coin shop.
-- Safe no-op purchase flow: tapping a pack without RevenueCat configured
-  never grants fake coins, it just plays a "denied" sound.
+5. Test with a Play Console **license tester** / App Store **sandbox** account
+   so purchases don't charge real money.

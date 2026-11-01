@@ -1,24 +1,57 @@
 import { API_BASE_URL } from './backend.js';
 
-let storeReady = false;
+// Store purchases via cordova-plugin-purchase (CdvPurchase): Google Play
+// Billing on Android, StoreKit (App Store) on iOS. Every approved purchase
+// is verified by our backend (/api/store/verify) before anything is
+// granted; then the transaction is finished. Grants go through
+// `iap.onGrant(productId, transactionId)` (set by main.js) — that also
+// covers purchases approved later, e.g. one interrupted by an app restart.
+//
+// Local development (a localhost browser tab only): a test store approves
+// purchases instantly so the whole buy flow can be tried. Never active in
+// the app or on the live web build.
 
-// Direct store integration via cordova-plugin-purchase (CdvPurchase):
-// Google Play Billing on Android, StoreKit (App Store) on iOS.
+let store = null;
+const waiting = new Map(); // productId → resolve(bool) of the buy() in progress
+
+function settle(productId, ok) {
+  const resolve = waiting.get(productId);
+  if (resolve) { waiting.delete(productId); resolve(ok); }
+}
+
 export const iap = {
   enabled: false,
+  testMode: false,
+  onGrant: null, // (productId, transactionId) => void
 
   async init() {
-    if (typeof window === 'undefined' || !window.CdvPurchase || !window.Capacitor?.isNativePlatform?.()) {
-      return; // Web browser or plugin missing — purchases stay disabled
+    if (typeof window === 'undefined') return;
+    // The app's WebView is served from "localhost" too (Capacitor), so the
+    // test store also needs: no Capacitor at all, a dev-server port and
+    // not an Android WebView. Inside the app, coins only ever come from
+    // the real store — if it isn't ready, buying is simply unavailable.
+    const inApp = !!window.Capacitor || /; wv\)/.test(navigator.userAgent || '');
+    if (!inApp) {
+      const devServer = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+        && window.location.protocol === 'http:' && window.location.port !== '';
+      if (devServer) {
+        this.enabled = true;
+        this.testMode = true;
+      }
+      return; // a plain browser tab can't pay — purchases are app-only
+    }
+    if (!window.Capacitor?.isNativePlatform?.() || !window.CdvPurchase) {
+      console.warn('[iap] store plugin missing — purchases unavailable');
+      return;
     }
 
     try {
-      const { store, Platform, ProductType } = window.CdvPurchase;
+      const { Platform, ProductType } = window.CdvPurchase;
+      store = window.CdvPurchase.store;
       const isIOS = window.Capacitor.getPlatform() === 'ios';
       const storePlatform = isIOS ? Platform.APPLE_APPSTORE : Platform.GOOGLE_PLAY;
 
-      // Register all products. Product IDs must match exactly in both
-      // Google Play Console and App Store Connect.
+      // Product IDs must match Google Play Console and App Store Connect.
       store.register([
         // App Store: a one-time unlock must be a Non-Consumable to be restorable.
         { id: 'remove_ads', type: isIOS ? ProductType.NON_CONSUMABLE : ProductType.NON_RENEWING_SUBSCRIPTION, platform: storePlatform },
@@ -27,23 +60,20 @@ export const iap = {
         { id: 'coins_large', type: ProductType.CONSUMABLE, platform: storePlatform },
       ]);
 
-      // When a purchase is approved by the store, verify it with our C# backend
       store.when().approved(async (transaction) => {
+        const productId = transaction.products[0]?.id;
         try {
           // Google: the purchase token. Apple: the base64 app receipt, which
-          // the backend posts to Apple's verifyReceipt endpoint.
+          // the backend checks with Apple.
           const token = isIOS
             ? transaction.parentReceipt?.nativeData?.appStoreReceipt
-            : (transaction.products[0].transactionId || transaction.transactionId);
-          const productId = transaction.products[0].id;
-          
-          // Get the playerId from localStorage (set by main.js / save.js)
+            : (transaction.purchaseId || transaction.products[0].transactionId || transaction.transactionId);
           const saveData = JSON.parse(localStorage.getItem('spellstorm-save-v1') || '{}');
           if (!saveData.playerId) {
-            console.error('[iap] No playerId found, cannot verify purchase.');
+            console.error('[iap] No playerId yet — the purchase stays pending until the next start.');
+            settle(productId, false);
             return;
           }
-
           const response = await fetch(`${API_BASE_URL}/api/store/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -55,69 +85,63 @@ export const iap = {
               TransactionId: transaction.transactionId,
             }),
           });
-
           if (response.ok) {
-            // Verification succeeded! Tell the store to finalize the purchase
-            transaction.verify();
-            transaction.finish();
+            this.onGrant?.(productId, transaction.transactionId);
+            await transaction.finish();
+            settle(productId, true);
+          } else if (response.status === 409) {
+            // already paid out earlier (e.g. granted, then the app closed
+            // before finishing) — finish it without paying twice
+            await transaction.finish();
+            settle(productId, false);
           } else {
-            console.error('[iap] Backend verification failed', await response.text());
+            console.error('[iap] backend verification failed', await response.text());
+            settle(productId, false);
           }
         } catch (err) {
-          console.error('[iap] Error verifying purchase', err);
+          console.error('[iap] error verifying purchase', err);
+          settle(productId, false);
         }
       });
 
       await store.initialize([storePlatform]);
-      storeReady = true;
       this.enabled = true;
     } catch (err) {
       console.warn('[iap] store init failed:', err);
     }
   },
 
-  // Requests the purchase overlay and waits for completion
-  async buy(packId) {
-    if (!storeReady) return false;
-    try {
-      const { store } = window.CdvPurchase;
-      const product = store.get(packId);
-      if (!product) return false;
+  // The store's localized price ("€0,99"), or null before it's known.
+  price(productId) {
+    return store?.get(productId)?.pricing?.price || null;
+  },
 
-      const offer = product.getOffer();
-      if (!offer) return false;
-
-      return new Promise(async (resolve) => {
-        // We set up a one-time listener for this specific product's completion
-        let resolved = false;
-
-        const onApproved = store.when().productUpdated(product, (p) => {
-          if (resolved) return;
-          if (p.owned) {
-            resolved = true;
-            resolve(true); // purchase is fully verified and owned!
-          }
-        });
-
-        // If the user cancels or the purchase fails
-        const onError = store.when().receiptUpdated((receipt) => {
-           // Basic error/cancel handling would go here in a robust app
-        });
-
-        // Start the native store purchase flow
-        await store.order(offer);
-
-        // Fallback timeout in case the overlay is closed without triggering events
-        setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            resolve(false);
-          }
-        }, 300000); // 5 minutes timeout
-      });
-    } catch (err) {
-      console.warn('[iap] purchase flow failed:', err);
-      return false;
+  // Opens the store's purchase sheet. Resolves true once the purchase was
+  // verified and granted, false if it was cancelled or failed.
+  async buy(productId) {
+    if (!this.enabled) return false;
+    if (this.testMode) {
+      await new Promise((r) => setTimeout(r, 350));
+      this.onGrant?.(productId, `test-${productId}-${Date.now()}`);
+      return true;
     }
-  }
+    const offer = store?.get(productId)?.getOffer();
+    if (!offer) return false;
+    return new Promise((resolve) => {
+      waiting.set(productId, resolve);
+      store.order(offer).then((err) => {
+        if (err) settle(productId, false); // cancelled or failed in the store sheet
+      });
+      // the approved handler settles it; give up waiting after two minutes
+      setTimeout(() => settle(productId, false), 120000);
+    });
+  },
+
+  // Re-delivers owned non-consumables (remove_ads) through onGrant.
+  async restore() {
+    if (this.testMode) return true;
+    if (!store) return false;
+    await store.restorePurchases();
+    return true;
+  },
 };

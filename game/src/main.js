@@ -4,6 +4,12 @@
 // 10 themed levels, coins, buyable weapons (bomb / angel).
 // ============================================================
 import { CONFIG } from './config.js';
+import { tr, setLang, deviceLang, isRtl, LANGS, getLang } from './i18n.js';
+import { cfBurst, cfUpdate, cfDraw } from './ui/coinFx.js';
+import './render/species_A.js';
+import './render/species_B.js';
+import './render/species_C.js';
+import './render/species_D.js';
 import { createInput } from './input.js';
 import { Player } from './entities/player.js';
 import { Spell } from './entities/spell.js';
@@ -16,20 +22,35 @@ import { Spawner } from './systems/spawner.js';
 import { resolveCollisions } from './systems/collision.js';
 import { Particles } from './systems/particles.js';
 import { audio } from './systems/audio.js';
-import { renderHUD, buttonAt } from './ui/hud.js';
-import { renderMenu, renderLevelClear, renderVictory, renderGameOver, REVIVE_BUTTON, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, UNIT_DIALOG, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, MENU_PLAY_BUTTON, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, CANNON_FRAMES } from './ui/screens.js';
+import { renderHUD, buttonAt, BUTTONS } from './ui/hud.js';
+import { renderMenu, renderLevelClear, LC_TIMES, renderVictory, renderGameOver, GAMEOVER_BUTTONS, renderRewards, REWARDS_BUTTONS, navHit, setNavBadges, drawBottomNav, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, unitDialog, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, homePlayRect, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT } from './ui/screens.js';
+import { drawGun } from './render/gun.js';
+import { drawUnitArt, drawStoneWall, unitRanks } from './render/units.js';
 import { Announcer } from './ui/announce.js';
+import { st3Bind, st3Begin, st3Track, st3Award, st3CardTick, st3MenuTap, st3EatRelease } from './ui/levelStars.js';
 import { LEVELS, WEAPONS, STAGE_SIZE, STAGE_COUNT } from './data/levels.js';
 import { COIN_PACKS } from './data/shop.js';
-import { UNITS, unitLevel, setUnitLevel, statCost, statBonus, unitStats } from './data/upgrades.js';
+import { UNITS, UNIT_ORDER, unitLevel, setUnitLevel, statCost, statBonus, unitStats, unitTotalLevel, unitRank, rankCap } from './data/upgrades.js';
 import { load, save, submitScore } from './data/save.js';
 import { ads } from './systems/ads.js';
 import { iap } from './systems/iap.js';
+import { loginStatus, claimLogin, giftStatus, claimGift, videoStatus, noteVideoWatched, missions, trackMission, missionText, missionCoins, claimMission, inviteCode, rewardsWaiting } from './systems/rewards.js';
 import { backend } from './systems/backend.js';
+import { dcToday, dcStatus, dcRecordResult, dcApplyStart, dcLocked, dcSpeed, dcHeartBack, dcIsLast, dcNextIndex, dcBoard, dcLoadTop, dcSubmit } from './systems/challenge.js';
+import { DC_CARD, DC_CARD_PLAY, DC_PANEL_BUTTONS, DC_RESULT_BUTTONS, dcRenderPanel, dcRenderResult, dcRenderHud } from './ui/challengeUi.js';
 import { drawCreature, drawGlow } from './render/creatures.js';
+import { bzOnBoss, bzUpdate, bzVolley, bzOnKill, bzBossName, bzDrawCrown, bzRenderBack, bzRenderFront } from './systems/bosses.js';
 import { renderAtmosphereBack, renderAtmosphereFront } from './render/atmosphere.js';
 import { applySeparation } from './systems/flocks.js';
-import { createRun, runFire, runUpdate, dropGems, applyPick, rateMult, renderRunWorld, renderXPBar, renderLevelUp, levelUpTap, grantCatchUp } from './systems/runUpgrades.js';
+import { drawHero, updateHero, heroMuzzle } from './render/hero.js';
+import { SPECIES } from './render/species.js';
+import { drawSceneryFar, drawSceneryNear, SCENERY_HAS_SUN } from './render/scenery.js';
+import { drawStageSet } from './render/stageset.js';
+import { drawGate } from './render/gate.js';
+import { abUpdate, abHeroFired, abTurretFired, abBombBlast, abShieldUp, abDraw, abDrawGround } from './systems/abilities.js';
+import { createRun, runFire, runUpdate, dropGems, applyPick, rateMult, damageMult, renderRunWorld, renderXPBar, renderLevelUp, levelUpTap, grantCatchUp } from './systems/runUpgrades.js';
+import { sxReset, sxAfterPlayer, sxUpdate, sxDrawBack, sxDrawFront, sxDrawTop } from './systems/stagefx.js';
+import { tuBegin, tuUpdate, tuDraw, tuTap, tuIsNewPlayer } from './systems/tutorial.js';
 
 // no-op in a plain browser; activates real AdMob inside the native app.
 // Re-sync once ready: the on-load syncBanner() below runs before init resolves.
@@ -75,7 +96,7 @@ if (document.fonts?.load) {
 
 // --- Responsive, high-DPI canvas ---------------------------------
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const dpr = Math.min(window.devicePixelRatio || 1, CONFIG.quality.maxDpr[CONFIG.quality.level]);
   const scale = Math.min(
     window.innerWidth / CONFIG.width,
     window.innerHeight / CONFIG.height
@@ -90,66 +111,15 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', resize);
 resize();
 
-// --- Sprites -----------------------------------------------------
-const SPRITES = {};
-
-// --- Gunner sprite geometry ------------------------------------------
-// The gunner_07/gunner_08 art is tall/narrow (drawn by width, anchored at
-// the feet — see the render code below). GUNNER_DISP_MULT controls how big
-// the sprite is drawn relative to the (unchanged) collision size. The
-// fractions below were measured directly off gunner_07.png (the flame-less
-// "idle" frame, 220x444): the barrel muzzle sits ~97.97% of the sprite's
-// height above the feet, and its center is ~24.09% of the sprite's width
-// to the right of the character's horizontal center.
-const GUNNER_DISP_MULT = 0.9; // was 1.8 — half-size on-screen character
 
 // How long (seconds) to hold on the cleared lane before the LEVELCLEAR/
 // VICTORY dialog actually appears, once the last attacker is gone — gives
 // the player a beat to see the level actually finish instead of the dialog
 // cutting in over the last kill.
-const LEVEL_CLEAR_DELAY = 4.0;
-const GUNNER_ASPECT = 444 / 220; // sprite height / width
-const GUNNER_MUZZLE_X_FRAC = 0.2409;
-const GUNNER_MUZZLE_Y_FRAC = 0.9797;
+const LEVEL_CLEAR_DELAY = 1.8;
 
-function gunnerMuzzle(p) {
-  const dispW = p.size * GUNNER_DISP_MULT;
-  const dispH = dispW * GUNNER_ASPECT;
-  const footY = p.y + p.size * 1.25;
-  return {
-    x: p.x + p.facing * GUNNER_MUZZLE_X_FRAC * dispW,
-    y: footY - GUNNER_MUZZLE_Y_FRAC * dispH,
-  };
-}
-for (const name of ['wizard', 'goblin', 'slime', 'imp', 'fireball', 'portal-good']) {
-  const img = new Image();
-  img.src = `assets/sprites/${name}.svg`;
-  img.onload = () => { SPRITES[name] = img; };
-}
-
-for (let i = 0; i < 21; i++) {
-  const name = `gunner_${String(i).padStart(2, '0')}`;
-  const img = new Image();
-  img.src = `assets/sprites/gunner/${name}.png`;
-  img.onload = () => { SPRITES[name] = img; };
-}
-
-function drawSprite(name, x, y, size, alpha = 1, flipX = false) {
-  const img = SPRITES[name];
-  ctx.globalAlpha = alpha;
-  if (img) {
-    if (flipX) {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(-1, 1);
-      ctx.drawImage(img, -size / 2, -size / 2, size, size);
-      ctx.restore();
-    } else {
-      ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
-    }
-  }
-  ctx.globalAlpha = 1;
-}
+// Bolts leave the procedural Guardian's arm cannon (see render/hero.js).
+function gunnerMuzzle(p) { return heroMuzzle(p); }
 
 // --- Environment decor (moving background objects) ---------------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -345,188 +315,6 @@ function drawAurora(t) {
   ctx.restore();
 }
 
-// A silhouette tree (simple round canopy over a trunk) and a small grass
-// tuft (a few curved blades), both drawn as flat solid shapes so they read
-// clearly against the hill bands behind them without needing dedicated art.
-// The tree takes an optional sway angle (radians) so it can gently rock
-// like the seaweed does, instead of standing perfectly still — pivoting
-// around its base (x, y), not its center, so it reads as rooted swaying
-// rather than floating/rotating in place.
-function drawTreeSilhouette(x, y, s, color, sway = 0) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(sway);
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(-s * 0.08, 0);
-  ctx.lineTo(-s * 0.08, -s * 0.5);
-  ctx.lineTo(s * 0.08, -s * 0.5);
-  ctx.lineTo(s * 0.08, 0);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(0, -s * 0.7, s * 0.42, 0, Math.PI * 2);
-  ctx.arc(-s * 0.3, -s * 0.55, s * 0.3, 0, Math.PI * 2);
-  ctx.arc(s * 0.3, -s * 0.55, s * 0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawGrassTuft(x, y, s, color) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(1.5, s * 0.12);
-  ctx.lineCap = 'round';
-  for (const dx of [-0.35, -0.1, 0.15, 0.4]) {
-    ctx.beginPath();
-    ctx.moveTo(x + dx * s, y);
-    ctx.quadraticCurveTo(x + dx * s * 1.4, y - s * 0.55, x + dx * s * 0.6, y - s * 0.9);
-    ctx.stroke();
-  }
-}
-
-// Sea War's own layered backdrop — three rolling hill silhouettes running
-// from the water line up into the sky, each a shade darker than the one
-// behind it (so the nearest hill reads as being in its own shadow, like
-// the far/mid/near bands of a real coastline), plus a scatter of grass
-// tufts and small trees sitting in the "valleys" between hill crests on
-// the two nearer layers for a fuller, less empty view. Drawn in place of
-// the old static background photo for this decor type (see renderBackground).
-function drawHills(w, h, t) {
-  const waterY = h * CONFIG.ship.waterLine;
-  // Each layer combines two sine frequencies (a big rolling crest + a
-  // smaller secondary wobble) instead of one uniform sine, so the hills
-  // come out as an irregular mixed range of high peaks and low saddles
-  // rather than a repeating row of identical bumps.
-  const layers = [
-    { baseY: waterY - 92, amp1: 20, freq1: 0.0075, amp2: 8,  freq2: 0.021, phase: 0.4, color: '#3f7a5c' },  // far — lightest
-    { baseY: waterY - 56, amp1: 26, freq1: 0.010,  amp2: 11, freq2: 0.026, phase: 2.6, color: '#2a5a42' },  // mid — darker, in the far hill's shadow
-    { baseY: waterY - 18, amp1: 32, freq1: 0.013,  amp2: 14, freq2: 0.031, phase: 4.4, color: '#173d2e' },  // near — darkest, its own cast shadow
-  ];
-  const crestY = (layer, x) =>
-    layer.baseY - Math.abs(Math.sin(x * layer.freq1 + layer.phase)) * layer.amp1
-                - Math.abs(Math.sin(x * layer.freq2 + layer.phase * 1.7)) * layer.amp2;
-
-  layers.forEach((layer, i) => {
-    ctx.beginPath();
-    ctx.moveTo(0, waterY + 4);
-    for (let x = 0; x <= w; x += 10) ctx.lineTo(x, crestY(layer, x));
-    ctx.lineTo(w, waterY + 4);
-    ctx.closePath();
-    ctx.fillStyle = layer.color;
-    ctx.fill();
-
-    // Grass + trees between the hills — only on the two nearer layers so
-    // the far hill stays a clean, simple silhouette (depth cue: detail
-    // increases as things get closer, same as the real world).
-    if (i === 1) {
-      for (const fx of [0.16, 0.38, 0.62, 0.84]) {
-        const x = fx * w;
-        drawGrassTuft(x, crestY(layer, x) + 2, 14, '#3f7a5c');
-      }
-    }
-    if (i === 2) {
-      // Trees sit right in the corners of the hill scene now, and sway
-      // gently like the seaweed does (see renderSeaLife) instead of
-      // standing perfectly still — a slow, small rock back and forth,
-      // each on its own phase so the two don't move in lockstep.
-      const swayL = Math.sin(t * 0.9) * 0.05;
-      const swayR = Math.sin(t * 0.9 + 1.8) * 0.05;
-      drawTreeSilhouette(w * 0.07, crestY(layer, w * 0.07) + 2, 44, '#0f2a20', swayL);
-      drawTreeSilhouette(w * 0.93, crestY(layer, w * 0.93) + 2, 40, '#0f2a20', swayR);
-      for (const fx of [0.06, 0.32, 0.5, 0.62, 0.9]) {
-        const x = fx * w;
-        drawGrassTuft(x, crestY(layer, x) + 2, 16, '#2a5a42');
-      }
-    }
-  });
-}
-
-// Generalized version of drawHills() above, for every LAND stage (Sea War
-// keeps its own dedicated water-line version). Same rolling-silhouette
-// technique — three layers combining two sine frequencies each, darkening
-// toward the viewer — but anchored to a fixed baseline (no water line to
-// sit above) and using the stage's own groundPalette.hills/tree colors
-// instead of the sea's fixed green.
-function drawGroundHills(w, h, t, baseline, palette) {
-  const layers = [
-    { baseY: baseline - 92, amp1: 20, freq1: 0.0075, amp2: 8,  freq2: 0.021, phase: 0.4, color: palette.hills[0] },
-    { baseY: baseline - 56, amp1: 26, freq1: 0.010,  amp2: 11, freq2: 0.026, phase: 2.6, color: palette.hills[1] },
-    { baseY: baseline - 18, amp1: 32, freq1: 0.013,  amp2: 14, freq2: 0.031, phase: 4.4, color: palette.hills[2] },
-  ];
-  const crestY = (layer, x) =>
-    layer.baseY - Math.abs(Math.sin(x * layer.freq1 + layer.phase)) * layer.amp1
-                - Math.abs(Math.sin(x * layer.freq2 + layer.phase * 1.7)) * layer.amp2;
-
-  layers.forEach((layer, i) => {
-    ctx.beginPath();
-    ctx.moveTo(0, baseline + 4);
-    for (let x = 0; x <= w; x += 10) ctx.lineTo(x, crestY(layer, x));
-    ctx.lineTo(w, baseline + 4);
-    ctx.closePath();
-    ctx.fillStyle = layer.color;
-    ctx.fill();
-    if (i === 1) {
-      for (const fx of [0.16, 0.38, 0.62, 0.84]) {
-        const x = fx * w;
-        drawGrassTuft(x, crestY(layer, x) + 2, 14, palette.hills[0]);
-      }
-    }
-    if (i === 2) {
-      const swayL = Math.sin(t * 0.9) * 0.05;
-      const swayR = Math.sin(t * 0.9 + 1.8) * 0.05;
-      drawTreeSilhouette(w * 0.07, crestY(layer, w * 0.07) + 2, 44, palette.tree, swayL);
-      drawTreeSilhouette(w * 0.93, crestY(layer, w * 0.93) + 2, 40, palette.tree, swayR);
-      for (const fx of [0.06, 0.32, 0.5, 0.62, 0.9]) {
-        const x = fx * w;
-        drawGrassTuft(x, crestY(layer, x) + 2, 16, palette.hills[1]);
-      }
-    }
-  });
-}
-
-// Generalized version of the Sea War seafloor bands — four strata, each its
-// own bounded strip between its own undulating curve and the curve of the
-// band directly below it (not filled all the way to the screen bottom,
-// which was the original layering bug — see the 'bubbles' case), recolored
-// per stage via groundPalette.bands. Used as the actual ground every
-// character/monster stands and walks on, for every stage.
-function drawGroundBands(w, h, t, palette) {
-  const bandDefs = [
-    { baseY: h - 20, amp1: 6, freq1: 0.020, amp2: 3, freq2: 0.05, phase: 0.0, speed: 0,    color: palette.bands[0] },
-    { baseY: h - 44, amp1: 7, freq1: 0.017, amp2: 3, freq2: 0.04, phase: 1.7, speed: 0.05, color: palette.bands[1] },
-    { baseY: h - 70, amp1: 8, freq1: 0.023, amp2: 3, freq2: 0.06, phase: 3.3, speed: 0.12, color: palette.bands[2] },
-    { baseY: h - 98, amp1: 9, freq1: 0.026, amp2: 4, freq2: 0.07, phase: 5.1, speed: 0.4,  color: palette.bands[3] },
-  ];
-  const duneY = (b, x) =>
-    b.baseY - Math.abs(Math.sin(x * b.freq1 + b.phase + t * b.speed)) * b.amp1
-            - Math.abs(Math.sin(x * b.freq2 + b.phase * 1.6 + t * b.speed * 1.3)) * b.amp2;
-
-  let floorOf = () => h;
-  bandDefs.forEach((b, i) => {
-    const topY = (x) => duneY(b, x);
-    const bottomY = floorOf;
-    ctx.beginPath();
-    ctx.moveTo(0, bottomY(0));
-    ctx.lineTo(0, topY(0));
-    for (let x = 0; x <= w; x += 10) ctx.lineTo(x, topY(x));
-    ctx.lineTo(w, topY(w));
-    ctx.lineTo(w, bottomY(w));
-    for (let x = w; x >= 0; x -= 10) ctx.lineTo(x, bottomY(x));
-    ctx.closePath();
-    ctx.fillStyle = b.color;
-    ctx.fill();
-    if (i === bandDefs.length - 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, topY(0));
-      for (let x = 0; x <= w; x += 10) ctx.lineTo(x, topY(x));
-      ctx.stroke();
-    }
-    floorOf = topY;
-  });
-}
-
 // A couple of concrete scenery objects per environment — some fixed
 // landmarks (trees, mountains, ruins), some genuinely moving (the Sea War
 // ship drifts across, swamp trees sway, embers/lightning flicker) — on top
@@ -543,27 +331,12 @@ function drawLandmark(def, t) {
   // real floor continuing under UI chrome; only the standalone objects on
   // top of that floor move up.
   const GO = 108;
-  // Every stage now gets the same layered-terrain treatment the Sea War
-  // stage originated — rolling hill silhouettes + a bounded 4-strata ground
-  // floor (see drawGroundHills/drawGroundBands above) — drawn FIRST, right
-  // here, so each stage's own unique set-piece props (castle towers, ice
-  // golem, cacti, volcano, etc.) still render on top of it via the switch
-  // below. Sea War ('bubbles') is the one exception — it already has its own
-  // dedicated water-line version of this same idea and would double-draw a
-  // conflicting floor if this ran for it too.
-  if (def.decor !== 'bubbles' && def.groundPalette) {
-    drawGroundHills(w, h, t, h * 0.62, def.groundPalette);
-    drawGroundBands(w, h, t, def.groundPalette);
-  }
+  // Land stages: a full-screen set (ground, road, props from the stage's
+  // island art — render/stageset.js) drawn FIRST, so each stage's own
+  // set-piece props below still render on top of it. The underwater Sea
+  // War ('bubbles') draws its own scene in the switch.
+  if (def.decor !== 'bubbles') drawStageSet(ctx, def, t);
   switch (def.decor) {
-    case 'fireflies': // Enchanted Forest — a couple of fixed pine trees
-      envIcon(ctx, 46, h - 46 - GO, 42, 'fireflies', t);
-      envIcon(ctx, w - 46, h - 40 - GO, 34, 'fireflies', t);
-      break;
-    case 'crystals': // Crystal Caves — fixed crystal clusters
-      envIcon(ctx, 40, h - 40 - GO, 38, 'crystals', t);
-      envIcon(ctx, w - 40, h - 34 - GO, 30, 'crystals', t);
-      break;
     case 'banners': { // Castle — real Kenney "Castle Kit" towers flanking the
       // lane with a gently fluttering banner on each, plus a squat siege
       // catapult crouched in the corner.
@@ -589,17 +362,31 @@ function drawLandmark(def, t) {
       if (catapultImg) ctx.drawImage(catapultImg, w / 2 - 30, h - 76 - GO, 60, 60);
       break;
     }
-    case 'bubbles': { // Sea War — layered hills (see drawHills) meeting the
-      // sea at a bright water-surface line; the real Ship entities
-      // (spawner/main.js) sail along it.
-      drawHills(w, h, t);
+    case 'bubbles': { // Sea War — fully underwater: a rippling surface just
+      // under the HUD (the real Ship entities sail along it), sunbeams
+      // slanting down through the water, and the layered seafloor.
       const waterY = h * CONFIG.ship.waterLine;
-      ctx.strokeStyle = 'rgba(232,249,255,0.4)';
+      ctx.strokeStyle = 'rgba(232,249,255,0.55)';
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(0, waterY); ctx.lineTo(w, waterY); ctx.stroke();
-      ctx.strokeStyle = 'rgba(200,230,255,0.15)';
-      ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.moveTo(0, waterY + 3); ctx.lineTo(w, waterY + 3); ctx.stroke();
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 10) ctx.lineTo(x, waterY + Math.sin(x * 0.05 + t * 2) * 2);
+      ctx.stroke();
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const rayEnd = h * 0.85;
+      for (let i = 0; i < 5; i++) {
+        const x0 = w * (0.08 + i * 0.22) + Math.sin(t * 0.3 + i) * 20;
+        const sway = Math.sin(t * 0.4 + i * 1.7) * 30;
+        const g = ctx.createLinearGradient(0, waterY, 0, rayEnd);
+        g.addColorStop(0, 'rgba(220,250,255,0.16)');
+        g.addColorStop(1, 'rgba(220,250,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(x0 - 14, waterY); ctx.lineTo(x0 + 14, waterY);
+        ctx.lineTo(x0 + 70 + sway, rayEnd); ctx.lineTo(x0 + 10 + sway, rayEnd);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
 
       // Layered seafloor — four distinct strata, each its own bounded strip
       // between its own undulating curve and the curve of the band directly
@@ -653,7 +440,7 @@ function drawLandmark(def, t) {
     case 'sand': { // Desert Storm — fixed sun, plus real low-poly cacti
       // (CraftPix desert plant pack, rendered to flat-shaded PNGs) scattered
       // along both edges of the lane instead of the old drawn dune blob.
-      envIcon(ctx, w * 0.78, 70, 46, 'sand', t);
+      if (!SCENERY_HAS_SUN[def.stage]) envIcon(ctx, w * 0.78, 70, 46, 'sand', t);
       const plant = (name, x, y, drawH) => {
         const img = DESERT_PLANTS[name];
         if (!img) { envIcon(ctx, x, y, drawH * 0.5, 'sand', t); return; }
@@ -700,35 +487,18 @@ function drawLandmark(def, t) {
       }
       break;
     }
-    case 'embers': // Lava Peaks — fixed volcano with an animated smoke puff
-      envIcon(ctx, w / 2, h - 60 - GO, 56, 'embers', t);
-      break;
-    case 'spores': { // Haunted Swamp — dead trees that gently sway (moving)
-      const sway = Math.sin(t * 0.6) * 0.05;
-      ctx.save(); ctx.translate(36, h - 40 - GO); ctx.rotate(sway); envIcon(ctx, 0, 0, 34, 'spores', t); ctx.restore();
-      ctx.save(); ctx.translate(w - 36, h - 30 - GO); ctx.rotate(-sway); envIcon(ctx, 0, 0, 26, 'spores', t); ctx.restore();
-      break;
-    }
-    case 'clouds': // Sky War — fixed floating island (the moving clouds are decor)
-      envIcon(ctx, w / 2, h - 90 - GO, 50, 'clouds', t);
-      break;
     case 'rain': // Storm Realm — fixed dark cloud banks with a flickering bolt
       envIcon(ctx, w * 0.3, 60, 44, 'rain', t);
       envIcon(ctx, w * 0.7, 46, 34, 'rain', t);
-      break;
-    case 'voidstars': // Shadow Realm — fixed ruined pillars
-      envIcon(ctx, 40, h - 46 - GO, 40, 'voidstars', t);
-      envIcon(ctx, w - 40, h - 46 - GO, 40, 'voidstars', t);
       break;
   }
 }
 
 function renderBackground(def, time) {
   const themeIdx = Math.max(0, Math.min(STAGE_COUNT - 1, (def.stage || 1) - 1));
-  // Sea War draws its own procedural sky-and-hills backdrop (see drawHills()
-  // in drawLandmark's 'bubbles' case) instead of the static per-stage photo
-  // — that's what makes the layered, shadowed hill silhouettes with
-  // grass/trees between them possible, instead of a flat baked-in image.
+  // Sea War draws its own procedural underwater backdrop (gradient here,
+  // surface/sunbeams/seafloor in drawLandmark's 'bubbles' case) instead of
+  // the static per-stage photo.
   const bgImg = def.decor === 'bubbles' ? null : BG_IMAGES[themeIdx];
   if (bgImg) {
     ctx.drawImage(bgImg, 0, 0, CONFIG.width, CONFIG.height);
@@ -738,11 +508,14 @@ function renderBackground(def, time) {
   } else {
     const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.height);
     if (def.decor === 'bubbles') {
-      // Bright open-air daytime sky for the coastal hill scene — the
-      // theme's own dark abyssal-depths palette (def.sky) is for the water
-      // itself elsewhere, not for a sunny shoreline with grassy hills.
-      grad.addColorStop(0, '#8fd8ff');
-      grad.addColorStop(1, '#cdeeff');
+      // Sea War is fully underwater: a thin strip of sky above the surface
+      // (behind the HUD), then sunlit shallows fading to deep blue.
+      const s = CONFIG.ship.waterLine;
+      grad.addColorStop(0, '#9fe0ff');
+      grad.addColorStop(s, '#c4efff');
+      grad.addColorStop(s + 0.002, '#62c9e8');
+      grad.addColorStop(0.55, '#2a92bd');
+      grad.addColorStop(1, '#17628b');
     } else {
       grad.addColorStop(0, def.sky[0]);
       grad.addColorStop(1, def.sky[1]);
@@ -755,6 +528,9 @@ function renderBackground(def, time) {
   // sky, drawn before the landmark art so the crystals/trees/golem sit in
   // front of the glow rather than on top of it.
   if (def.decor === 'snow') drawAurora(time);
+
+  // stage set-pieces behind the hills (render/scenery.js)
+  drawSceneryFar(ctx, def, time);
 
   drawLandmark(def, time);
 
@@ -796,6 +572,9 @@ function renderBackground(def, time) {
   }
   ctx.globalAlpha = 1;
 
+  // stage set-pieces in front of the ground (render/scenery.js)
+  drawSceneryNear(ctx, def, time);
+
   // Storm Realm: occasional lightning flash
   if (def.decor === 'rain' && Math.random() < 0.006) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
@@ -805,6 +584,9 @@ function renderBackground(def, time) {
 
 // --- Game state --------------------------------------------------
 let saveData = load();
+// Language: the player's choice, else the phone's language (src/i18n.js).
+setLang(saveData.settings?.lang || deviceLang());
+refreshUnitRanks();
 if (typeof saveData.coins !== 'number') saveData.coins = 0;
 audio.setMuted(!!saveData.settings?.muted);
 ads.setRemoved(!!saveData.removeAds);
@@ -832,6 +614,7 @@ let continueDismissed = (saveData.progress?.levelIndex || 0) > 0 || (saveData.be
 // one screen, the player drags vertically to see the rest. Tracked as a
 // simple drag: press position + starting scroll, then delta each frame.
 let mapScrollY = 0;
+let mapFocusMode = null; // last mode seen by update(), to re-centre the map on arrival
 let mapDragging = false;
 let mapDragStartPy = 0;
 let mapDragStartScroll = 0;
@@ -868,55 +651,215 @@ async function registerWithBackend() {
 }
 registerWithBackend();
 
-// --- Name entry (DOM overlay — real text input, works in-browser and in the
-// Capacitor WebView, unlike window.prompt which Android WebView won't show
-// without extra native wiring). The name is what appears on the Top
-// Guardians leaderboard. -------------------------------------------------
+// --- Onboarding + name entry (DOM overlay — real text input, works
+// in-browser and in the Capacitor WebView, unlike window.prompt). First
+// launch: welcome, pick a language, name your Guardian. From Settings the
+// same card only asks for the name. The name shows in the Hall of Fame. ---
 const nameOverlay = document.getElementById('nameOverlay');
 const nameInput = document.getElementById('nameInput');
 const nameSubmit = document.getElementById('nameSubmit');
 const nameCancel = document.getElementById('nameCancel');
+let renaming = false;
 
-function openNameEntry() {
+function chooseLang(code) {
+  setLang(code);
+  saveData.settings = { ...saveData.settings, lang: code };
+  save(saveData);
+  if (nameOverlay?.style.display === 'flex') fillNameOverlay();
+}
+
+function fillNameOverlay() {
+  const set = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = tr(key); };
+  set('obTitle', renaming ? 'c.ob.renameTitle' : 'c.ob.title');
+  set('obSub', 'c.ob.sub');
+  set('obNameLabel', 'c.ob.nameLabel');
+  set('obHint', 'c.ob.hint');
+  nameSubmit.textContent = tr(renaming ? 'c.ob.save' : 'c.ob.start');
+  if (nameCancel) nameCancel.textContent = tr('c.ob.cancel');
+  nameInput.placeholder = tr('c.ob.placeholder');
+  nameOverlay.dir = isRtl() ? 'rtl' : 'ltr';
+  nameOverlay.classList.toggle('rename', renaming);
+  const box = document.getElementById('obLangs');
+  if (box) {
+    box.innerHTML = '';
+    for (const l of LANGS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = l.name;
+      b.className = l.code === getLang() ? 'on' : '';
+      b.addEventListener('click', () => chooseLang(l.code));
+      box.appendChild(b);
+    }
+  }
+}
+
+function openNameEntry(rename = !!saveData.playerName) {
   if (!nameOverlay) return;
+  renaming = rename;
   nameInput.value = saveData.playerName || '';
+  fillNameOverlay();
   nameOverlay.style.display = 'flex';
-  setTimeout(() => nameInput.focus(), 50);
+  if (renaming) setTimeout(() => nameInput.focus(), 50);
 }
 function closeNameEntry() {
   if (!nameOverlay) return;
   const v = (nameInput.value || '').trim().slice(0, 14);
-  saveData.playerName = v || 'Guardian';
+  saveData.playerName = v || tr('c.ob.placeholder');
+  if (!saveData.settings?.lang) saveData.settings = { ...saveData.settings, lang: getLang() };
   save(saveData);
   nameOverlay.style.display = 'none';
   if (saveData.playerId) syncProfile(); else registerWithBackend();
+  tuStartFirstRun();
+}
+// THE FIRST MINUTE: a brand-new player goes from the onboarding card
+// straight into Stage 1 Level 1 with the guided hints (systems/tutorial.js),
+// skipping the home page's How-to-play card.
+function tuStartFirstRun() {
+  if (renaming || mode !== 'MENU' || !tuIsNewPlayer(saveData)) return;
+  continueDismissed = true;
+  newGame(0);
+  mode = 'PLAYING';
+  syncBanner();
 }
 function cancelNameEntry() {
   if (!nameOverlay) return;
   if (!saveData.playerName) {
-    saveData.playerName = 'Guardian';
+    saveData.playerName = tr('c.ob.placeholder');
     save(saveData);
   }
   nameOverlay.style.display = 'none';
+  tuStartFirstRun();
 }
 if (nameSubmit) nameSubmit.addEventListener('click', closeNameEntry);
 if (nameCancel) nameCancel.addEventListener('click', cancelNameEntry);
 if (nameInput) nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') closeNameEntry(); });
 
-if (!saveData.playerName) openNameEntry();
+if (!saveData.playerName) openNameEntry(false);
+
+// Level-clear celebration: the card pops in, points and coins count up,
+// coins fly into the HUD pill, then it fades out on its own and the next
+// level fades in (renderLevelClear draws it from state.lc.t).
+function tickLevelClear(dt) {
+  const lc = state.lc;
+  lc.t += dt;
+  st3CardTick(lc, state.st3?.result); // a chime as each earned star pops
+  // a coin "lands" in the pill every so often while they fly
+  const landed = Math.floor(Math.max(0, lc.t - LC_TIMES.coinsLand) / LC_TIMES.coinGap);
+  if (landed > lc.landed && landed <= LC_TIMES.coinCount) { lc.landed = landed; audio.gem(); }
+  if (lc.t >= LC_TIMES.end) {
+    state.lc = null;
+    startLevel(dcNextIndex(state)); // +1, or the Daily Challenge's next level
+    mode = 'PLAYING';
+    state.fadeIn = 0.5;
+    syncBanner();
+  }
+}
+
+// --- The bomb: thrown in an arc from the Guardian onto the enemies closest
+// to the gate, spinning with a sparking fuse and a shadow that grows as it
+// falls; it blows up where it lands. -----------------------------------------
+function throwBomb() {
+  const st = state, p = st.player;
+  const near = st.monsters.filter((m) => !m.dead && m.y > CONFIG.playTop).sort((a, b) => b.y - a.y).slice(0, 5);
+  const tx = near.length ? near.reduce((a, m) => a + m.x, 0) / near.length : p.x;
+  const ty = near.length ? near.reduce((a, m) => a + m.y, 0) / near.length : Math.max(CONFIG.playTop + 80, p.y - 260);
+  const d = Math.hypot(tx - p.x, ty - p.y);
+  st.bombsFlying = st.bombsFlying || [];
+  st.bombsFlying.push({ x0: p.x, y0: p.y - 24, tx, ty, t: 0, dur: 0.45 + Math.min(0.35, d / 1400), h: 90 + d * 0.25, spin: (Math.random() < 0.5 ? -1 : 1) * 9 });
+  audio.pick();
+}
+
+function updateBombs(dt) {
+  const st = state;
+  if (!st.bombsFlying?.length) return;
+  for (const b of st.bombsFlying) {
+    b.t += dt;
+    const k = Math.min(1, b.t / b.dur);
+    // fuse sparks + a puff of smoke trailing behind
+    if (Math.random() < 0.6) {
+      const x = b.x0 + (b.tx - b.x0) * k, y = b.y0 + (b.ty - b.y0) * k - Math.sin(Math.PI * k) * b.h;
+      particles.sparkle(x + Math.cos(b.t * b.spin) * 9, y - 12, Math.random() < 0.5 ? '#ffd23d' : '#ff8a3d', 1);
+    }
+    if (b.t >= b.dur) { b.done = true; bombLand(b.tx, b.ty); }
+  }
+  st.bombsFlying = st.bombsFlying.filter((b) => !b.done);
+}
+
+// Power-based blast — no unconditional full-screen clear. The bomb has a
+// fixed power budget (WEAPONS.bomb.power) and spends it on the monsters
+// nearest the impact first (MONSTERS.<type>.power each) until the next one
+// costs more than what's left: a wave of goblins gets wiped, the same bomb
+// in a knot of trolls or on a boss barely dents it.
+function bombLand(x, y) {
+  const st = state;
+  audio.bigBoom();
+  auHitStop(0.06);
+  particles.addShake(14);
+  particles.ring(x, y, '#ffd23d', 150, 0.45, 8);
+  particles.ring(x, y, '#ff8a3d', 95, 0.35, 6);
+  particles.shatter(x, y, '#ff8a3d', 30, 26);
+  particles.shatter(x, y, '#3a2a1a', 20, 12);
+  const nearest = st.monsters.filter((m) => !m.dead).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+  let budget = WEAPONS.bomb.power * statBonus('bomb', 'power', unitLevel(saveData, 'bomb', 'power'));
+  let killed = 0;
+  for (const m of nearest) {
+    if (m.power > budget) break; // power exhausted — anything farther is untouched
+    budget -= m.power;
+    m.dead = true;
+    events.kill(m);
+    killed++;
+  }
+  announcer.show(tr('g.kaboom'), killed > 0 ? tr('g.destroyedN', { n: killed }) : tr('g.notEnoughPower'), '#ff8a3d', 1.1);
+  st.bombFlash = 0.25; // white flash
+  abBombBlast(st, nearest); // Armory rank abilities (napalm / cluster)
+}
+
+function drawBombs(st) {
+  if (!st.bombsFlying?.length) return;
+  const t = st.levelTime;
+  for (const b of st.bombsFlying) {
+    const k = Math.min(1, b.t / b.dur);
+    const gx = b.x0 + (b.tx - b.x0) * k, gy = b.y0 + (b.ty - b.y0) * k;
+    const lift = Math.sin(Math.PI * k) * b.h;
+    // shadow on the ground: small while it is high, big as it comes down
+    const sh = 0.35 + 0.65 * (1 - lift / b.h);
+    ctx.fillStyle = `rgba(0,0,0,${0.15 + 0.25 * sh})`;
+    ctx.beginPath(); ctx.ellipse(gx, gy + 10, 20 * sh, 7 * sh, 0, 0, Math.PI * 2); ctx.fill();
+    // target marker pulsing where it will land
+    ctx.strokeStyle = `rgba(255,120,60,${0.5 + 0.4 * Math.sin(t * 20)})`;
+    ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.ellipse(b.tx, b.ty + 10, 34, 12, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // the bomb itself: bigger at the top of its arc (closer to the camera),
+    // spinning, squashing a touch right before impact
+    const scale = 1 + 0.45 * Math.sin(Math.PI * k);
+    const squash = k > 0.9 ? 1 - (k - 0.9) * 2.5 : 1;
+    ctx.save();
+    ctx.translate(gx, gy - lift);
+    ctx.rotate(b.t * b.spin);
+    ctx.scale(scale / squash, scale * squash);
+    drawUnitArt(ctx, 'bomb', 0, 0, 34, t, 0);
+    ctx.restore();
+  }
+}
 
 function startLevel(index) {
   const def = LEVELS[index];
+  state.levelStartScore = state.score; // the level-clear card counts up from here
   state.levelIndex = index;
+  if (state.dc) state.dc.step = Math.max(0, state.dc.levels.indexOf(index)); // Daily Challenge: which of its levels
+  state.player.levelIndex = index; // shooting grows with the level
   state.levelDef = def;
   state.levelTime = 0;
   state.spawner.setLevel(def, index);
   state.monsters = [];
+  state.corpses = [];
   state.spells = [];
   state.obstacles = [];
   state.gates = [];
   state.enemyBullets = [];
   state.ships = [];
+  airshipDebris.length = 0;
   state.walls = [];
   state.turrets = [];
   state.placing = null;
@@ -928,12 +871,14 @@ function startLevel(index) {
   // quiet and the "LEVEL CLEAR!" banner before the dialog cuts in.
   state.levelClearPending = false;
   state.levelClearTimer = 0;
+  st3Begin(state); // fresh level-star tracking (ui/levelStars.js)
+  sxReset(state, index); // this stage's one twist (systems/stagefx.js)
   if (state.run) { state.run.vacuum = false; state.run.gems = []; }
   // NOTE: state.angels is deliberately NOT reset here — angels are a
   // permanent purchase and carry over from one level to the next.
   makeDecor(def);
   if (def.decor === 'bubbles') makeSeaLife();
-  announcer.show(`LEVEL ${index + 1}`, `⚔ ${def.name} ⚔`, '#7fd8ff', 2.0);
+  announcer.show(tr('g.levelN', { n: index + 1 }), `⚔ ${def.name} ⚔`, '#7fd8ff', 2.0);
 }
 
 function newGame(startIndex = 0) {
@@ -941,7 +886,9 @@ function newGame(startIndex = 0) {
   const activeSticker = saveData.stickers?.find(s => s.equipped) || saveData.stickers?.[0];
   state = {
     player: new Player(saveData.permanent, activeSticker),
-    spells: [], monsters: [], obstacles: [], gates: [], angels: [], enemyBullets: [], ships: [], walls: [], turrets: [],
+    // Armory POWER x HASTE bonus — enemies grow with it (CONFIG.difficulty.armoryHp)
+    armoryDps: statBonus('hero', 'power', saveData.permanent?.power || 0) * statBonus('hero', 'fireRate', saveData.permanent?.fireRate || 0),
+    spells: [], monsters: [], obstacles: [], gates: [], angels: [], enemyBullets: [], ships: [], walls: [], turrets: [], corpses: [],
     placing: null,
     placePaused: false,
     spawner: new Spawner(LEVELS[idx], idx),
@@ -951,22 +898,62 @@ function newGame(startIndex = 0) {
     combo: 0, bestCombo: 0, comboTimer: 0,
     levelIndex: idx, levelDef: LEVELS[idx], levelTime: 0,
     run: createRun(),
-    onBoss: () => { audio.bossRoar(); announcer.show('BOSS INCOMING!', 'Defeat it to clear the level!', '#ff5c7a', 2.0); particles.addShake(10); },
+    onBoss: (b) => bzOnBoss(b, state, particles), // banners / intro: systems/bosses.js
   };
   startLevel(idx);
+  tuBegin(state, saveData, idx); // guided first run (brand-new players, L1 only)
   const boost = grantCatchUp(state.run, state.player, idx);
-  if (boost) announcer.show('VETERAN BOOST!', `+${boost} powers for Level ${idx + 1}`, '#ffd23d', 2.2);
+  if (boost) announcer.show(tr('g.veteranBoost'), tr('g.veteranBoostSub', { n: boost, lvl: idx + 1 }), '#ffd23d', 2.2);
 }
+
+// Credits coins to whichever balance is live: the run's (mid-run, incl.
+// the shop or GATE DOWN screen) or the saved one (menus).
+const MENU_PAGES = ['MENU', 'UPGRADES', 'SETTINGS', 'LEADERBOARD', 'REWARDS'];
+function inRun() {
+  return state && (mode === 'PLAYING' || mode === 'PAUSED' || mode === 'LEVELUP' || mode === 'GAMEOVER'
+    || mode === 'LEVELCLEAR' || (mode === 'SHOP' && !MENU_PAGES.includes(modeBeforeShop)));
+}
+// Coins the player gets outside the battle flow (rewards, shop, chests).
+// They fly from (x, y) — by default the last tap — into the coin counter.
+let cfTapX = CONFIG.width / 2, cfTapY = CONFIG.height / 2;
+function addCoins(n, x = cfTapX, y = cfTapY) {
+  if (!n) return;
+  cfBurst(n, x, y);
+  if (inRun()) { state.coins += n; persistCoins(); return; }
+  saveData.coins = (saveData.coins || 0) + n;
+  save(saveData);
+  syncProfile();
+}
+
+// Store purchases are verified by the backend, then granted here (also
+// purchases approved later, e.g. after an app restart). A transaction id
+// is only ever paid once.
+iap.onGrant = (productId, transactionId) => {
+  saveData.iapTx = saveData.iapTx || [];
+  if (transactionId && saveData.iapTx.includes(transactionId)) return;
+  if (transactionId) saveData.iapTx = [...saveData.iapTx.slice(-49), transactionId];
+  if (productId === 'remove_ads') {
+    saveData.removeAds = true;
+    ads.setRemoved(true);
+    ads.hideBanner();
+    save(saveData);
+    return;
+  }
+  const pack = COIN_PACKS.find((p) => p.id === productId);
+  if (pack) addCoins(pack.coins);
+};
 
 function persistCoins() {
   saveData.coins = state.coins;
-  if (state.score > (saveData.best || 0)) saveData.best = state.score;
+  if (!state.dc && state.score > (saveData.best || 0)) saveData.best = state.score; // challenge runs keep their own best
   save(saveData);
   syncProfile();
 }
 
 // --- Weapons -----------------------------------------------------
 function buyWeapon(key) {
+  if (dcLocked(state, key)) { audio.gateCurse(); announcer.show(tr('dc.locked'), '', '#ff8a3d', 1.0); return; } // Daily Challenge: ONLY BOMBS
+  if (state.coins >= WEAPONS[key].cost && !((key === 'wall' || key === 'turret') && state.placing)) trackMission(saveData, 'helpers');
   if ((key === 'wall' || key === 'turret') && state.placing) {
     // Already placing one — finish that placement (drag it, release to
     // drop) before buying another.
@@ -981,65 +968,45 @@ function buyWeapon(key) {
   }
   state.coins -= cost;
   if (key === 'bomb') {
-    audio.crack();
-    particles.addShake(12);
-    // Power-based blast — no longer an unconditional full-screen clear.
-    // The bomb has a fixed power budget (WEAPONS.bomb.power) and detonates
-    // outward from the gate: the closest monsters to the gate (highest y —
-    // nearest the Guardian/gate line) are destroyed first, one at a time,
-    // spending their type's power cost (MONSTERS.<type>.power) out of the
-    // budget, until the next-closest monster costs more than what's left.
-    // A wave of cheap goblins gets mostly wiped; the same bomb thrown into
-    // a knot of trolls or a boss barely dents it.
-    const closestFirst = state.monsters.filter(m => !m.dead).sort((a, b) => b.y - a.y);
-    let budget = WEAPONS.bomb.power * statBonus('bomb', 'power', unitLevel(saveData, 'bomb', 'power'));
-    let killed = 0;
-    for (const m of closestFirst) {
-      if (m.power > budget) break; // power exhausted — anything farther is untouched
-      budget -= m.power;
-      m.dead = true;
-      events.kill(m);
-      killed++;
-    }
-    announcer.show('KA-BOOM!', killed > 0 ? `${killed} destroyed!` : 'Not enough power!', '#ff8a3d', 1.1);
-    // white flash
-    state.bombFlash = 0.25;
+    throwBomb(); // the Guardian lobs it; it blows up where it lands (bombLand)
   } else if (key === 'angel') {
     audio.gateGood();
-    announcer.show('WARD SUMMONED!', 'A crystal sprite joins you — for good!', '#bdeeff', 1.4);
+    announcer.show(tr('g.wardSummoned'), '', '#bdeeff', 1.0);
     const side = state.angels.length % 2 === 0 ? 1 : -1;
     state.angels.push(new Angel(side, unitStats(saveData, 'angel')));
     particles.sparkle(state.player.x, state.player.y - 40, '#bdeeff');
   } else if (key === 'shield') {
     audio.gateGood();
     const dur = WEAPONS.shield.duration + statBonus('shield', 'duration', unitLevel(saveData, 'shield', 'duration'));
-    announcer.show('SHIELD UP!', `Blocks bullets for ${dur}s`, '#7fd8ff', 1.2);
+    announcer.show(tr('g.shieldUp'), tr('g.seconds', { n: dur }), '#7fd8ff', 1.0);
     state.player.addShield(dur);
+    abShieldUp(state, CONFIG.gateHealth); // Armory rank 5: mends a gate heart
     particles.sparkle(state.player.x, state.player.y, '#7fd8ff');
   } else if (key === 'wall') {
     audio.gateGood();
-    announcer.show('DRAG TO PLACE', 'The battle is paused — drag to place, then tap CONTINUE', '#c8a06a', 1.6);
-    state.placing = { type: 'wall', x: state.player.x, y: CONFIG.wall.dropY, armed: false };
+    announcer.show(tr('g.dragToPlace'), '', '#c8a06a', 1.2);
+    state.placing = { type: 'wall', x: state.player.x, y: CONFIG.helpers.wall.dropY, armed: false };
     state.placePaused = true;
   } else if (key === 'turret') {
     audio.gateGood();
-    announcer.show('DRAG TO PLACE', 'The battle is paused — drag to place, then tap CONTINUE', '#ffd88a', 1.6);
-    state.placing = { type: 'turret', x: state.player.x, y: CONFIG.turret.dropY, armed: false };
+    announcer.show(tr('g.dragToPlace'), '', '#ffd88a', 1.2);
+    state.placing = { type: 'turret', x: state.player.x, y: CONFIG.helpers.turret.dropY, armed: false };
     state.placePaused = true;
   }
   persistCoins();
 }
 
 function watchRewardedAd() {
-  if (!ads.isRewardedReady()) return;
+  if (!ads.isRewardedReady() || videoStatus(saveData).left <= 0) { audio.gateCurse(); return; }
   ads.showRewarded(
     () => {
-      // player watched the full ad — grant the reward
-      state.coins += CONFIG.ads.rewardedCoins;
-      persistCoins();
+      // player watched the full ad — grant the reward (shared daily cap)
+      const coins = noteVideoWatched(saveData);
+      addCoins(coins);
       audio.gateGood();
-      announcer.show('THANKS!', `+${CONFIG.ads.rewardedCoins} coins`, '#7fd8ff', 1.3);
-      particles.sparkle(CONFIG.width / 2, state.player.y - 40, '#7fd8ff');
+      if (mode === 'REWARDS') rewardsToast = { text: tr('g.coinsToast', { n: coins }), t: performance.now() / 1000 };
+      else announcer.show(tr('g.thanks'), tr('g.coinsPlus', { n: coins }), '#7fd8ff', 1.3);
+      if (state && inRun()) particles.sparkle(CONFIG.width / 2, state.player.y - 40, '#7fd8ff');
     },
     () => { audio.gateCurse(); } // no ad available right now
   );
@@ -1047,20 +1014,26 @@ function watchRewardedAd() {
 
 // --- ARMORY: permanent unit upgrades (main menu, persist across runs) ----
 let armorySel = null;    // unit whose upgrade dialog is open
-let armoryFlash = null;  // { unit, stat, t } — pulse on the row just bought
+let armoryFlash = null;  // { unit, stat, t, rankUp } — pulse on the row just bought
 
 function buyUnitStat(unit, stat) {
-  const def = UNITS[unit].stats[stat];
   const level = unitLevel(saveData, unit, stat);
-  if (level >= def.max) return;
+  if (level >= rankCap(saveData, unit)) return; // finish the other stats to rank up
   const cost = statCost(unit, stat, level);
   if ((saveData.coins || 0) < cost) { audio.gateCurse(); openShop(); return; } // short — offer coins
   saveData.coins -= cost;
+  const rankBefore = unitRank(saveData, unit);
   setUnitLevel(saveData, unit, stat, level + 1);
   save(saveData);
   syncProfile();
   audio.pick();
-  armoryFlash = { unit, stat, t: performance.now() / 1000 };
+  armoryFlash = { unit, stat, t: performance.now() / 1000, rankUp: unitRank(saveData, unit) > rankBefore };
+  if (armoryFlash.rankUp) { audio.levelUp(); refreshUnitRanks(); }
+}
+
+// Battle art reads each unit's rank look from render/units.js unitRanks.
+function refreshUnitRanks() {
+  for (const k of UNIT_ORDER) unitRanks[k] = unitRank(saveData, k);
 }
 
 // --- Remove Ads (one-time IAP) — app-only, same "no-op in a browser tab"
@@ -1075,7 +1048,7 @@ async function buyRemoveAds() {
     ads.hideBanner();
     save(saveData);
     audio.gateGood();
-    announcer.show('ADS REMOVED!', 'Thanks for supporting GateWall', '#58e07f', 1.6);
+    announcer.show(tr('g.adsRemoved'), tr('g.adsRemovedSub'), '#58e07f', 1.6);
   } else {
     audio.gateCurse();
   }
@@ -1091,9 +1064,24 @@ let levelsSinceInterstitial = 0;
 // --- Coin shop -----------------------------------------------------
 function openShop() {
   if (mode === 'SHOP') return;
+  for (const p of COIN_PACKS) p.storePrice = iap.price(p.id); // the store's local price, when known
   modeBeforeShop = mode;
   mode = 'SHOP';
   syncBanner();
+}
+
+// What the SHOP page shows (it's a page in menus, and mid-run too).
+function shopInfo() {
+  return {
+    coins: inRun() ? state.coins : (saveData.coins || 0),
+    iapEnabled: iap.enabled,
+    testStore: iap.testMode,
+    inRun: !MENU_PAGES.includes(modeBeforeShop),
+    video: videoStatus(saveData),
+    videoReady: ads.isRewardedReady(),
+    removeAds: !!saveData.removeAds,
+    removeAdsPrice: iap.price('remove_ads'),
+  };
 }
 
 function closeShop() {
@@ -1126,50 +1114,48 @@ function openLeaderboard() {
 
 async function buyCoinPack(pack) {
   if (!iap.enabled) { audio.gateCurse(); return; } // app-only in a plain browser
-  const bought = await iap.buy(pack.id);
+  const bought = await iap.buy(pack.id); // coins are credited by iap.onGrant
   if (bought) {
-    // The shop can be opened either mid-run (state exists) or from the
-    // home-screen coin pill (no active run, state is null) — credit
-    // whichever coin total is live so a purchase from the menu doesn't
-    // silently vanish (and isn't lost if a run is in progress either).
-    if (state && modeBeforeShop === 'PLAYING') {
-      state.coins += pack.coins;
-      persistCoins();
-    } else {
-      saveData.coins = (saveData.coins || 0) + pack.coins;
-      save(saveData);
-      syncProfile();
-    }
     audio.gateGood();
-    announcer.show('PURCHASED!', `+${pack.coins} coins`, '#ffd23d', 1.4);
+    announcer.show(iap.testMode ? tr('g.testPurchase') : tr('g.purchased'), tr('g.coinsPlus', { n: pack.coins }), '#ffd23d', 1.4);
     closeShop();
   } else {
     audio.gateCurse();
   }
 }
 
-// The bottom nav bar (Home/Map/Upgrades/Settings/Ranks) is drawn — and must
-// be tappable — on every one of those five screens, not just the home
-// screen, so each is a real page you jump directly between instead of a
-// dialog you have to close first. Checked first in every page's tap
-// handler, before that page's own buttons.
+// The bottom nav bar (Shop / Armory / Battle / Rewards / Ranks) is drawn —
+// and tappable — on every menu page, so each is a real page you jump
+// between. Checked first in every page's tap handler, before that page's
+// own buttons. The open page's tab is wider, so hit-testing needs it.
+const NAV_TAB_OF = { MENU: 'play', UPGRADES: 'upgrades', LEADERBOARD: 'leaderboard', REWARDS: 'rewards', SHOP: 'shop' };
 function navTap(x, y) {
   if (x === null) return false;
-  if (y >= MENU_BUTTONS.play.y) armorySel = null; // leaving via the nav bar closes any Armory dialog
-  if (hit(MENU_BUTTONS.play, x, y)) { mode = 'MENU'; syncBanner(); return true; }
-  if (hit(MENU_BUTTONS.upgrades, x, y)) { mode = 'UPGRADES'; syncBanner(); return true; }
-  if (hit(MENU_BUTTONS.settings, x, y)) { resetArmed = false; mode = 'SETTINGS'; syncBanner(); return true; }
-  if (hit(MENU_BUTTONS.leaderboard, x, y)) { openLeaderboard(); return true; }
-  return false;
+  const key = navHit(NAV_TAB_OF[mode] || null, x, y);
+  if (!key) return false;
+  armorySel = null; // leaving via the nav bar closes any Armory dialog
+  resetArmed = false;
+  if (key === 'shop') { if (mode !== 'SHOP') { audio.pick(); openShop(); } return true; }
+  if (mode === 'SHOP') closeShop();
+  if (key === 'play') { if (mode !== 'MENU') audio.pick(); mode = 'MENU'; syncBanner(); }
+  else if (key === 'upgrades') { if (mode !== 'UPGRADES') audio.pick(); mode = 'UPGRADES'; syncBanner(); }
+  else if (key === 'rewards') { if (mode !== 'REWARDS') openRewards(); }
+  else if (key === 'leaderboard') { if (mode !== 'LEADERBOARD') openLeaderboard(); }
+  return true;
 }
 
 // --- Tap handling ------------------------------------------------
 input.onTap((x, y) => {
   audio.unlock();
+  cfTapX = x; cfTapY = y;
 
   if (mode === 'SHOP') {
     if (x === null) return;
-    if (hit(SHOP_BUTTONS.close, x, y)) { closeShop(); return; }
+    const fromMenu = MENU_PAGES.includes(modeBeforeShop);
+    if (fromMenu && navTap(x, y)) return; // the SHOP tab
+    if (!fromMenu && hit(SHOP_BUTTONS.close, x, y)) { closeShop(); return; } // BACK to the run
+    if (hit(SHOP_BUTTONS.video, x, y)) { watchRewardedAd(); return; }
+    if (hit(SHOP_BUTTONS.removeAds, x, y)) { buyRemoveAds(); return; }
     SHOP_BUTTONS.packs.forEach((r, i) => {
       if (hit(r, x, y)) buyCoinPack(COIN_PACKS[i]);
     });
@@ -1179,8 +1165,9 @@ input.onTap((x, y) => {
   if (mode === 'UPGRADES') {
     if (x === null) return;
     if (armorySel) {
-      if (hit(UNIT_DIALOG.close, x, y)) { armorySel = null; return; }
-      if (hit(UNIT_DIALOG.getCoins, x, y)) { openShop(); return; }
+      const dl = unitDialog(armorySel);
+      if (hit(dl.close, x, y) || !hit(dl.box, x, y)) { armorySel = null; return; } // X or tap outside closes
+      if (hit(dl.getCoins, x, y)) { openShop(); return; }
       const rows = unitDialogRows(armorySel);
       for (const stat in rows) {
         if (hit(rows[stat].buy, x, y)) { buyUnitStat(armorySel, stat); return; }
@@ -1201,10 +1188,29 @@ input.onTap((x, y) => {
     return;
   }
 
+  if (mode === 'REWARDS') {
+    if (x === null) return;
+    if (dcPanelOpen) { dcPanelTap(x, y); return; } // Daily Challenge detail panel is modal
+    if (navTap(x, y)) return;
+    if (hit(DC_CARD_PLAY, x, y)) { audio.pick(); dcStart(); return; }
+    if (hit(DC_CARD, x, y)) { audio.pick(); dcPanelOpen = true; dcLoadTop(dcToday().day); return; }
+    rewardsTap(x, y);
+    return;
+  }
+
+  if (mode === 'DCRESULT') {
+    if (x === null) return;
+    if (hit(DC_RESULT_BUTTONS.again, x, y)) { audio.pick(); dcStart(); return; }
+    if (hit(DC_RESULT_BUTTONS.done, x, y)) { audio.pick(); dcResult = null; openRewards(); return; }
+    return;
+  }
+
   if (mode === 'SETTINGS') {
     if (x === null) return;
     if (navTap(x, y)) return;
     if (hit(SETTINGS_BUTTONS.changeName, x, y)) { resetArmed = false; openNameEntry(); return; }
+    const li = SETTINGS_BUTTONS.langs.findIndex((r) => hit(r, x, y));
+    if (li >= 0) { resetArmed = false; chooseLang(LANGS[li].code); audio.gateGood(); return; }
     if (hit(SETTINGS_BUTTONS.mute, x, y)) {
       const next = !audio.isMuted();
       audio.setMuted(next);
@@ -1214,17 +1220,23 @@ input.onTap((x, y) => {
       return;
     }
     if (hit(SETTINGS_BUTTONS.removeAds, x, y)) { resetArmed = false; buyRemoveAds(); return; }
+    if (hit(SETTINGS_BUTTONS.restore, x, y)) {
+      resetArmed = false;
+      if (!iap.enabled) { audio.gateCurse(); return; }
+      iap.restore().then((ok) => announcer.show(tr(ok ? 'g.restored' : 'g.nothingToRestore'), ok ? tr('g.restoredSub') : '', '#7fd8ff', 1.4));
+      return;
+    }
     if (hit(SETTINGS_BUTTONS.privacy, x, y)) { resetArmed = false; openPrivacy(); return; }
     if (hit(SETTINGS_BUTTONS.reset, x, y)) {
       if (!resetArmed) {
         resetArmed = true; // first tap just arms it — see the "tap twice" hint in screens.js
-        announcer.show('TAP AGAIN TO CONFIRM', 'This wipes your stage progress', '#ff5c7a', 1.6);
+        announcer.show(tr('g.tapAgain'), tr('g.tapAgainSub'), '#ff5c7a', 1.6);
         return;
       }
       saveData.progress = { levelIndex: 0 };
       save(saveData);
       resetArmed = false;
-      announcer.show('PROGRESS RESET', 'Back to Stage 1, Level 1', '#ff5c7a', 1.4);
+      announcer.show(tr('g.progressReset'), tr('g.progressResetSub'), '#ff5c7a', 1.4);
       return;
     }
     return;
@@ -1237,13 +1249,15 @@ input.onTap((x, y) => {
     // otherwise a very quick tap right after a drag could still read the
     // old drag's mapMoved=true and get silently ignored.
     mapMoved = false;
+    if (continueDismissed && st3MenuTap(x, y, saveData, addCoins)) return; // star chest (or its dialog)
     // Header: only the coin pill is tappable (opens the buy-coins shop).
     // The avatar/name area no longer opens name-edit — that now lives in
     // Settings — and the rest of the header does nothing when tapped.
     if (hit(MENU_BUTTONS.coins, x, y)) { openShop(); return; }
+    if (hit(MENU_BUTTONS.settings, x, y)) { resetArmed = false; audio.pick(); mode = 'SETTINGS'; syncBanner(); return; }
     if (navTap(x, y)) return;
     if (!continueDismissed && hit(CONTINUE_CLOSE_BUTTON, x, y)) { continueDismissed = true; return; }
-    if (continueDismissed && hit(MENU_PLAY_BUTTON, x, y)) {
+    if (continueDismissed && hit(homePlayRect(mapScrollY, saveData.progress?.levelIndex || 0), x, y)) {
       newGame(saveData.progress?.levelIndex || 0);
       mode = 'PLAYING';
       syncBanner();
@@ -1275,24 +1289,37 @@ input.onTap((x, y) => {
     // the finger when the gesture started.
     return;
   }
-  if (mode === 'GAMEOVER' || mode === 'VICTORY') {
-    if (x !== null && hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; syncBanner(); return; }
-
-    // Revive button handling
-    if (mode === 'GAMEOVER' && x !== null && ads.isRewardedReady() && typeof REVIVE_BUTTON !== 'undefined' && hit(REVIVE_BUTTON, x, y)) {
-      ads.showRewarded(() => {
-        // Reward: Full health and resume!
-        state.lives = CONFIG.gateHealth;
-        state.player.blood = state.player.maxBlood;
-        state.player.invuln = 2;
-        state.enemyBullets = [];
-        mode = 'PLAYING';
-        syncBanner();
-      }, () => {
-        // Fallback if ad failed
-      });
+  if (mode === 'GAMEOVER') {
+    if (x === null) return;
+    const B = GAMEOVER_BUTTONS;
+    if (hit(B.retry, x, y)) {
+      newGame(saveData.progress?.levelIndex || 0);
+      mode = 'PLAYING';
+      syncBanner();
       return;
     }
+    if (hit(B.armory, x, y)) { mode = 'UPGRADES'; syncBanner(); return; }
+    if (hit(B.exit, x, y)) { mode = 'MENU'; syncBanner(); return; }
+    const cost = reviveCost();
+    if (cost > 0 && hit(B.reviveCoins, x, y)) {
+      if (state.coins < cost) { audio.gateCurse(); openShop(); return; }
+      state.coins -= cost;
+      state.revives = (state.revives || 0) + 1;
+      persistCoins();
+      reviveRun();
+      return;
+    }
+    if (hit(B.revive, x, y)) {
+      if ((state.adRevives || 0) >= CONFIG.economy.adRevives || !ads.isRewardedReady()) { audio.gateCurse(); return; }
+      ads.showRewarded(() => {
+        state.adRevives = (state.adRevives || 0) + 1;
+        reviveRun(); // watched the full ad: full hearts and back in
+      }, () => { audio.gateCurse(); });
+    }
+    return;
+  }
+  if (mode === 'VICTORY') {
+    if (x !== null && hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; syncBanner(); return; }
 
     // Only the actual TRY AGAIN / PLAY AGAIN button restarts — tapping
     // anywhere else on the Game Over / Victory card is a no-op, same as the
@@ -1305,12 +1332,10 @@ input.onTap((x, y) => {
     return;
   }
   if (mode === 'LEVELCLEAR') {
-    if (x !== null && hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; syncBanner(); return; }
-    if (x !== null && hit(CONTINUE_PLAY_BUTTON, x, y)) {
-      startLevel(state.levelIndex + 1);
-      mode = 'PLAYING';
-      syncBanner();
-    }
+    if (x === null) return;
+    if (hit(END_MENU_BUTTON, x, y)) { mode = 'MENU'; syncBanner(); return; }
+    // a tap anywhere skips straight to the fade into the next level
+    if (state.lc) state.lc.t = Math.max(state.lc.t, LC_TIMES.fade);
     return;
   }
 
@@ -1346,6 +1371,7 @@ input.onTap((x, y) => {
       else { const btn = buttonAt(x, y); if (btn === 'wall' || btn === 'turret') buyWeapon(btn); }
       return;
     }
+    if (tuTap(state, x, y)) return; // SKIP TIPS pill
     const btn = buttonAt(x, y);
     if (btn === 'pause') { mode = 'PAUSED'; syncBanner(); }
     else if (btn === 'watchAd') watchRewardedAd();
@@ -1366,12 +1392,10 @@ input.onRelease((x, y) => {
   }
   const { type, x: px, y: py } = state.placing;
   if (type === 'wall') {
-    state.walls.push(new Wall(px, py, unitStats(saveData, 'wall')));
-    announcer.show('WALL SET!', 'Blocks attackers in its lane', '#c8a06a', 1.1);
+    state.walls.push(new Wall(px, py, unitStats(saveData, 'wall'), state.spawner.stageIdx));
     particles.sparkle(px, py, '#c8a06a');
   } else if (type === 'turret') {
-    state.turrets.push(new Turret(px, py, unitStats(saveData, 'turret')));
-    announcer.show('TURRET SET!', 'Fires on its own until destroyed', '#ffd88a', 1.1);
+    state.turrets.push(new Turret(px, py, unitStats(saveData, 'turret'), state.spawner.stageIdx));
     particles.sparkle(px, py, '#ffd88a');
   }
   audio.gateGood();
@@ -1383,6 +1407,7 @@ input.onRelease((x, y) => {
 // tracking). This is what lets the same press-drag-release gesture either
 // scroll the map or tap a stage, depending on whether the finger moved.
 input.onRelease((x, y) => {
+  if (st3EatRelease()) return; // this gesture tapped the star chest
   if (mode !== 'MENU' || !continueDismissed || mapMoved || x === null) return;
   const furthest = saveData.progress?.levelIndex || 0;
   const layout = homeLayout(mapScrollY);
@@ -1410,6 +1435,36 @@ let slowmoT = 0;
 function slowmo(duration, scale = 0.3) {
   slowmoT = Math.max(slowmoT, duration);
   timeScale = Math.min(timeScale, scale);
+}
+
+// [au] Hit-stop: a near-freeze of a few frames (≤70 ms) on big impacts, on
+// top of timeScale. A cooldown keeps it from ever chaining into a stutter
+// (bomb chain-kills, rapid boss crits).
+let auHitStopT = 0, auHitStopCd = 0;
+function auHitStop(sec = 0.05, shake = 0, cd = 0.2) {
+  if (auHitStopCd > 0) return;
+  auHitStopT = Math.max(auHitStopT, Math.min(sec, 0.07));
+  auHitStopCd = auHitStopT + cd;
+  if (shake) particles.addShake(shake);
+}
+function auHitStopScale(rawDt) {
+  if (auHitStopCd > 0) auHitStopCd -= rawDt;
+  if (auHitStopT > 0.002) { auHitStopT -= rawDt; return 0.04; }
+  return 1;
+}
+// [au] Music follows the screen: stage theme in a run (quiet when not
+// actively playing), calm loop on home pages, silence + jingle at the end.
+let auPrevMode = null;
+function auMusicSync() {
+  if (mode !== auPrevMode) {
+    if (mode === 'VICTORY') audio.victoryJingle();
+    auPrevMode = mode;
+  }
+  const inGame = !!(state?.levelDef && inRun() && mode !== 'GAMEOVER');
+  if (mode === 'GAMEOVER' || mode === 'VICTORY') audio.setMusic(null);
+  else if (inGame) audio.setMusic((state.levelDef.stage || 1) - 1);
+  else audio.setMusic('menu');
+  audio.setMusicQuiet(inGame && mode !== 'PLAYING');
 }
 
 // Single entry point for every non-collision damage source (orbit blades,
@@ -1460,9 +1515,59 @@ function bossVolley(m) {
   audio.bossShot();
 }
 
+// Which helper would save the player right now? Drives the pulsing "TAP!"
+// hint on the buy row (ui/hud.js) — only for helpers they can afford, so it
+// teaches the toolkit without nagging toward the shop.
+function pickHelperHint(st) {
+  const can = (k) => st.coins >= WEAPONS[k].cost;
+  const p = st.player;
+  const bossFiring = st.enemyBullets.length > 8 && st.monsters.some((m) => m.boss);
+  if (p.shieldTime <= 0 && can('shield') && (p.blood < p.maxBlood * 0.35 || bossFiring)) return 'shield';
+  let near = 0, brute = false;
+  for (const m of st.monsters) {
+    if (m.dead || m.boss) continue;
+    if (m.y > CONFIG.gateY - 170) near++;
+    if ((m.elite || m.type === 'troll') && m.y > CONFIG.gateY - 260) brute = true;
+  }
+  if (near >= 3 && can('bomb')) return 'bomb';
+  if (brute && st.walls.length === 0 && can('wall')) return 'wall';
+  return null;
+}
+
+// One-frame FX raised by monster action moves (entities/monster.js ACTIONS).
+function monsterFx(m) {
+  const tint = state.levelDef?.monsterTint;
+  for (const e of m.events) {
+    if (e === 'land') {
+      particles.ring(m.x, m.y + m.r * 0.6, tint?.glow || '#ffffff', m.r * 1.8, 0.3, 3);
+      for (let i = 0; i < 6; i++) particles.dust(m.x + (Math.random() - 0.5) * m.r * 1.6, m.y + m.r * 0.6, tint?.primary || m.color);
+    } else if (e === 'slam') {
+      particles.ring(m.x, m.y + m.r * 0.7, '#ff8a3d', m.r * 3.2, 0.45, 6);
+      particles.ring(m.x, m.y + m.r * 0.7, '#ffffff', m.r * 2.2, 0.3, 3);
+      particles.shatter(m.x, m.y + m.r * 0.7, '#8a6a4a', m.r * 0.6, 8);
+      particles.addShake(3);
+      audio.stomp();
+    }
+  }
+  m.events.length = 0;
+}
+
 const events = {
-  hit(m) {
-    particles.sparkle(m.x, m.y, '#fff', 3);
+  // a bolt landed without killing: a spark in the bolt's colour at the
+  // impact point; critical hits burst gold with a small "CRIT!"
+  hit(m, s) {
+    if (m.boss && s?.crit) auHitStop(0.035, 2, 0.6); // [au] boss crits land with weight
+    const col = s?.kind === 'turret' ? '#ffd23d' : s?.kind === 'fever' ? '#ff7ad9' : '#bfeaff';
+    const ix = s ? s.x : m.x, iy = s ? s.y : m.y;
+    if (s?.crit) {
+      trackMission(saveData, 'crits');
+      particles.sparkle(ix, iy, '#ffd23d', 7);
+      particles.ring(ix, iy, '#ffd23d', m.r * 1.3, 0.22, 3);
+      particles.scoreText(m.x, m.y - m.r - 6, tr('g.crit'), '#ffd23d', 13);
+    } else {
+      particles.sparkle(ix, iy, col, 4);
+      particles.ring(ix, iy, col, Math.max(10, m.r * 0.7), 0.14, 2);
+    }
   },
 
   kill(m) {
@@ -1470,41 +1575,58 @@ const events = {
     state.combo++;
     state.comboTimer = 1.2;
     state.bestCombo = Math.max(state.bestCombo, state.combo);
-    if (state.combo === 10) announcer.show('MEGA COMBO!', '×10 chain!', '#7fd8ff', 1.2);
-    if (state.combo === 20) announcer.show('UNSTOPPABLE!', '×20 chain!!', '#ff8a3d', 1.2);
-    if (m.type === 'ogreBoss') announcer.show('BOSS DEFEATED!', 'The land is safe!', '#58e07f', 1.8);
+    if (state.combo === 20) announcer.show(tr('g.unstoppable'), tr('g.chain20'), '#ff8a3d', 1.2);
     const bonus = state.combo >= 3 ? state.combo : 0;
     const pts = m.score + bonus;
     state.score += pts;
     // Coins are scarce by design — only some kills drop any, and bosses always do.
-    if (m.type === 'ogreBoss' || Math.random() < CONFIG.economy.coinDropChance) {
-      const [lo, hi] = CONFIG.economy.coinDropAmount;
-      const drop = m.type === 'ogreBoss' ? hi * 5 : Math.round(lo + Math.random() * (hi - lo));
+    const E = CONFIG.economy;
+    if (m.boss) {
+      bzOnKill(m, state, particles); // bonus coins, BOSS DEFEATED banner, death blasts (systems/bosses.js)
+      if (!m.bzMini) trackMission(saveData, 'boss');
+    } else if (Math.random() < E.coinDropChance) {
+      const [lo, hi] = E.coinDropAmount;
+      const drop = Math.round(lo + Math.random() * (hi - lo));
       state.coins += drop;
+      cfBurst(drop, m.x, m.y);
     }
+    trackMission(saveData, 'kills');
     audio.pop(state.combo);
     audio.shatter();
     // Shatterlings break apart into crystal shards in their stage color.
     const tint = state.levelDef?.monsterTint;
     const shardColor = tint?.primary || m.color;
     particles.shatter(m.x, m.y, shardColor, m.r, m.boss ? 40 : m.elite ? 18 : 8);
+    if (m.anim !== undefined && state.corpses.length < 40) {
+      // ragdoll: the body is knocked up and away, spinning, then shrinks out
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      state.corpses.push({
+        ...m, action: null, ghosts: null, windup: 0, z: 0, hitFlash: 1, flock: null, maxHp: 1, elite: false,
+        cvx: dir * (60 + Math.random() * 90), cvy: -(160 + Math.random() * 120) * (m.boss ? 0.4 : 1),
+        rot: 0, vr: dir * (6 + Math.random() * 6), t: 0, life: m.boss ? 0.9 : 0.45, corpseScale: 1,
+      });
+    }
     particles.shatter(m.x, m.y, tint?.glow || '#ffffff', m.r * 0.6, m.boss ? 14 : 3);
     particles.ring(m.x, m.y, tint?.glow || '#ffffff', m.r * 1.8, 0.28, 3);
     particles.scoreText(m.x, m.y - m.r, `+${pts}`, m.elite ? '#ffd23d' : '#ffe9a8', m.elite || m.boss ? 24 : 16);
 
     // XP gems (see systems/runUpgrades.js)
+    if (m.air) airshipBurst(m); // Clockwork City airship: sparks, smoke, falling gears
     if (state.run && m.isShip !== true) dropGems(state.run, m.x, m.y, m.boss ? 40 : m.elite ? 10 : m.type === 'troll' ? 3 : m.type === 'skeleton' ? 2 : 1);
 
     if (m.elite) {
       slowmo(0.25, 0.35);
-      particles.addShake(5);
+      auHitStop(0.045);
+      particles.addShake(7);
       particles.ring(m.x, m.y, '#ffd23d', 70, 0.45, 5);
       state.coins += 3;
+      cfBurst(3, m.x, m.y);
       particles.scoreText(m.x, m.y - m.r - 22, '+3 coins', '#ffd23d', 15);
     }
     if (m.boss) {
-      slowmo(0.9, 0.2);
-      particles.addShake(12);
+      auHitStopCd = 0; auHitStop(0.07);
+      slowmo(m.bzMini ? 0.7 : 1.6, m.bzMini ? 0.25 : 0.15);
+      particles.addShake(14);
       audio.bigBoom();
       for (let i = 0; i < 3; i++) particles.ring(m.x, m.y, ['#ffffff', '#ffd23d', '#ff7ad9'][i], 120 + i * 60, 0.6 + i * 0.15, 8 - i * 2);
       state.enemyBullets.length = 0;
@@ -1515,7 +1637,7 @@ const events = {
       state.run.fever = 7;
       state.run.feverReady = false;
       audio.fever();
-      announcer.show('FEVER!', 'Rainbow fire unleashed!', '#ff7ad9', 1.3);
+      announcer.show(tr('g.fever'), '', '#ff7ad9', 1.1);
       particles.ring(state.player.x, state.player.y, '#ff7ad9', 160, 0.5, 6);
     }
   },
@@ -1532,8 +1654,8 @@ const events = {
     particles.ring(m.x, CONFIG.gateY, '#ff5c7a', 120, 0.45, 6);
     particles.scoreText(m.x, CONFIG.gateY - 20, '-1 ♥', '#ff5c7a', 22);
     state.player.hurtFlash = 0.4;
-    if (state.lives > 1) announcer.show('GATE BREACHED!', `${state.lives} hearts left`, '#ff5c7a', 1.1);
-    if (state.lives === 1) announcer.show('LAST GATE!', 'Protect the gate!', '#ff5c7a', 1.3);
+    if (state.lives === 1) announcer.show(tr('g.lastGate'), tr('g.protectGate'), '#ff5c7a', 1.3);
+    if (state.lives <= 0 && state.dc) { dcFinish(false); return; } // Daily Challenge: straight to its results
     if (state.lives <= 0) {
       mode = 'GAMEOVER';
       audio.gameOver();
@@ -1566,11 +1688,11 @@ const events = {
     if (g.kind === 'blood') {
       state.player.healBlood(CONFIG.gate.bloodGiftHeal);
       particles.sparkle(g.x, g.y, '#ff5c7a');
-      particles.scoreText(g.x, g.y, 'BLOOD RESTORED!', '#ff5c7a');
+      particles.scoreText(g.x, g.y, tr('g.bloodRestored'), '#ff5c7a');
     } else {
       state.player.applyGate(g.mult);
       particles.sparkle(g.x, g.y, '#58e07f');
-      particles.scoreText(g.x, g.y, `×${g.mult} MAGIC!`, '#58e07f');
+      particles.scoreText(g.x, g.y, tr('g.magicMult', { n: g.mult }), '#58e07f');
     }
   },
 
@@ -1603,7 +1725,8 @@ const events = {
     audio.crack();
     particles.addShake(6);
     particles.poof(who.x, who.y, '#ff5d7a');
-    if (state.lives === 1) announcer.show('LAST GATE!', 'Protect the gate!', '#ff5c7a', 1.3);
+    if (state.lives === 1) announcer.show(tr('g.lastGate'), tr('g.protectGate'), '#ff5c7a', 1.3);
+    if (state.lives <= 0 && state.dc) { dcFinish(false); return; } // Daily Challenge: straight to its results
     if (state.lives <= 0) {
       mode = 'GAMEOVER';
       audio.gameOver();
@@ -1618,6 +1741,14 @@ const events = {
 
 // --- Update ------------------------------------------------------
 function update(dt) {
+  // Arriving on the home page: scroll the map so the player's island (and
+  // its CONTINUE pill) sits in view.
+  if (mode === 'MENU' && mapFocusMode !== 'MENU') {
+    const lay = homeLayout(0);
+    const n = lay.nodes[Math.min(lay.nodes.length - 1, Math.floor((saveData.progress?.levelIndex || 0) / STAGE_SIZE))];
+    mapScrollY = Math.max(0, Math.min(lay.scrollMax, n.cy - (lay.stageTop + lay.stageBottom) / 2 + 20));
+  }
+  mapFocusMode = mode;
   // Stage-map drag-to-scroll tracking — runs even outside PLAYING mode
   // (the map lives on the MENU screen). Only active once the continue
   // dialog is dismissed, since the dialog floats over the map and isn't
@@ -1645,11 +1776,16 @@ function update(dt) {
   }
 
   if (mode === 'LEVELUP' && state?.run) state.run.choiceT += dt;
+  if (mode === 'LEVELCLEAR' && state?.lc) tickLevelClear(dt);
+  if (state?.fadeIn > 0) state.fadeIn -= dt;
+  if (state?.tu) tuUpdate(state, dt, mode, announcer);
   if (mode !== 'PLAYING') return;
   const st = state;
   const def = st.levelDef;
+  dt *= dcSpeed(st); // Daily Challenge DOUBLE SPEED (1 otherwise)
 
   st.levelTime += dt;
+  st3Track(st, dt); // level-star clock + hearts lost
   updateDecor(dt, def);
   if (def.decor === 'bubbles') updateSeaLife(dt);
 
@@ -1679,9 +1815,13 @@ function update(dt) {
   // window.__autopilot (debug/playtest bot only) can steer instead of touch.
   const ap = window.__autopilot && window.__autopilot(st);
   st.player.update(dt, ap ? { targetX: () => ap.x, targetY: () => ap.y } : input);
+  sxAfterPlayer(st, dt, particles); // stage twist: icy slide / vine roots
+  updateHero(st.player, dt, st.levelTime); // cape physics, cannon heat, afterimages
   if (st.player.tryFire()) {
     const { x: muzzleX, y: muzzleY } = gunnerMuzzle(st.player);
-    runFire(st.run, muzzleX, muzzleY, st.player.damage, st.spells);
+    const abN0 = st.spells.length;
+    runFire(st.run, muzzleX, muzzleY, st.player.power, st.spells);
+    abHeroFired(st, abN0); // Armory rank 3: every 5th volley pierces
     particles.sparkle(muzzleX, muzzleY, st.run.fever > 0 ? `hsl(${(st.levelTime * 400) % 360},100%,70%)` : '#ffe9a8', 2);
     particles.addShake(0.6);
     audio.zap();
@@ -1691,15 +1831,19 @@ function update(dt) {
     particles.dust(st.player.x, st.player.y + st.player.size * 1.2);
   }
 
-  for (const a of st.angels) a.update(dt, st.player, st.spells);
+  // the Guardian's current bolt damage: helpers deal a share of it
+  st.boltDamage = st.player.power * damageMult(st.run);
+  for (const a of st.angels) { a.boltDamage = st.boltDamage; a.update(dt, st.player, st.spells); }
   st.angels = st.angels.filter((a) => !a.dead);
 
   st.spawner.update(dt, st);
+  bzUpdate(st, dt, particles);
   st.spells.forEach((s) => s.update(dt));
   st.monsters.forEach((m) => {
     m.update(dt);
+    if (m.events.length) monsterFx(m);
     if (m.tryShoot()) {
-      if (m.boss) bossVolley(m);
+      if (m.boss) { if (!bzVolley(m, st, particles)) bossVolley(m); }
       else {
         st.enemyBullets.push(new EnemyBullet(m.x, m.y + m.r, m.damage));
         audio.enemyShot();
@@ -1716,8 +1860,9 @@ function update(dt) {
       // A full broadside — several cannonballs in a side-by-side spread
       // instead of one bullet, so a rarer, tougher ship still feels like a
       // real threat while there are only ever 1-2 on screen at once.
-      const n = CONFIG.ship.burstCount;
-      const spread = CONFIG.ship.burstSpread;
+      const SC = sh.air ? CONFIG.airship : CONFIG.ship; // airships drop bombs the same way
+      const n = SC.burstCount;
+      const spread = SC.burstSpread;
       const startX = sh.x - ((n - 1) * spread) / 2;
       for (let i = 0; i < n; i++) {
         st.enemyBullets.push(new EnemyBullet(startX + i * spread, sh.y + sh.r * 0.4, sh.damage));
@@ -1727,13 +1872,18 @@ function update(dt) {
   });
   st.walls.forEach((w) => w.update(dt));
   st.turrets.forEach((t) => {
-    t.update(dt);
+    t.update(dt, st.monsters);
     if (t.tryShoot()) {
-      st.spells.push(new Spell(t.x, t.y - t.r, t.damage, { kind: 'turret' }));
+      const mz = t.muzzle();
+      st.spells.push(new Spell(mz.x, mz.y, st.boltDamage * t.damageMult, { kind: 'turret', angle: t.aim }));
+      abTurretFired(st, t, st.spells[st.spells.length - 1]); // Armory rank abilities
       audio.zap();
     }
   });
+  abUpdate(dt, st, saveData, { particles, audio, damageMonster });
 
+  sxUpdate(st, dt, { particles, audio, announcer, saveData, save, damageMonster, bloodLost: () => events.bloodLost(st.player) });
+  if (mode !== 'PLAYING') return; // a stage hazard just cost the last heart
   resolveCollisions(st, events, dt);
   if (mode !== 'PLAYING') return; // a breach just ended the run
 
@@ -1746,6 +1896,7 @@ function update(dt) {
 
   st.enemyBullets = st.enemyBullets.filter((b) => !b.dead);
   st.ships = st.ships.filter((sh) => !sh.dead);
+  updateAirshipDebris(dt);
   st.walls = st.walls.filter((w) => !w.dead);
   st.turrets = st.turrets.filter((t) => !t.dead);
 
@@ -1754,6 +1905,16 @@ function update(dt) {
     if (st.comboTimer <= 0) { st.combo = 0; if (st.run.fever <= 0) st.run.feverReady = true; }
   }
   if (st.bombFlash > 0) st.bombFlash -= dt;
+  updateBombs(dt);
+  st.helperHint = pickHelperHint(st);
+  // knocked-away corpses: fly, spin, shrink out
+  for (const c of st.corpses) {
+    c.t += dt;
+    c.x += c.cvx * dt; c.y += c.cvy * dt; c.cvy += 900 * dt;
+    c.rot += c.vr * dt;
+    c.corpseScale = Math.max(0.01, 1 - (c.t / c.life) ** 2);
+  }
+  st.corpses = st.corpses.filter((c) => c.t < c.life);
   if (st.gateFlash > 0) st.gateFlash -= dt;
 
   st.spells = st.spells.filter((s) => !s.dead);
@@ -1770,12 +1931,12 @@ function update(dt) {
   // slamming in over the last kill.
   const allAttackersSpawned = st.spawner.allSpawned();
   const bossHandled = !def.boss || st.spawner.bossSpawned;
-  const clearNow = allAttackersSpawned && bossHandled && st.monsters.length === 0;
+  const clearNow = allAttackersSpawned && bossHandled && st.monsters.length === 0 && !st.bzDeath; // let a boss death play out
 
   if (clearNow && !st.levelClearPending) {
     st.levelClearPending = true;
     st.levelClearTimer = LEVEL_CLEAR_DELAY;
-    announcer.show('LEVEL CLEAR!', '', '#58e07f', LEVEL_CLEAR_DELAY);
+    announcer.show(tr('g.levelClear'), '', '#58e07f', LEVEL_CLEAR_DELAY);
   } else if (!clearNow && st.levelClearPending) {
     // Extremely rare (e.g. a split-spawning slime lands after the check),
     // but if something hostile is somehow back on screen, cancel the
@@ -1790,12 +1951,14 @@ function update(dt) {
 
   if (st.levelClearPending && st.levelClearTimer <= 0 && mode === 'PLAYING') {
     st.levelClearPending = false;
+    if (st.dc && dcIsLast(st)) { dcFinish(true); return; } // Daily Challenge: all its levels done
+    if (!st.dc) st3Award(st, saveData); // 1-3 level stars, best kept in saveData.stars (saved below)
     if (st.levelIndex >= LEVELS.length - 1) {
       mode = 'VICTORY';
       audio.waveUp();
-      // Full playthrough done — start the next run back at Stage 1 rather
-      // than re-triggering VICTORY instantly on "Continue".
-      saveData.progress = { levelIndex: 0 };
+      // Full playthrough done — keep every stage open (progress never goes
+      // back; replaying any stage is the player's choice on the map).
+      saveData.progress = { levelIndex: Math.max(saveData.progress?.levelIndex || 0, LEVELS.length - 1) };
       persistCoins();
       submitScore(saveData, { name: saveData.playerName, score: st.score, stage: Math.ceil(st.spawner.level / STAGE_SIZE) });
       save(saveData);
@@ -1805,11 +1968,19 @@ function update(dt) {
     } else {
       mode = 'LEVELCLEAR';
       audio.waveUp();
-      st.lives = Math.min(CONFIG.gateHealth, st.lives + 1);
-      st.coins += CONFIG.economy.levelClearBonus;   // small, flat — not a coin faucet
+      st.lives = dcHeartBack(st, st.lives); // +1 heart (GLASS GATE challenge: stays at one)
+      const LC = CONFIG.economy.levelClear;
+      st.levelCoins = LC.base + LC.perLevel * st.spawner.lis + LC.perStage * st.spawner.stageIdx;
+      st.coins += st.levelCoins;
+      // the celebration card's clock (see renderLevelClear / LC_TIMES)
+      st.lc = { t: 0, from: st.levelStartScore || 0, coins: st.levelCoins, landed: 0 };
+      if (!st.dc) trackMission(saveData, 'levels');
       // Persist the furthest point reached so the home screen's "Continue"
       // picks up here even if the player quits before finishing the next level.
-      saveData.progress = { levelIndex: st.levelIndex + 1 };
+      // (Daily Challenge runs never move the normal progress.)
+      // only ever forward: replaying an earlier stage never pulls the
+      // player's furthest level (and their Continue point) back
+      if (!st.dc) saveData.progress = { levelIndex: Math.max(saveData.progress?.levelIndex || 0, st.levelIndex + 1) };
       persistCoins();
       levelsSinceInterstitial++;
       if (levelsSinceInterstitial >= CONFIG.ads.interstitialEveryNLevels) {
@@ -1822,215 +1993,246 @@ function update(dt) {
 }
 
 // --- The GateWall itself ---------------------------------------
-// A permanent, always-visible barrier of faceted shard segments along the
-// bottom of the screen — one segment per heart of CONFIG.gateHealth. This is
-// what "breaching" in collision.js actually means visually: a segment goes
-// dark and cracked the moment its matching heart is lost, and re-lights the
-// instant a heart is restored (level clear, etc.) since it's derived live
-// from state.lives every frame rather than tracked separately.
-function drawGateWall(ctx, state) {
-  const segs = CONFIG.gateHealth;
-  const y0 = CONFIG.height - 30;
-  const barH = 20;
-  const gap = 4;
-  const segW = (CONFIG.width - gap * (segs + 1)) / segs;
-  const t = performance.now() / 1000;
+// --- Obstacles: rolling hazards, one look per stage ----------------------
+// Each one is a round body that turns as it rolls down (o.roll, see
+// entities/obstacle.js). Its surface details turn with it, while the light
+// stays fixed top-left — a highlight, a dark core edge and a ground shadow
+// make it read as a solid 3D ball, rock, log or gear rather than a flat tile.
+const OB_KIND = {
+  bubbles: 'barrel', snow: 'ice', sand: 'sandstone', crystals: 'geode', embers: 'lava',
+  clouds: 'marble', voidstars: 'orb', rain: 'gear', fireflies: 'puffball', banners: 'granite', spores: 'log',
+};
 
-  for (let i = 0; i < segs; i++) {
-    const cracked = i >= state.lives;
-    const x0 = gap + i * (segW + gap);
-    const cx = x0 + segW / 2;
-    const pulse = cracked ? 0 : 0.55 + 0.25 * Math.sin(t * 2.4 + i);
-
-    ctx.save();
-    if (!cracked) {
-      ctx.shadowColor = '#7fd8ff';
-      ctx.shadowBlur = 14 * pulse;
-    }
-    const grad = ctx.createLinearGradient(0, y0, 0, y0 + barH);
-    if (cracked) {
-      grad.addColorStop(0, '#2a3550');
-      grad.addColorStop(1, '#161c2c');
-    } else {
-      grad.addColorStop(0, '#bdeeff');
-      grad.addColorStop(1, '#5cc8e8');
-    }
-    ctx.fillStyle = grad;
-    // faceted shard-block shape — a little crystal battlement
-    ctx.beginPath();
-    ctx.moveTo(x0 + 4, y0 + barH);
-    ctx.lineTo(x0, y0 + 6);
-    ctx.lineTo(cx, y0);
-    ctx.lineTo(x0 + segW, y0 + 6);
-    ctx.lineTo(x0 + segW - 4, y0 + barH);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = cracked ? '#0d1220' : '#1c3a5c';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    if (cracked) {
-      // crack lines across the dimmed, broken shard
-      ctx.strokeStyle = 'rgba(120,150,190,0.5)';
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      ctx.moveTo(cx - 6, y0 + 3);
-      ctx.lineTo(cx + 2, y0 + 10);
-      ctx.lineTo(cx - 3, y0 + barH - 2);
-      ctx.stroke();
-    } else {
-      // glint on a whole, healthy shard
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.beginPath();
-      ctx.ellipse(cx - segW * 0.18, y0 + 6, 3, 5, -0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+// Lumpy outline points for a rock, fixed per obstacle (seeded).
+function obOutline(o, r, n = 9, lump = 0.16) {
+  if (!o.pts || o.ptsR !== r) {
+    let s = o.seed;
+    const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    o.pts = Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2 + rnd() * 0.3;
+      const rr = r * (1 - lump + rnd() * lump);
+      return [Math.cos(a) * rr, Math.sin(a) * rr];
+    });
+    o.ptsR = r;
   }
-
-  // brief white shatter-flash when a heart was JUST lost
-  if (state.gateFlash > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${state.gateFlash * 1.8})`;
-    ctx.fillRect(0, y0 - 6, CONFIG.width, barH + 12);
+  return o.pts;
+}
+function obPath(pts) {
+  ctx.beginPath();
+  const m = (i) => pts[(i + pts.length) % pts.length];
+  ctx.moveTo((m(-1)[0] + m(0)[0]) / 2, (m(-1)[1] + m(0)[1]) / 2);
+  for (let i = 0; i < pts.length; i++) {
+    const a = m(i), b = m(i + 1);
+    ctx.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
   }
+  ctx.closePath();
+}
+function obGearPath(r, teeth = 9) {
+  ctx.beginPath();
+  for (let i = 0; i < teeth * 2; i++) {
+    const a0 = (i / (teeth * 2)) * Math.PI * 2, a1 = ((i + 1) / (teeth * 2)) * Math.PI * 2;
+    const rr = i % 2 === 0 ? r : r * 0.8;
+    ctx.lineTo(Math.cos(a0) * rr, Math.sin(a0) * rr);
+    ctx.lineTo(Math.cos(a1) * rr, Math.sin(a1) * rr);
+  }
+  ctx.closePath();
+}
+// Fixed top-left light over a body path already set in the rotated frame.
+function obShade(roll, r, hi = 0.4, lo = 0.5) {
+  const la = -roll - Math.PI * 0.75; // light direction in the turning frame
+  const lx = Math.cos(la) * r * 0.45, ly = Math.sin(la) * r * 0.45;
+  const g = ctx.createRadialGradient(lx, ly, r * 0.05, lx * 0.3, ly * 0.3, r * 1.25);
+  g.addColorStop(0, `rgba(255,255,255,${hi})`);
+  g.addColorStop(0.35, 'rgba(255,255,255,0)');
+  g.addColorStop(0.75, 'rgba(0,0,0,0.12)');
+  g.addColorStop(1, `rgba(0,0,0,${lo})`);
+  ctx.fillStyle = g;
+  ctx.fill();
 }
 
-// --- Obstacle ("falling stone") shapes, one per stage decor -------------
-// These used to be one identical purple rounded rect with a rune everywhere.
-// Every stage now gets its own drifting hazard silhouette + color (pulled
-// from that stage's groundPalette so it visually matches the ground/hills
-// it's falling past) instead of the same block regardless of theme.
 function drawObstacle(o, def) {
   const pal = def.groundPalette;
-  const base = pal ? pal.bands[2] : '#4a4066';
+  const base = pal ? pal.bands[2] : '#6a6080';
   const dark = pal ? pal.bands[0] : '#2a1f4d';
   const light = pal ? pal.bands[3] : '#7fd8ff';
-  const x = o.x, y = o.y, w = o.w, h = o.h;
-  ctx.fillStyle = base;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = 3;
+  const kind = OB_KIND[def.decor] || 'granite';
+  const r = Math.min(o.w, o.h) / 2;
+  const t = state ? state.levelTime : performance.now() / 1000;
+  // lumpy bodies bob a little as they tumble over their corners
+  const bob = (kind === 'gear' || kind === 'orb' || kind === 'log' || kind === 'marble') ? 0 : Math.abs(Math.sin(o.roll * 2)) * r * 0.07;
+  const x = o.x, y = o.y - bob;
 
-  switch (def.decor) {
-    case 'bubbles': { // Sea War — a real barrel or crate (Kenney "Pirate
-      // Kit" art, not a drawn shape), as if it had been thrown/lost
-      // overboard from one of the passing ships — o.spriteChoice is set
-      // once at spawn time (see spawner.js) so it doesn't flicker between
-      // the two every frame.
-      const img = KENNEY_PIRATE[o.spriteChoice || 'barrel'];
-      if (img) {
-        const dw = w, dh = dw * (img.height / img.width);
-        ctx.drawImage(img, x - dw / 2, y - dh / 2, dw, dh);
-      } else {
-        ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 6); ctx.fill(); ctx.stroke();
-      }
-      break;
-    }
-    case 'snow': { // Glacial Peak — a BIG chunky ice block: a hexagonal
-      // facet body (now drawn near-square per its larger spawner size) with
-      // several bright crack/facet highlights so it reads as a real hunk of
-      // ice, not a small pebble.
-      ctx.beginPath();
-      ctx.moveTo(x - w * 0.28, y - h / 2); ctx.lineTo(x + w * 0.28, y - h / 2);
-      ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w * 0.28, y + h / 2);
-      ctx.lineTo(x - w * 0.28, y + h / 2); ctx.lineTo(x - w / 2, y);
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = light;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(x - w * 0.18, y - h * 0.32); ctx.lineTo(x + w * 0.05, y + h * 0.15); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x + w * 0.02, y - h * 0.28); ctx.lineTo(x + w * 0.24, y + h * 0.05); ctx.stroke();
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = light;
-      ctx.beginPath(); ctx.moveTo(x - w * 0.28, y - h / 2); ctx.lineTo(x + w * 0.1, y - h / 2); ctx.lineTo(x - w * 0.1, y - h * 0.1); ctx.lineTo(x - w * 0.4, y - h * 0.15); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 1;
-      break;
-    }
-    case 'sand': { // cracked sandstone block
-      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 6); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = dark; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(x - w * 0.2, y - h * 0.4); ctx.lineTo(x - w * 0.05, y); ctx.lineTo(x + w * 0.15, y + h * 0.35); ctx.stroke();
-      break;
-    }
-    case 'crystals': { // faceted crystal shard (used by Crystallized Forest / Abyssal Forest)
-      ctx.beginPath();
-      ctx.moveTo(x, y - h / 2); ctx.lineTo(x + w * 0.32, y - h * 0.05);
-      ctx.lineTo(x + w * 0.2, y + h / 2); ctx.lineTo(x - w * 0.2, y + h / 2);
-      ctx.lineTo(x - w * 0.32, y - h * 0.05); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = light; ctx.globalAlpha = 0.5;
-      ctx.beginPath(); ctx.moveTo(x, y - h / 2); ctx.lineTo(x + w * 0.1, y); ctx.lineTo(x, y + h * 0.3); ctx.lineTo(x - w * 0.1, y); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 1;
-      break;
-    }
-    case 'embers': { // jagged obsidian rock with a glowing crack
-      ctx.beginPath();
-      ctx.moveTo(x - w / 2, y + h * 0.3); ctx.lineTo(x - w * 0.3, y - h / 2);
-      ctx.lineTo(x + w * 0.1, y - h * 0.3); ctx.lineTo(x + w / 2, y - h * 0.4);
-      ctx.lineTo(x + w * 0.35, y + h / 2); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = light; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x - w * 0.1, y - h * 0.3); ctx.lineTo(x + w * 0.05, y + h * 0.2); ctx.stroke();
-      break;
-    }
-    case 'clouds': { // broken gilded marble/column fragment
-      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = light; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x - w / 2 + 6, y); ctx.lineTo(x + w / 2 - 6, y); ctx.stroke();
-      break;
-    }
-    case 'voidstars': { // elongated floating aether shard
-      ctx.beginPath();
-      ctx.moveTo(x, y - h * 0.6); ctx.lineTo(x + w * 0.22, y);
-      ctx.lineTo(x, y + h * 0.6); ctx.lineTo(x - w * 0.22, y);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = light;
-      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'rain': { // brass gear/cog chunk — Clockwork City
-      const r = Math.min(w, h) / 2;
-      ctx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        const rr = i % 2 === 0 ? r : r * 0.72;
-        const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = dark;
-      ctx.beginPath(); ctx.arc(x, y, r * 0.32, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'fireflies': { // mushroom-capped log — Spectral Jungle
-      ctx.beginPath(); ctx.roundRect(x - w * 0.35, y - h * 0.2, w * 0.7, h * 0.4, 6); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = light;
-      ctx.beginPath(); ctx.ellipse(x, y - h * 0.32, w * 0.28, h * 0.22, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'banners': { // grey granite boulder — Crown of the Mountain King
-      ctx.beginPath();
-      ctx.moveTo(x - w / 2, y + h * 0.2); ctx.lineTo(x - w * 0.25, y - h / 2);
-      ctx.lineTo(x + w * 0.25, y - h * 0.45); ctx.lineTo(x + w / 2, y + h * 0.15);
-      ctx.lineTo(x + w * 0.1, y + h / 2); ctx.lineTo(x - w * 0.2, y + h * 0.45);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'spores': { // moss-wrapped log — The Deepwood
-      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h * 0.32, w, h * 0.64, h * 0.3); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = light; ctx.lineWidth = 2;
-      for (const fx of [-0.28, 0, 0.28]) {
-        ctx.beginPath(); ctx.moveTo(x + fx * w, y - h * 0.3); ctx.lineTo(x + fx * w, y + h * 0.3); ctx.stroke();
-      }
-      break;
-    }
-    default: // fallback — the original stone-rune block
-      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 8); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = light;
-      ctx.font = 'bold 14px "Fredoka", Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('ᚱ', x, y + 5);
+  // ground shadow (doesn't turn)
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(o.x + r * 0.18, o.y + r * 0.86, r * 0.92, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+
+  // glowing kinds get a soft halo first
+  const halo = kind === 'lava' ? '#ff7a2a' : kind === 'orb' ? light : kind === 'puffball' ? '#b48aff' : null;
+  if (halo) {
+    const hg = ctx.createRadialGradient(x, y, r * 0.6, x, y, r * 1.6);
+    hg.addColorStop(0, halo + '55'); hg.addColorStop(1, halo + '00');
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(x, y, r * 1.6, 0, Math.PI * 2); ctx.fill();
   }
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(o.roll);
+  ctx.lineJoin = 'round';
+
+  switch (kind) {
+    case 'barrel': { // Kenney barrel/crate, now rolling
+      const img = KENNEY_PIRATE[o.spriteChoice || 'barrel'];
+      if (img) { const dw = r * 2, dh = dw * (img.height / img.width); ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh); }
+      else { ctx.fillStyle = '#8a5a2a'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); }
+      break;
+    }
+    case 'gear': { // brass cog: a darker back face shows its thickness
+      ctx.save(); ctx.translate(r * 0.1, r * 0.14);
+      obGearPath(r); ctx.fillStyle = '#5a3a14'; ctx.fill();
+      ctx.restore();
+      obGearPath(r);
+      ctx.fillStyle = '#c8902e'; ctx.fill();
+      obShade(o.roll, r, 0.5, 0.45);
+      ctx.strokeStyle = '#4a2e0c'; ctx.lineWidth = 2.5; obGearPath(r); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,230,160,0.6)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.58, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 4; i++) { // spokes
+        const a = i * Math.PI / 2;
+        ctx.strokeStyle = '#7a5218'; ctx.lineWidth = r * 0.14;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.25, Math.sin(a) * r * 0.25); ctx.lineTo(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55); ctx.stroke();
+      }
+      ctx.fillStyle = '#3a240a'; ctx.beginPath(); ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.arc(0, 0, r * 0.1, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'log': { // mossy log rolling end-on: bark rim, growth rings, moss
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#4a321c'; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.82, 0, Math.PI * 2);
+      ctx.fillStyle = '#c89a62'; ctx.fill();
+      ctx.strokeStyle = 'rgba(110,70,30,0.6)'; ctx.lineWidth = 1.5;
+      for (const k of [0.62, 0.42, 0.22]) { ctx.beginPath(); ctx.arc(r * 0.04, -r * 0.03, r * k, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(90,50,20,0.7)'; ctx.lineWidth = 1.5; // drying crack
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r * 0.5, r * 0.2); ctx.lineTo(r * 0.78, r * 0.1); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      obShade(o.roll, r, 0.25, 0.5);
+      ctx.fillStyle = '#5ca048'; // moss clumps on the bark
+      for (const a of [0.4, 2.1, 4.2]) { ctx.beginPath(); ctx.arc(Math.cos(a) * r * 0.92, Math.sin(a) * r * 0.92, r * 0.2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.strokeStyle = '#26180c'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'marble': { // gilded marble column drum: gold rim, veins, rosette
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#d8a83a'; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#f2ead8'; ctx.fill();
+      ctx.strokeStyle = 'rgba(150,130,110,0.55)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-r * 0.6, -r * 0.2); ctx.quadraticCurveTo(-r * 0.1, r * 0.1, r * 0.3, -r * 0.4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-r * 0.3, r * 0.5); ctx.quadraticCurveTo(r * 0.2, r * 0.2, r * 0.6, r * 0.35); ctx.stroke();
+      ctx.fillStyle = '#d8a83a';
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; ctx.beginPath(); ctx.ellipse(Math.cos(a) * r * 0.2, Math.sin(a) * r * 0.2, r * 0.13, r * 0.06, a, 0, Math.PI * 2); ctx.fill(); }
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      obShade(o.roll, r, 0.45, 0.4);
+      ctx.strokeStyle = '#6a4a10'; ctx.lineWidth = 2.5; ctx.stroke();
+      break;
+    }
+    case 'orb': { // aether orb: deep night inside with turning stars
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      const og = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+      og.addColorStop(0, '#5a6ad8'); og.addColorStop(1, '#141238');
+      ctx.fillStyle = og; ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 7; i++) {
+        const a = i * 2.4 + o.seed, d = r * (0.2 + (i % 4) * 0.18);
+        const tw = 0.6 + 0.4 * Math.sin(t * 4 + i);
+        ctx.globalAlpha = tw;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 1.3 + (i % 2), 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(182,200,255,0.5)'; ctx.lineWidth = 1.5; // a mist ribbon around it
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 0.95, r * 0.35, 0.4, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      obShade(o.roll, r, 0.55, 0.35);
+      ctx.strokeStyle = '#b6c8ff'; ctx.lineWidth = 2; ctx.stroke();
+      break;
+    }
+    case 'puffball': { // glowing purple mushroom puffball with teal spots
+      const pts = obOutline(o, r, 10, 0.08);
+      obPath(pts); ctx.fillStyle = '#7a4ab8'; ctx.fill();
+      for (let i = 0; i < 6; i++) {
+        const a = i * 1.05 + o.seed, d = r * (0.3 + (i % 3) * 0.2);
+        ctx.fillStyle = `rgba(110,240,230,${0.6 + 0.3 * Math.sin(t * 3 + i)})`;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * d, Math.sin(a) * d, r * (0.1 + (i % 2) * 0.05), 0, Math.PI * 2); ctx.fill();
+      }
+      obPath(pts); obShade(o.roll, r, 0.4, 0.5);
+      ctx.strokeStyle = '#2a1048'; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
+      break;
+    }
+    case 'ice': { // clear ice boulder: facets inside, frosty rim
+      const pts = obOutline(o, r, 7, 0.12);
+      obPath(pts); ctx.fillStyle = 'rgba(150,215,245,0.92)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(pts[0][0] * 0.3, pts[0][1] * 0.3);
+      for (const k of [2, 4, 6]) { ctx.lineTo(pts[k][0] * 0.95, pts[k][1] * 0.95); ctx.moveTo(pts[0][0] * 0.3, pts[0][1] * 0.3); }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(40,110,160,0.35)';
+      ctx.beginPath(); ctx.moveTo(pts[3][0] * 0.9, pts[3][1] * 0.9); ctx.lineTo(pts[4][0] * 0.9, pts[4][1] * 0.9); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+      obPath(pts); obShade(o.roll, r, 0.6, 0.35);
+      ctx.strokeStyle = '#1c3a4a'; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
+      break;
+    }
+    case 'geode': { // mossy rock with crystals breaking out of it
+      const pts = obOutline(o, r * 0.86, 9, 0.14);
+      const cols = ['#b48aff', '#5ce0c0', '#ffc86a'];
+      for (let i = 0; i < 3; i++) { // shards stick out past the rock
+        const a = i * 2.1 + o.seed, len = r * (1.05 + (i % 2) * 0.12);
+        ctx.save(); ctx.rotate(a);
+        ctx.fillStyle = cols[i]; ctx.strokeStyle = '#0e3327'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-r * 0.14, 0); ctx.lineTo(-r * 0.1, -len * 0.8); ctx.lineTo(0, -len); ctx.lineTo(r * 0.1, -len * 0.8); ctx.lineTo(r * 0.14, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.beginPath(); ctx.moveTo(-r * 0.05, -len * 0.2); ctx.lineTo(-r * 0.04, -len * 0.75); ctx.lineTo(0, -len * 0.9); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      obPath(pts); ctx.fillStyle = base; ctx.fill();
+      ctx.fillStyle = '#3a8a5a';
+      ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.2, r * 0.25, 0, Math.PI * 2); ctx.fill();
+      obPath(pts); obShade(o.roll, r, 0.35, 0.55);
+      ctx.strokeStyle = dark; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
+      break;
+    }
+    default: { // rocks: sandstone, lava rock, granite
+      const pts = obOutline(o, r, kind === 'lava' ? 8 : 9, kind === 'granite' ? 0.2 : 0.15);
+      const fill = kind === 'lava' ? '#2a1a1c' : kind === 'sandstone' ? '#c8964e' : '#8a8a96';
+      obPath(pts); ctx.fillStyle = fill; ctx.fill();
+      if (kind === 'sandstone') { // sediment bands
+        ctx.save(); obPath(pts); ctx.clip();
+        ctx.strokeStyle = 'rgba(120,70,30,0.35)'; ctx.lineWidth = r * 0.12;
+        for (const k of [-0.45, 0, 0.45]) { ctx.beginPath(); ctx.moveTo(-r, k * r); ctx.quadraticCurveTo(0, k * r + r * 0.15, r, k * r); ctx.stroke(); }
+        ctx.restore();
+      } else if (kind === 'lava') { // glowing cracks
+        const pulse = 0.65 + 0.35 * Math.sin(t * 5 + o.seed);
+        ctx.strokeStyle = `rgba(255,${140 + 60 * pulse | 0},40,${pulse})`; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(-r * 0.6, -r * 0.3); ctx.lineTo(-r * 0.1, -r * 0.05); ctx.lineTo(r * 0.15, r * 0.45); ctx.moveTo(-r * 0.1, -r * 0.05); ctx.lineTo(r * 0.55, -r * 0.25); ctx.stroke();
+      } else { // granite flecks + a crack
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        for (let i = 0; i < 6; i++) { const a = i * 1.7 + o.seed; ctx.fillRect(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, 2, 2); }
+        ctx.strokeStyle = 'rgba(40,40,48,0.6)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(-r * 0.2, -r * 0.7); ctx.lineTo(0, -r * 0.1); ctx.lineTo(-r * 0.15, r * 0.4); ctx.stroke();
+      }
+      obPath(pts); obShade(o.roll, r, kind === 'lava' ? 0.2 : 0.42, 0.55);
+      ctx.strokeStyle = kind === 'lava' ? '#120606' : dark; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // a glint that stays put on the lit side (sells the round 3D shape)
+  if (kind !== 'barrel' && kind !== 'lava') {
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath(); ctx.ellipse(x - r * 0.38, y - r * 0.42, r * 0.16, r * 0.08, -0.6, 0, Math.PI * 2); ctx.fill();
+  }
+  if (kind === 'lava' && Math.random() < 0.08) particles.sparkle(x + (Math.random() - 0.5) * r, y - r * 0.5, '#ff8a3d', 1); // embers
 }
 
 // --- Render ------------------------------------------------------
@@ -2050,6 +2252,7 @@ function drawMonster(m) {
     ? BAT_FRAMES[Math.floor(m.anim * 1.2 + m.seed) % BAT_FRAME_COUNT]
     : null;
   drawCreature(ctx, m, tint, state ? state.levelTime : performance.now() / 1000, look, batImg);
+  if (m.bzMini) bzDrawCrown(ctx, m, state ? state.levelTime : 0);
   // Blood-line: every enemy that takes more than one hit shows it, always
   // visible (not just after first damage) so toughness reads at a glance in
   // later stages. Low hp counts use tiny pips (matches the wizard/ward
@@ -2078,6 +2281,23 @@ function drawMonster(m) {
   }
 }
 
+// White silhouette of a ship sprite for its hit flash, made once per image.
+const shipMasks = new Map();
+function shipFlashMask(img) {
+  let c = shipMasks.get(img);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    shipMasks.set(img, c);
+  }
+  return c;
+}
+
 // Sea War ship — the real Kenney "Pirate Kit" ship render (not a drawn
 // shape), flipped to face its direction of travel, with a wake trail and the
 // same hit-flash + hp-bar treatment as drawMonster.
@@ -2104,11 +2324,13 @@ function drawShip(s) {
   if (s.dir > 0) ctx.scale(-1, 1);
   if (img) {
     const dw = r * 2.3, dh = dw; // sprite is ~square with transparent padding
-    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    // a hit jolts the hull and flashes only the ship's own shape (never
+    // the sprite's square box)
+    const jolt = s.hitFlash > 0 ? Math.sin(s.hitFlash * 90) * 2 : 0;
+    ctx.drawImage(img, -dw / 2 + jolt, -dh / 2, dw, dh);
     if (s.hitFlash > 0) {
-      ctx.globalAlpha = s.hitFlash * 5;
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(-dw / 2, -dh / 2, dw, dh);
+      ctx.globalAlpha = Math.min(0.8, s.hitFlash * 8);
+      ctx.drawImage(shipFlashMask(img), -dw / 2 + jolt, -dh / 2, dw, dh);
       ctx.globalAlpha = 1;
     }
   } else {
@@ -2132,35 +2354,224 @@ function drawShip(s) {
   }
 }
 
+// Clockwork City airship — drawn procedurally (no sprite): a ribbed brass/
+// copper envelope with tail fins, a gondola with glowing windows, a spinning
+// propeller and steam puffs. Local space faces +x; mirrored by travel dir.
+// The hit flash re-fills the same silhouette in white (never a box).
+function airshipSilhouette(r) {
+  const cy = -r * 0.18;
+  ctx.beginPath(); ctx.ellipse(0, cy, r, r * 0.46, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); // top fin
+  ctx.moveTo(-r * 0.6, -r * 0.5); ctx.lineTo(-r * 1.1, -r * 0.94); ctx.lineTo(-r * 1.2, -r * 0.62); ctx.lineTo(-r * 0.9, -r * 0.36);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); // bottom fin
+  ctx.moveTo(-r * 0.6, r * 0.14); ctx.lineTo(-r * 1.1, r * 0.58); ctx.lineTo(-r * 1.2, r * 0.26); ctx.lineTo(-r * 0.9, 0);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-r * 0.44, r * 0.3, r * 0.86, r * 0.32, 5); ctx.fill(); // gondola
+}
+
+function drawAirship(s) {
+  const r = s.r;
+  const t = performance.now() / 1000 + s.bobPhase;
+  const cy = -r * 0.18, ry = r * 0.46;
+  const OUT = '#3a2210';
+  ctx.save();
+  ctx.translate(s.x + (s.hitFlash > 0 ? Math.sin(s.hitFlash * 90) * 2 : 0), s.y);
+  if (s.dir < 0) ctx.scale(-1, 1);
+  ctx.rotate(Math.sin(s.bobPhase * 0.9) * 0.04); // gentle nose pitch with the bob
+  ctx.lineJoin = 'round';
+
+  // steam puffs drifting back from the gondola's exhaust
+  for (let k = 0; k < 3; k++) {
+    const p = (t * 0.8 + k / 3) % 1;
+    ctx.globalAlpha = 0.55 * (1 - p);
+    ctx.fillStyle = '#efe8dc';
+    ctx.beginPath();
+    ctx.arc(-r * 0.62 - p * r * 0.9, r * 0.42 - p * r * 0.55, r * (0.08 + p * 0.16), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // damaged: dark smoke curling off the envelope
+  if (s.hp / s.maxHp < 0.5) {
+    for (let k = 0; k < 2; k++) {
+      const p = (t * 0.6 + k / 2) % 1;
+      ctx.globalAlpha = 0.5 * (1 - p);
+      ctx.fillStyle = '#3c3632';
+      ctx.beginPath();
+      ctx.arc(r * 0.1 - p * r * 0.7, cy - ry - p * r * 0.6, r * (0.1 + p * 0.15), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // fins (behind the envelope)
+  ctx.fillStyle = '#8c4f26';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.6, -r * 0.5); ctx.lineTo(-r * 1.1, -r * 0.94); ctx.lineTo(-r * 1.2, -r * 0.62); ctx.lineTo(-r * 0.9, -r * 0.36);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.6, r * 0.14); ctx.lineTo(-r * 1.1, r * 0.58); ctx.lineTo(-r * 1.2, r * 0.26); ctx.lineTo(-r * 0.9, 0);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  // gondola struts + gondola
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.28, r * 0.2); ctx.lineTo(-r * 0.32, r * 0.32);
+  ctx.moveTo(r * 0.26, r * 0.2); ctx.lineTo(r * 0.3, r * 0.32);
+  ctx.stroke();
+  const gg = ctx.createLinearGradient(0, r * 0.3, 0, r * 0.62);
+  gg.addColorStop(0, '#9a5a2c'); gg.addColorStop(1, '#5a3218');
+  ctx.fillStyle = gg;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(-r * 0.44, r * 0.3, r * 0.86, r * 0.32, 5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#d9a352'; // brass trim band
+  ctx.fillRect(-r * 0.42, r * 0.33, r * 0.82, r * 0.05);
+  // glowing windows (soft pulsing halo, then the pane)
+  const glow = 0.35 + 0.2 * Math.sin(t * 3);
+  for (const wx of [-r * 0.14, r * 0.16]) {
+    ctx.fillStyle = `rgba(255,200,90,${glow})`;
+    ctx.beginPath(); ctx.arc(wx, r * 0.48, r * 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffe08a';
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(wx, r * 0.48, r * 0.08, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+
+  // propeller at the gondola's tail — blades foreshorten as they spin
+  const px = -r * 0.52, py = r * 0.46;
+  ctx.fillStyle = 'rgba(230,220,200,0.18)';
+  ctx.beginPath(); ctx.ellipse(px, py, r * 0.05, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  const bl = r * 0.27 * Math.cos(t * 26);
+  ctx.fillStyle = '#c9c2b4';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.ellipse(px, py - bl / 2, r * 0.05, Math.abs(bl / 2) + 0.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(px, py + bl / 2, r * 0.05, Math.abs(bl / 2) + 0.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#d9a352';
+  ctx.beginPath(); ctx.arc(px + r * 0.04, py, r * 0.06, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  // envelope — brass/copper gradient, ribs, seam, nose cap, highlight
+  const eg = ctx.createLinearGradient(0, cy - ry, 0, cy + ry);
+  eg.addColorStop(0, '#f2c27a'); eg.addColorStop(0.45, '#c9813f'); eg.addColorStop(1, '#7a4420');
+  ctx.fillStyle = eg;
+  ctx.beginPath(); ctx.ellipse(0, cy, r, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(70,36,14,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = -3; i <= 3; i++) {
+    const x = i * r * 0.26;
+    ctx.moveTo(x, cy - ry); ctx.quadraticCurveTo(x + x * 0.3, cy, x, cy + ry);
+  }
+  ctx.moveTo(-r, cy + ry * 0.15); ctx.lineTo(r, cy + ry * 0.15);
+  ctx.stroke();
+  ctx.fillStyle = '#e0aa58'; // brass nose cap
+  ctx.fillRect(r * 0.8, cy - ry, r * 0.3, ry * 2);
+  ctx.fillStyle = '#ffd890'; // rivets on the seam
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * r * 0.26 + r * 0.13, cy + ry * 0.15, 1.3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = 'rgba(255,245,215,0.35)'; // top sheen
+  ctx.beginPath(); ctx.ellipse(r * 0.1, cy - ry * 0.55, r * 0.62, ry * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.ellipse(0, cy, r, ry, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r * 0.8, cy - ry * 0.6); ctx.lineTo(r * 0.8, cy + ry * 0.6); ctx.stroke();
+
+  // hit flash — the same silhouette in white
+  if (s.hitFlash > 0) {
+    ctx.globalAlpha = Math.min(0.85, s.hitFlash * 8);
+    ctx.fillStyle = '#fff';
+    airshipSilhouette(r);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  if (s.maxHp > 1) {
+    const py2 = s.y - r - 8;
+    const w = r * 1.5;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(s.x - w / 2, py2 - 2, w, 5);
+    ctx.fillStyle = '#ff5d7a';
+    ctx.fillRect(s.x - w / 2, py2 - 2, w * (s.hp / s.maxHp), 5);
+  }
+}
+
+// Airship wreck — sparks, smoke and loose gears tumbling down when one is
+// shot down (airships burst in the sky; only sea ships belong to the water).
+const airshipDebris = [];
+function airshipBurst(m) {
+  particles.sparkle(m.x, m.y, '#ffd27a', 14);
+  particles.sparkle(m.x, m.y, '#ff9a3a', 8);
+  particles.poof(m.x, m.y, 'rgba(120,108,98,0.7)');
+  particles.ring(m.x, m.y, '#ffc86a', m.r * 2.2, 0.35, 4);
+  particles.addShake(4);
+  const cols = ['#d9a352', '#b0703a', '#8a8f96'];
+  for (let i = 0; i < 7 && airshipDebris.length < 80; i++) {
+    airshipDebris.push({
+      x: m.x + (Math.random() - 0.5) * m.r, y: m.y, vx: (Math.random() - 0.5) * 220, vy: -60 - Math.random() * 160,
+      rot: Math.random() * 6, vr: (Math.random() - 0.5) * 10, s: 4 + Math.random() * 6,
+      t: 0, life: 1.1 + Math.random() * 0.6, color: cols[i % 3],
+    });
+  }
+  for (let i = 0; i < 5 && airshipDebris.length < 80; i++) {
+    airshipDebris.push({
+      smoke: true, x: m.x + (Math.random() - 0.5) * m.r * 1.4, y: m.y + (Math.random() - 0.5) * m.r * 0.6,
+      vx: (Math.random() - 0.5) * 40, vy: -15 - Math.random() * 25, s: 8 + Math.random() * 6, t: 0, life: 1.0 + Math.random() * 0.5,
+    });
+  }
+}
+function updateAirshipDebris(dt) {
+  for (const d of airshipDebris) {
+    d.t += dt;
+    d.x += d.vx * dt; d.y += d.vy * dt;
+    if (d.smoke) d.s += 14 * dt;
+    else { d.vy += 420 * dt; d.rot += d.vr * dt; }
+  }
+  for (let i = airshipDebris.length - 1; i >= 0; i--) if (airshipDebris[i].t >= airshipDebris[i].life) airshipDebris.splice(i, 1);
+}
+function drawAirshipDebris() {
+  for (const d of airshipDebris) {
+    const k = d.t / d.life;
+    ctx.save();
+    if (d.smoke) {
+      ctx.globalAlpha = 0.5 * (1 - k);
+      ctx.fillStyle = '#4a423c';
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.s, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1;
+      ctx.translate(d.x, d.y); ctx.rotate(d.rot);
+      ctx.fillStyle = d.color;
+      ctx.strokeStyle = '#2a1a0c';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let j = 0; j < 32; j++) {
+        const a = (j / 32) * Math.PI * 2, rr = j % 4 < 2 ? d.s : d.s * 0.74;
+        if (j === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#2a1a0c';
+      ctx.beginPath(); ctx.arc(0, 0, d.s * 0.28, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 // Player-placed Wall — a squat stone-brick barrier with a hit-flash overlay
 // and a thin hp bar, same treatment as monsters/ships.
+// Player-placed Stone Wall — the same art as its Armory portrait
+// (render/units.js), stretched to the wall's real size; cracks as it wears.
 function drawWall(w) {
   ctx.save();
-  ctx.fillStyle = '#8a6a4a';
-  ctx.strokeStyle = '#4a3420';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.roundRect(w.x - w.w / 2, w.y - w.h / 2, w.w, w.h, 5);
-  ctx.fill(); ctx.stroke();
-  // brick seams
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 1.5;
-  const rows = 2, cols = 4;
-  for (let r = 1; r < rows; r++) {
-    const ly = w.y - w.h / 2 + (w.h / rows) * r;
-    ctx.beginPath(); ctx.moveTo(w.x - w.w / 2, ly); ctx.lineTo(w.x + w.w / 2, ly); ctx.stroke();
-  }
-  for (let c = 1; c < cols; c++) {
-    const lx = w.x - w.w / 2 + (w.w / cols) * c;
-    ctx.beginPath(); ctx.moveTo(lx, w.y - w.h / 2); ctx.lineTo(lx, w.y + w.h / 2); ctx.stroke();
-  }
+  drawStoneWall(ctx, w.x, w.y, w.w, w.h, performance.now() / 1000, 1 - w.hp / (w.maxHp || 1));
   if (w.hitFlash > 0) {
-    ctx.globalAlpha = w.hitFlash * 5;
+    ctx.globalAlpha = Math.min(1, w.hitFlash * 5);
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.roundRect(w.x - w.w / 2, w.y - w.h / 2, w.w, w.h, 5);
     ctx.fill();
-    ctx.globalAlpha = 1;
   }
   ctx.restore();
 
@@ -2174,71 +2585,27 @@ function drawWall(w) {
   }
 }
 
-// Player-placed Turret ("Gun") — real cannon art (user-supplied, own
-// generation) cycling through 4 frames keyed on its own fire timer: idle,
-// a bright glow just before it fires (anticipation), a muzzle-blast frame
-// right on the shot, and drifting smoke as it cools down — instead of the
-// old plain drawn grey disc + barrel.
+// Player-placed Gun — drawn by render/gun.js: it swivels toward its target,
+// its core glows as the next shot charges, barrels recoil and flash.
 function drawTurret(t) {
-  ctx.save();
-  ctx.translate(t.x, t.y);
-
-  const img = t.barrelRecoil > 0.7 ? CANNON_FRAMES.fire
-    : t.barrelRecoil > 0.25 ? CANNON_FRAMES.smoke
-    : t.shootTimer !== undefined && t.shootTimer < 0.3 ? CANNON_FRAMES.glow
-    : CANNON_FRAMES.idle;
-
-  if (img) {
-    const dh = t.r * 3.6, dw = dh * (img.width / img.height);
-    // small recoil kick, same feel as the old vector barrel
-    const kick = t.barrelRecoil * 3;
-    ctx.drawImage(img, -dw / 2, -dh + t.r * 1.1 + kick, dw, dh);
-    if (t.hitFlash > 0) {
-      ctx.globalAlpha = t.hitFlash * 5;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(0, 0, t.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  } else {
-    // Fallback (art not yet loaded) — old drawn look.
-    ctx.fillStyle = '#6a6f7a';
-    ctx.strokeStyle = '#2e3138';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, t.r, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-    const kick = t.barrelRecoil * 4;
-    ctx.fillStyle = '#ffd88a';
-    ctx.strokeStyle = '#8a6a1a';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(-t.r * 0.28, -t.r * 1.5 + kick, t.r * 0.56, t.r * 1.15, 3);
-    ctx.fill(); ctx.stroke();
-    if (t.hitFlash > 0) {
-      ctx.globalAlpha = t.hitFlash * 5;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(0, 0, t.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
-  ctx.restore();
+  drawGun(ctx, t.x, t.y, t.r * 1.2, { // drawn a bit larger than its hit circle
+    aim: t.aim || 0, charge: t.fireInterval ? t.charge : 0.5,
+    recoil: t.recoil, tier: t.tier || 0, hitFlash: t.hitFlash,
+  });
 
   if (t.maxHp > 1) {
-    const py = t.y - t.r - 10;
+    const py = t.y + t.r * 1.45; // under the plinth — the barrels swing above
     const bw = t.r * 1.8;
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(t.x - bw / 2, py - 2, bw, 5);
-    ctx.fillStyle = '#ffd88a';
-    ctx.fillRect(t.x - bw / 2, py - 2, bw * (t.hp / t.maxHp), 5);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.roundRect(t.x - bw / 2 - 1, py - 1, bw + 2, 6, 3); ctx.fill();
+    ctx.fillStyle = t.hp / t.maxHp > 0.35 ? '#ffd88a' : '#ff6b5a';
+    ctx.beginPath(); ctx.roundRect(t.x - bw / 2, py, bw * Math.max(0, t.hp / t.maxHp), 4, 2); ctx.fill();
   }
 }
 
 function drawSpell(s) {
   const ang = Math.atan2(s.vx, -s.vy);
+  const r = s.r * 0.7; // drawn smaller than the hit radius
   let col, core = '#ffffff';
   if (s.kind === 'fever') col = `hsl(${(s.hue + s.age * 600) % 360},100%,62%)`;
   else if (s.kind === 'seeker') col = '#ff9a3d';
@@ -2248,18 +2615,19 @@ function drawSpell(s) {
   ctx.translate(s.x, s.y);
   ctx.rotate(ang);
   // trail
-  const len = s.kind === 'seeker' ? 20 : 26;
-  const grad = ctx.createLinearGradient(0, 0, 0, len);
-  grad.addColorStop(0, col);
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.globalAlpha = 0.6;
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = s.r * 0.9;
+  const len = s.kind === 'seeker' ? 18 : 20;
+  // two-step tapered trail (no per-bolt gradient objects)
+  ctx.strokeStyle = col;
   ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(0, len); ctx.lineTo(0, 0); ctx.stroke();
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = r * 0.9;
+  ctx.beginPath(); ctx.moveTo(0, len * 0.5); ctx.lineTo(0, 0); ctx.stroke();
+  ctx.globalAlpha = 0.22;
+  ctx.lineWidth = r * 0.6;
+  ctx.beginPath(); ctx.moveTo(0, len); ctx.lineTo(0, len * 0.5); ctx.stroke();
   ctx.globalAlpha = 1;
   ctx.restore();
-  drawGlow(ctx, s.x, s.y, s.r * 1.7, s.kind === 'fever' ? '#ff7ad9' : col, 0.45);
+  drawGlow(ctx, s.x, s.y, r * 1.7, s.kind === 'fever' ? '#ff7ad9' : col, 0.45);
   ctx.save();
   ctx.translate(s.x, s.y);
   ctx.rotate(ang);
@@ -2268,12 +2636,12 @@ function drawSpell(s) {
   if (s.kind === 'seeker') {
     ctx.roundRect(-3, -8, 6, 14, 3);
   } else {
-    ctx.moveTo(0, -s.r * 1.3); ctx.lineTo(s.r * 0.45, 0); ctx.lineTo(0, s.r * 0.9); ctx.lineTo(-s.r * 0.45, 0);
+    ctx.moveTo(0, -r * 1.3); ctx.lineTo(r * 0.45, 0); ctx.lineTo(0, r * 0.9); ctx.lineTo(-r * 0.45, 0);
     ctx.closePath();
   }
   ctx.fill();
   ctx.fillStyle = core;
-  ctx.beginPath(); ctx.ellipse(0, -s.r * 0.15, s.r * 0.18, s.r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, -r * 0.15, r * 0.18, r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
   if (s.kind === 'seeker' && Math.random() < 0.5) particles.dust(s.x, s.y, 'rgba(255,200,150,0.5)');
 }
@@ -2299,15 +2667,204 @@ function drawBossBar(st) {
   ctx.textAlign = 'center';
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#1a0d30';
-  const label = boss.enraged ? 'BRUNCLE — ENRAGED!' : 'BRUNCLE, THE GATE-BREAKER';
+  const bossName = bzBossName(boss);
+  const label = boss.enraged ? tr('g.bossEnraged', { name: bossName.split(/[,،]/)[0] }) : bossName;
   ctx.strokeText(label, CONFIG.width / 2, y - 6);
   ctx.fillStyle = boss.enraged ? '#ff8a8a' : '#ffd23d';
   ctx.fillText(label, CONFIG.width / 2, y - 6);
   ctx.restore();
 }
 
+// Arrival rifts: a soft glowing tear at the top of the lane where the next
+// enemies are about to come through (systems/spawner.js), and a brief glow
+// along the top edge when a new wave begins.
+function drawRifts(st) {
+  const sp = st.spawner, col = st.levelDef.monsterTint?.glow || '#ffffff', y = sp.constructor.RIFT_Y;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const since = sp.clock - sp.waveStartT;
+  if (sp.waveIdx > 0 && since >= 0 && since < 1.2) {
+    const band = ctx.createLinearGradient(0, 60, 0, 150);
+    band.addColorStop(0, col + '00'); band.addColorStop(0.4, col + '55'); band.addColorStop(1, col + '00');
+    ctx.globalAlpha = 1 - since / 1.2;
+    ctx.fillStyle = band;
+    ctx.fillRect(0, 60, CONFIG.width, 90);
+  }
+  for (const p of sp.portals) {
+    const open = Math.min(1, p.t / 0.25), close = Math.min(1, (p.life - p.t) / 0.3), a = open * close;
+    if (a <= 0) continue;
+    const hw = p.w / 2 * open;
+    ctx.globalAlpha = a;
+    const glow = ctx.createRadialGradient(p.x, y, 0, p.x, y, p.w * 1.1);
+    glow.addColorStop(0, col + '88'); glow.addColorStop(1, col + '00');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.ellipse(p.x, y, p.w * 1.1, p.w * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+    // dark void with an outlined, glowing rim — reads on bright stages too
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(24,10,44,0.8)';
+    ctx.beginPath(); ctx.ellipse(p.x, y, hw, 6 * open, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(10,4,24,0.55)'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(p.x, y, hw, 6 * open, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(p.x, y, hw, 6 * open, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = col; // sparks drifting down out of the rift
+    for (let k = 0; k < 5; k++) {
+      const f = (p.t * 1.4 + k / 5) % 1;
+      ctx.beginPath(); ctx.arc(p.x + (k - 2) * hw * 0.35, y + f * 34, 1.6 * (1 - f) + 0.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// --- REWARDS page: daily login, gift, video, missions, invite friends ----
+let rewardsToast = null;   // { text, t } — the short "+75 COINS" confirmation
+let inviteState = null;    // { code, friends, unpaid, invited } from the backend
+
+function openRewards() {
+  mode = 'REWARDS';
+  syncBanner();
+  audio.gateGood();
+  inviteState = saveData.playerId ? { code: inviteCode(saveData.playerId), friends: 0, unpaid: 0, invited: false } : null;
+  backend.inviteInfo(saveData.playerId).then((info) => { if (info) inviteState = info; });
+}
+
+function rewardsInfo() {
+  const E = CONFIG.economy;
+  return {
+    coins: saveData.coins || 0,
+    login: loginStatus(saveData),
+    dailyLogin: E.dailyLogin,
+    gift: giftStatus(saveData),
+    video: videoStatus(saveData),
+    videoReady: ads.isRewardedReady(),
+    missions: missions(saveData).map((m) => ({ text: missionText(m), progress: m.progress, goal: m.goal, coins: missionCoins(m), claimed: m.claimed })),
+    invite: inviteState,
+    inviteAmounts: E.invite,
+    toast: rewardsToast,
+    dc: dcStatus(saveData), // Daily Challenge card
+  };
+}
+
+function rewardClaimed(coins) {
+  if (!coins) { audio.gateCurse(); return; }
+  addCoins(coins);
+  audio.pick();
+  rewardsToast = { text: tr('g.coinsToast', { n: coins }), t: performance.now() / 1000 };
+}
+
+async function shareInvite() {
+  if (!inviteState) return;
+  const text = tr('g.inviteShare', { code: inviteState.code, n: CONFIG.economy.invite.friendGets });
+  const url = 'https://gatewall.turtoo.app';
+  try {
+    if (navigator.share) { await navigator.share({ title: 'GateWall', text, url }); return; }
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    rewardsToast = { text: tr('g.codeCopied'), t: performance.now() / 1000 };
+  } catch { /* share sheet closed */ }
+}
+
+async function enterInviteCode() {
+  if (!inviteState || inviteState.invited) { audio.gateCurse(); return; }
+  const code = (window.prompt(tr('g.enterInviteCode')) || '').trim();
+  if (!code) return;
+  const res = await backend.claimInvite(saveData.playerId, code);
+  if (res?.error) { rewardsToast = { text: res.error.toUpperCase().slice(0, 28), t: performance.now() / 1000 }; audio.gateCurse(); return; }
+  inviteState = { ...inviteState, invited: true };
+  rewardClaimed(res.coins);
+}
+
+async function collectInvites() {
+  const res = await backend.collectInvites(saveData.playerId);
+  if (!res) { audio.gateCurse(); return; }
+  inviteState = { ...inviteState, unpaid: 0 };
+  rewardClaimed(res.coins);
+}
+
+function rewardsTap(x, y) {
+  const B = REWARDS_BUTTONS;
+  if (hit(B.login, x, y)) { rewardClaimed(claimLogin(saveData)); return; }
+  if (hit(B.gift, x, y)) { rewardClaimed(claimGift(saveData)); return; }
+  if (hit(B.video, x, y)) { watchRewardedAd(); return; }
+  for (let i = 0; i < B.missions.length; i++) {
+    if (hit(B.missions[i], x, y)) { rewardClaimed(claimMission(saveData, i)); return; }
+  }
+  if (inviteState && hit(B.share, x, y)) { shareInvite(); return; }
+  if (inviteState && hit(B.enterCode, x, y)) { enterInviteCode(); return; }
+  if (inviteState?.unpaid > 0 && hit(B.collect, x, y)) { collectInvites(); return; }
+}
+
+// --- DAILY CHALLENGE (systems/challenge.js, ui/challengeUi.js) ------------
+// A normal run with state.dc set; it ends on its results card (DCRESULT)
+// and never touches saveData.progress, saveData.best or the leaderboards.
+let dcPanelOpen = false; // the detail panel over the Rewards page
+let dcResult = null;     // what the DCRESULT card shows
+
+function dcStart() {
+  const today = dcToday();
+  dcPanelOpen = false;
+  dcResult = null;
+  newGame(today.levels[0]);
+  dcApplyStart(state, today);
+  mode = 'PLAYING';
+  syncBanner();
+  announcer.show(tr('dc.title'), tr('dc.twist.' + today.twist), '#ffd23d', 2.2);
+}
+
+function dcFinish(cleared) {
+  const st = state, dc = st.dc;
+  mode = 'DCRESULT';
+  if (cleared) audio.waveUp(); else audio.gameOver();
+  const r = dcRecordResult(saveData, dc.day, st.score);
+  st.coins += r.coins; // run coins + the challenge reward
+  cfBurst(r.coins, CONFIG.width / 2, CONFIG.height / 2);
+  persistCoins();
+  dcResult = { ...r, cleared, score: st.score, levelsDone: dc.step + (cleared ? 1 : 0), levelsTotal: dc.levels.length };
+  dcSubmit(saveData.playerId, dc.day, st.score);
+  syncBanner();
+}
+
+function dcPanelTap(x, y) {
+  const B = DC_PANEL_BUTTONS;
+  if (hit(B.play, x, y)) { audio.pick(); dcStart(); return; }
+  if (hit(B.close, x, y) || !hit(B.box, x, y)) { dcPanelOpen = false; audio.pick(); }
+}
+
+// Coin price of the next revive in this run (0 when none are left).
+// Coin price of the next revive (0 = none left this run): about one
+// level's coins at this stage, doubling for each revive in the run.
+function reviveCost() {
+  const R = CONFIG.economy.revive, n = state?.revives || 0;
+  if (!state || n >= R.max) return 0;
+  return Math.round((R.base + R.perStage * state.spawner.stageIdx) * Math.pow(R.growth, n) / 5) * 5;
+}
+
+// Back into the fight with full hearts and blood (ad or coin revive).
+function reviveRun() {
+  state.lives = CONFIG.gateHealth;
+  state.player.blood = state.player.maxBlood;
+  state.player.invuln = 2;
+  state.enemyBullets = [];
+  mode = 'PLAYING';
+  syncBanner();
+  audio.gateGood();
+}
+
+// One line on the GATE DOWN card pointing at what would help most next time.
+function gameOverTip() {
+  const p = saveData.permanent || {};
+  if ((p.power || 0) < 3) return tr('g.tip.power');
+  if ((p.fireRate || 0) < 3) return tr('g.tip.haste');
+  if (!state.walls.length && !state.turrets.length) return tr('g.tip.wall');
+  if (!state.angels.length) return tr('g.tip.ward');
+  return tr('g.tip.bomb');
+}
+
 function render() {
   ctx.save();
+  ctx.direction = isRtl() ? 'rtl' : 'ltr'; // Arabic/Persian text reads right-to-left
+  setNavBadges(rewardsWaiting(saveData), saveData);
+  st3Bind(saveData); // level stars / star chest read the live save
   if (particles.shake > 0.3) {
     ctx.translate((Math.random() - 0.5) * particles.shake, (Math.random() - 0.5) * particles.shake);
   }
@@ -2326,10 +2883,16 @@ function render() {
     ctx.restore();
     return;
   }
+  if (mode === 'REWARDS') {
+    renderRewards(ctx, rewardsInfo(), performance.now() / 1000);
+    if (dcPanelOpen) dcRenderPanel(ctx, dcStatus(saveData), dcBoard, saveData.playerName, performance.now() / 1000);
+    ctx.restore();
+    return;
+  }
 
   if (mode === 'UPGRADES') {
     renderBackground(LEVELS[0], 0);
-    renderUpgrades(ctx, saveData, armorySel, performance.now() / 1000, SPRITES.gunner_07, armoryFlash);
+    renderUpgrades(ctx, saveData, armorySel, performance.now() / 1000, null, armoryFlash);
     ctx.restore();
     return;
   }
@@ -2347,7 +2910,7 @@ function render() {
   // render below (which would crash reading state.levelDef on null).
   if (mode === 'SHOP' && (!state || modeBeforeShop !== 'PLAYING')) {
     renderBackground(LEVELS[0], 0);
-    renderShop(ctx, { coins: saveData.coins || 0 }, iap.enabled);
+    renderShop(ctx, shopInfo());
     ctx.restore();
     return;
   }
@@ -2362,6 +2925,9 @@ function render() {
   const st = state;
   renderBackground(st.levelDef, st.levelTime);
   renderAtmosphereBack(ctx, st.levelDef, st.levelTime);
+  // the Gate being defended, where the road ends (render/gate.js)
+  drawGate(ctx, st.levelDef, st.lives, CONFIG.gateHealth, st.gateFlash, st.levelTime);
+  drawRifts(st);
 
   // Obstacles — each stage gets its own drifting hazard silhouette (see
   // drawObstacle above) instead of one identical purple rune block.
@@ -2398,6 +2964,8 @@ function render() {
   // Spells — glowing crystal bolts oriented along their flight path, with a
   // light trail. FEVER bolts cycle through the rainbow; seekers are orange
   // missiles with a smoke tail; turret shots are golden.
+  abDrawGround(ctx, st); // Armory abilities: napalm, bramble zone
+  sxDrawBack(ctx, st); // stage twist, ground layer (ice, lava, shadows…)
   for (const sp of st.spells) drawSpell(sp);
 
   // XP gems (under the monsters so the horde stays readable)
@@ -2405,9 +2973,11 @@ function render() {
 
   // Ships (Sea War only) — drawn before monsters so falling Shatterlings
   // read as being in front of/closer than the ships out on the water.
-  for (const sh of st.ships) drawShip(sh);
+  for (const sh of st.ships) { if (sh.air) drawAirship(sh); else drawShip(sh); }
+  drawAirshipDebris();
 
-  // Monsters
+  // Knocked-away corpses, then the living horde
+  for (const c of st.corpses) drawMonster(c);
   for (const m of st.monsters) drawMonster(m);
 
   // Player-placed defenses — drawn after monsters so they read as being in
@@ -2422,9 +2992,9 @@ function render() {
     ctx.save();
     ctx.globalAlpha = 0.55;
     if (st.placing.type === 'wall') {
-      drawWall({ x: st.placing.x, y: st.placing.y, w: CONFIG.wall.width, h: CONFIG.wall.height, hp: CONFIG.wall.hp, maxHp: CONFIG.wall.hp, hitFlash: 0 });
+      drawWall({ x: st.placing.x, y: st.placing.y, w: CONFIG.helpers.wall.width * statBonus('wall', 'width', unitLevel(saveData, 'wall', 'width')), h: CONFIG.helpers.wall.height, hp: 1, maxHp: 1, hitFlash: 0 });
     } else {
-      drawTurret({ x: st.placing.x, y: st.placing.y, r: CONFIG.turret.size / 2, hp: CONFIG.turret.hp, maxHp: CONFIG.turret.hp, hitFlash: 0, barrelRecoil: 0 });
+      drawTurret({ x: st.placing.x, y: st.placing.y, r: CONFIG.helpers.turret.size / 2, hp: 1, maxHp: 1, hitFlash: 0, tier: unitTotalLevel(saveData, 'turret') });
     }
     ctx.restore();
     ctx.save();
@@ -2439,6 +3009,7 @@ function render() {
     ctx.restore();
   }
 
+  sxDrawFront(ctx, st); // stage twist over the horde (fog, crystals, rocks…)
   // Enemy bullets (dark bolts — visually distinct from the wizard's orange fire)
   for (const b of st.enemyBullets) {
     const pulse = 1 + Math.sin(b.age * 14) * 0.15;
@@ -2451,6 +3022,7 @@ function render() {
 
   // Angels
   for (const a of st.angels) a.render(ctx);
+  abDraw(ctx, st); // Armory abilities: star bolts, lightning sparks, mini-bombs…
 
   // Shield ring — drawn behind the wizard while shieldTime is active, fading
   // and flickering in its last couple of seconds as a "running out" cue.
@@ -2468,56 +3040,18 @@ function render() {
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * 0.95, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.shadowBlur = 0;
+    // the Armory's shield emblem rides above the bubble while it lasts
+    drawUnitArt(ctx, 'shield', p.x + p.size * 0.75, p.y - p.size * 0.75, 18, tt);
     ctx.restore();
   }
 
-  // Automaton Gunner — 2-frame firing cycle, plus motion: leans into its
-  // movement, kicks back on every shot (recoil squash), hovers on a soft
-  // ground shadow, and flashes a muzzle star when it fires.
+  // The Guardian — procedural animated hero (render/hero.js): cape physics,
+  // boot thrusters, lean, cannon recoil + heat, afterimages, muzzle flash.
   if (p.hurtFlash > 0 && Math.floor(p.hurtFlash * 12) % 2 === 0) ctx.globalAlpha = 0.5;
   if (p.invuln > 0 && p.hurtFlash <= 0 && Math.floor(p.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.6;
-  const gunnerSprite = Math.floor(st.levelTime * 6) % 2 === 0 ? 'gunner_07' : 'gunner_08';
-  {
-    const img = SPRITES[gunnerSprite];
-    const footY = p.y + p.size * 1.25;
-    const prevA = ctx.globalAlpha;
-    ctx.globalAlpha = 0.28 * prevA;
-    ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(p.x, footY + 2, p.size * 0.55, p.size * 0.14, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = prevA;
-    if (img) {
-      // Tall/narrow frames — scale by width, anchor the FEET on a fixed line.
-      const dispW = p.size * GUNNER_DISP_MULT;
-      const dispH = dispW * (img.naturalHeight / img.naturalWidth);
-      const lean = Math.max(-0.22, Math.min(0.22, p.vx / 1600));
-      const kick = p.recoil * p.recoil;
-      ctx.save();
-      ctx.translate(p.x, footY);
-      ctx.rotate(lean);
-      ctx.scale(1 + kick * 0.05, 1 - kick * 0.06);
-      if (p.facing === -1) ctx.scale(-1, 1);
-      ctx.drawImage(img, -dispW / 2, -dispH, dispW, dispH);
-      ctx.restore();
-    }
-    if (p.recoil > 0.55) {
-      const mz = gunnerMuzzle(p);
-      const f = (p.recoil - 0.55) / 0.45;
-      const col = st.run.fever > 0 ? `hsl(${(st.levelTime * 400) % 360},100%,70%)` : '#ffe9a8';
-      drawGlow(ctx, mz.x, mz.y, 10 + f * 10, st.run.fever > 0 ? '#ff7ad9' : col, f); // fixed key — glow sprites are cached per color
-      ctx.save();
-      ctx.translate(mz.x, mz.y);
-      ctx.rotate(st.levelTime * 20);
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = f;
-      ctx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const rr = i % 2 === 0 ? 7 * f + 2 : 2;
-        ctx.lineTo(Math.cos((i / 8) * Math.PI * 2) * rr, Math.sin((i / 8) * Math.PI * 2) * rr);
-      }
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-  }
+  drawHero(ctx, p, st.levelTime, { fever: st.run.fever > 0, hurt: p.hurtFlash > 0, rank: unitRanks.hero });
+  sxDrawTop(ctx, st); // stage hazard warnings stay visible over the hero
   // Orbit blades circle the Guardian (drawn over him)
   renderRunWorld(ctx, { ...st.run, gems: [] }, p, st.levelTime);
 
@@ -2531,9 +3065,9 @@ function render() {
   if (p.maxBlood > 1) {
     // Smaller and tucked right under his feet now (was a much wider/longer
     // bar floating well below him) — matches the same foot offset used for
-    // the sprite itself (see GUNNER_DISP_MULT/footY above).
+    // the hero's boots (see render/hero.js).
     const barW = p.size * 0.9, barH = 4;
-    const bx = p.x - barW / 2, by = p.y + p.size * 1.25;
+    const bx = p.x - barW / 2, by = p.y + p.size * 1.05; // just under the boots
     const frac = Math.max(0, Math.min(1, p.blood / p.maxBlood));
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -2554,26 +3088,42 @@ function render() {
   // already tracked by the heart icons in the top-right HUD, so this
   // redundant bottom bar has been removed rather than re-themed per stage.
 
+  drawBombs(st); // bombs in the air, over everything on the field
+
   // Bomb flash
   if (st.bombFlash > 0) {
     ctx.fillStyle = `rgba(255,255,255,${st.bombFlash * 2.4})`;
     ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
   }
 
+  bzRenderBack(ctx, st);
   renderAtmosphereFront(ctx, st, st.levelTime, st.run.fever);
   particles.render(ctx);
   announcer.render(ctx);
   renderHUD(ctx, st, ads.isRewardedReady());
   renderXPBar(ctx, st.run);
   drawBossBar(st);
+  bzRenderFront(ctx, st);
+  if (st.dc) dcRenderHud(ctx, st, BUTTONS); // Daily Challenge tag + locked helpers
 
-  if (mode === 'LEVELCLEAR') renderLevelClear(ctx, st, LEVELS[st.levelIndex + 1].name);
+  if (mode === 'LEVELCLEAR') renderLevelClear(ctx, st, LEVELS[dcNextIndex(st)].name, st.lc);
+  if (mode === 'PLAYING' && st.fadeIn > 0) { // the next level fades in from black
+    ctx.fillStyle = `rgba(6,3,14,${Math.min(1, st.fadeIn / 0.5)})`;
+    ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+  }
   if (mode === 'VICTORY') renderVictory(ctx, st, saveData.best || 0);
-  if (mode === 'GAMEOVER') renderGameOver(ctx, st, saveData.best || 0);
-  if (mode === 'SHOP') renderShop(ctx, st, iap.enabled);
+  if (mode === 'DCRESULT' && dcResult) dcRenderResult(ctx, dcStatus(saveData), dcResult, dcBoard, saveData.playerName, performance.now() / 1000);
+  if (mode === 'GAMEOVER') {
+    renderGameOver(ctx, st, saveData.best || 0, {
+      tip: gameOverTip(), reviveCost: reviveCost(),
+      canAdRevive: (st.adRevives || 0) < CONFIG.economy.adRevives, adReady: ads.isRewardedReady(),
+    });
+  }
+  if (mode === 'SHOP') renderShop(ctx, shopInfo());
   if (mode === 'PAUSED') renderPause(ctx);
   if (mode === 'PLAYING' && st.placePaused && !st.placing) renderPlacementBanner(ctx);
   if (mode === 'LEVELUP') renderLevelUp(ctx, st.run, performance.now() / 1000);
+  if (st.tu) tuDraw(ctx, st, mode); // first-run hints, over everything
 
   ctx.restore();
 }
@@ -2588,7 +3138,7 @@ window.__game = {
     if (!again) { mode = 'PLAYING'; syncBanner(); }
     return true;
   },
-  next() { if (mode === 'LEVELCLEAR') { startLevel(state.levelIndex + 1); mode = 'PLAYING'; syncBanner(); } },
+  next() { if (mode === 'LEVELCLEAR') { state.lc = null; startLevel(dcNextIndex(state)); mode = 'PLAYING'; syncBanner(); } },
   // Steps + renders one frame (for driving the game when rAF is throttled).
   frame(dt = 1 / 60) { update(dt); particles.update(dt); announcer.update(dt); render(); },
   // Headless fast-forward for balance testing: steps the simulation without
@@ -2612,20 +3162,49 @@ window.__game = {
     }
     return mode;
   },
+  // read-only view of the menu UI, for UI tests that tap real button rects
+  ui: { get save() { return saveData; }, get armorySel() { return armorySel; },
+    MENU_BUTTONS, UPGRADE_BUTTONS, unitDialog, unitDialogRows, SHOP_BUTTONS },
 };
+
+// --- Auto quality governor --------------------------------------------
+// Every ~1.5s of gameplay, look at the median frame time. Too slow → drop a
+// quality level (fewer pixels, fewer decorative effects). Comfortably fast
+// for three windows in a row → step back up. Medians ignore one-off hitches.
+const qgSamples = [];
+let qgFastWindows = 0;
+function tuneQuality(frameDt) {
+  const Q = CONFIG.quality;
+  if (!Q.auto || frameDt <= 0 || frameDt > 0.25) return; // tab switch / pause
+  qgSamples.push(frameDt);
+  if (qgSamples.length < 90) return;
+  qgSamples.sort((a, b) => a - b);
+  const median = qgSamples[45];
+  qgSamples.length = 0;
+  if (median > 1 / 42 && Q.level > 0) {
+    Q.level--; qgFastWindows = 0; resize();
+  } else if (median < 1 / 58 && Q.level < 2) {
+    if (++qgFastWindows >= 3) { Q.level++; qgFastWindows = 0; resize(); }
+  } else qgFastWindows = 0;
+}
 
 // --- Loop --------------------------------------------------------
 let last = performance.now();
 function loop(now) {
-  const rawDt = Math.min((now - last) / 1000, 0.05);
+  const frameDt = (now - last) / 1000;
+  const rawDt = Math.min(frameDt, 0.05);
   last = now;
+  if (mode === 'PLAYING') tuneQuality(frameDt);
   if (slowmoT > 0) slowmoT -= rawDt;
   else timeScale += (1 - timeScale) * Math.min(1, rawDt * 6);
-  const dt = rawDt * timeScale;
+  const dt = rawDt * timeScale * auHitStopScale(rawDt);
+  auMusicSync();
   update(dt);
   particles.update(dt);
   announcer.update(dt);
+  cfUpdate(rawDt);
   render();
+  cfDraw(ctx); // flying coins over every screen
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

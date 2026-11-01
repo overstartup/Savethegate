@@ -6,6 +6,9 @@ export function load() {
     const raw = JSON.parse(localStorage.getItem(KEY));
     const d = defaults();
     if (!raw) return d;
+    // Economy v2 (10 coins = 1 cent; levels pay ~1.5x and prices rose to
+    // match): old balances x1.5 once, so savings keep their buying power.
+    if ((raw.econ || 1) < 2) { raw.coins = Math.round((raw.coins || 0) * 1.5); raw.econ = 2; }
     // Deep-merge so saves from before a schema change (new fields) still
     // come back with sane defaults instead of undefined.
     return {
@@ -53,7 +56,7 @@ function defaults() {
     coins: 0,
     playerName: '',
     // Permanent meta-upgrades, bought with coins from the main-menu Upgrades
-    // screen (separate from the in-run coin shop). Each is a level 0..UPGRADE_MAX
+    // screen (separate from the in-run coin shop). Each is a level 0 and up (ranks, data/upgrades.js)
     // (see data/upgrades.js) that persists across every run.
     permanent: { power: 0, speed: 0, fireRate: 0, blood: 0 },
     // Armory levels for every other unit: { angel: { power, fireRate, blood }, ... }
@@ -67,6 +70,8 @@ function defaults() {
     // roll this back, so "Continue" always picks up from the furthest point
     // reached rather than restarting from Level 1 every time.
     progress: { levelIndex: 0 },
+    stars: {},          // best stars per level: { [levelIndex]: 1..3 } (ui/levelStars.js)
+    starChests: 0,      // star chests already opened (one per 10 stars)
     settings: { muted: false },
     removeAds: false,   // set true once the "Remove Ads" IAP is purchased
     playerId: null,     // server-side Player.Id once this device has registered with the backend

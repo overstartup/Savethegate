@@ -9,9 +9,14 @@
 // every module into one scope.
 // ============================================================
 
+import { SPECIES } from './species.js';
+import { CONFIG } from '../config.js';
+
 const crClamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 function crHexToRgb(hex) {
+  // also accepts 'rgb(r,g,b)' (palettes mix colors into rgb strings)
+  if (hex.startsWith('rgb')) return hex.match(/[\d.]+/g).slice(0, 3).map(Number);
   let h = hex.replace('#', '');
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
   const n = parseInt(h, 16);
@@ -88,349 +93,490 @@ export function tintedImage(img, tint) {
   return c;
 }
 
-function crEyes(ctx, ex, ey, er, gap, look, blink, pupilColor = '#1a1030', angry = 0, browColor = '#1a1030') {
+// Menacing eyes for the whole cast: narrow slanted almonds set in a dark
+// socket under a heavy brow, a hot glowing iris with a slit pupil that
+// tracks the Guardian. (Same signature as the old round cartoon eyes;
+// pupilColor is ignored, angry > 0 lowers the brow further.)
+const crEyeGrad = new Map();
+export function crEyes(ctx, ex, ey, er, gap, look, blink, pupilColor = '#1a1030', angry = 0, browColor = '#1a1030') {
+  const w = er * 1.15, h = er * 0.5;
   for (const side of [-1, 1]) {
     const x = ex + side * gap;
+    const tilt = side * (0.32 + angry * 0.12); // inner corners low: a glare
     ctx.save();
     ctx.translate(x, ey);
-    ctx.scale(1, blink);
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(0, 0, er, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = pupilColor;
-    ctx.beginPath(); ctx.arc(look.x * er * 0.4, look.y * er * 0.4, er * 0.55, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(look.x * er * 0.4 - er * 0.2, look.y * er * 0.4 - er * 0.25, er * 0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-    if (angry) {
-      ctx.strokeStyle = browColor;
-      ctx.lineWidth = Math.max(1.5, er * 0.45);
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x - side * er * 1.1, ey - er * 1.25 - angry * er * 0.1);
-      ctx.lineTo(x + side * er * 0.7, ey - er * 0.85 + angry * er * 0.25);
-      ctx.stroke();
+    ctx.rotate(tilt);
+    // dark socket
+    ctx.fillStyle = 'rgba(8,4,14,0.55)';
+    ctx.beginPath(); ctx.ellipse(0, 0, w * 1.25, h * 1.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.scale(1, Math.max(0.12, blink));
+    // almond eye with a hot iris
+    ctx.beginPath();
+    ctx.moveTo(-w, 0);
+    ctx.quadraticCurveTo(0, -h * 1.6, w, 0);
+    ctx.quadraticCurveTo(0, h * 1.25, -w, 0);
+    ctx.closePath();
+    const gk = Math.round(w * 2);
+    let g = crEyeGrad.get(gk); // one gradient per eye size, reused by the horde
+    if (!g) {
+      g = ctx.createRadialGradient(0, 0, 0, 0, 0, w);
+      g.addColorStop(0, '#fff3a0');
+      g.addColorStop(0.35, '#ffb020');
+      g.addColorStop(1, '#c0300c');
+      crEyeGrad.set(gk, g);
     }
+    ctx.fillStyle = g;
+    ctx.fill();
+    // slit pupil, following the Guardian
+    ctx.fillStyle = '#120408';
+    ctx.beginPath(); ctx.ellipse(look.x * w * 0.35, look.y * h * 0.2, w * 0.13, h * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // heavy brow ridge over the eye
+    ctx.strokeStyle = browColor;
+    ctx.lineWidth = Math.max(1.6, er * 0.42);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - side * w * 0.95, ey - h * 0.9 + angry * er * 0.15);
+    ctx.lineTo(x + side * w * 1.15, ey - h * 2.1 - angry * er * 0.1);
+    ctx.stroke();
   }
 }
 
-function crBlink(m, t) {
+export function crBlink(m, t) {
   const cyc = (t + m.seed) % 3.4;
   return cyc < 0.12 ? 0.15 : 1;
 }
 
-// --- Grumbles — crystal gremlin: floppy ears, stubby running legs,
-//     crystal spikes on its head, toothy grin. ---------------------------
-function drawGoblin(ctx, m, pal, t, look) {
-  const r = m.r;
-  const step = Math.sin(m.anim * 2.2);
-  const bounce = Math.abs(Math.cos(m.anim * 2.2)) * r * 0.12;
-  ctx.translate(0, -bounce);
-  // legs
-  ctx.fillStyle = pal.dark;
-  for (const side of [-1, 1]) {
-    const lift = side * step;
-    ctx.beginPath();
-    ctx.ellipse(side * r * 0.38, r * 0.72 - Math.max(0, lift) * r * 0.22 + bounce, r * 0.22, r * 0.16, 0, 0, Math.PI * 2);
-    ctx.fill();
+// --- Volume shading -------------------------------------------------------
+// Every body gets the same lighting model so the cast reads as one world:
+// a radial fill lit from the top-left, a rim light hugging the lower-right
+// edge (in the stage's glow color), and a bold dark outline. pathFn builds
+// the body path in local coordinates.
+// Gradients are evaluated in the local (already-translated) coordinates at
+// fill time, so one gradient object per (radius, palette) is reusable by
+// every creature — creating them fresh per body part per frame was the
+// biggest render cost with a full horde on screen.
+const crGradCache = new Map();
+export function crShade(ctx, pathFn, pal, r, outline = true) {
+  pathFn();
+  const key = Math.round(r * 2) + '|' + pal.light + '|' + pal.primary + '|' + pal.shade;
+  let g = crGradCache.get(key);
+  if (!g) {
+    const rr = Math.round(r * 2) / 2;
+    g = ctx.createRadialGradient(-rr * 0.35, -rr * 0.45, rr * 0.05, 0, 0, rr * 1.2);
+    g.addColorStop(0, pal.light);
+    g.addColorStop(0.5, pal.primary);
+    g.addColorStop(1, pal.shade);
+    if (crGradCache.size > 4000) crGradCache.clear();
+    crGradCache.set(key, g);
   }
-  // ears (flop with the run cycle)
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.save();
+  pathFn();
+  ctx.clip();
+  // rim light: the same outline nudged up-left, so only a crescent of its
+  // stroke lands inside the body along the lower-right edge
+  ctx.translate(-r * 0.14, -r * 0.14);
+  pathFn();
+  ctx.strokeStyle = pal.rim;
+  ctx.lineWidth = r * 0.18;
+  ctx.stroke();
+  ctx.restore();
+  if (outline) {
+    pathFn();
+    ctx.strokeStyle = crMix(pal.dark, '#000000', 0.45);
+    ctx.lineWidth = Math.max(1.6, r * 0.07);
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+}
+
+export function crGem(ctx, x, y, w, h, color, A) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * 0.2); ctx.lineTo(x, y + h * 0.35); ctx.lineTo(x - w, y - h * 0.2);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = A * 0.7;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(x, y - h); ctx.lineTo(x + w * 0.35, y - h * 0.25); ctx.lineTo(x - w * 0.5, y - h * 0.25);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = A;
+}
+
+// --- Grumbles — crystal gremlin. Runs on stubby legs, ears flopping, claws
+//     pumping; crouches with a snarl before a dash. ------------------------
+function drawGoblin(ctx, m, pal, t, look) {
+  const r = m.r, A = ctx.globalAlpha;
+  const ph = m.action && m.action.phase;
+  const run = ph === 'burst' ? 3.4 : 2.2;
+  const step = Math.sin(m.anim * run);
+  const bounce = Math.abs(Math.cos(m.anim * run)) * r * 0.12;
+  ctx.translate(0, -bounce);
+  // tail
+  ctx.strokeStyle = pal.shade;
+  ctx.lineWidth = r * 0.14;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.3, r * 0.45);
+  ctx.quadraticCurveTo(-r * 1.0, r * 0.6 + Math.sin(t * 6 + m.seed) * r * 0.2, -r * 0.95, r * 0.05 + Math.sin(t * 6 + m.seed + 1) * r * 0.25);
+  ctx.stroke();
+  crGem(ctx, -r * 0.95, r * 0.05 + Math.sin(t * 6 + m.seed + 1) * r * 0.25, r * 0.12, r * 0.18, pal.glow, A);
+  // legs + feet
+  for (const side of [-1, 1]) {
+    const lift = Math.max(0, side * step);
+    const fx = side * r * 0.36 + side * step * r * 0.08, fy = r * 0.78 - lift * r * 0.25 + bounce;
+    ctx.fillStyle = pal.shade;
+    ctx.beginPath(); ctx.roundRect(fx - r * 0.12, r * 0.45, r * 0.24, fy - r * 0.45, r * 0.1); ctx.fill();
+    ctx.fillStyle = pal.dark;
+    ctx.beginPath(); ctx.ellipse(fx + side * r * 0.05, fy, r * 0.24, r * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // ears
   for (const side of [-1, 1]) {
     ctx.save();
-    ctx.translate(side * r * 0.62, -r * 0.25);
-    ctx.rotate(side * (0.35 + step * 0.18 * side));
-    ctx.fillStyle = pal.primary;
-    ctx.beginPath();
-    ctx.moveTo(0, -r * 0.18);
-    ctx.lineTo(side * r * 0.75, -r * 0.42);
-    ctx.lineTo(0, r * 0.22);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = pal.light;
-    ctx.beginPath();
-    ctx.moveTo(side * r * 0.05, -r * 0.08);
-    ctx.lineTo(side * r * 0.5, -r * 0.3);
-    ctx.lineTo(side * r * 0.05, r * 0.1);
-    ctx.closePath();
-    ctx.fill();
+    ctx.translate(side * r * 0.6, -r * 0.3);
+    ctx.rotate(side * (0.35 + step * 0.16 * side) + (ph === 'windup' ? side * -0.4 : 0));
+    const ear = () => { ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.quadraticCurveTo(side * r * 0.6, -r * 0.62, side * r * 0.85, -r * 0.48); ctx.quadraticCurveTo(side * r * 0.45, -r * 0.05, 0, r * 0.22); ctx.closePath(); };
+    ear();
+    ctx.fillStyle = pal.primary; ctx.fill();
+    ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(1.5, r * 0.07); ctx.stroke();
+    ctx.fillStyle = pal.glow;
+    ctx.globalAlpha = A * 0.55;
+    ctx.beginPath(); ctx.moveTo(side * r * 0.08, -r * 0.08); ctx.quadraticCurveTo(side * r * 0.5, -r * 0.42, side * r * 0.66, -r * 0.4); ctx.quadraticCurveTo(side * r * 0.36, -r * 0.06, side * r * 0.08, r * 0.1); ctx.fill();
+    ctx.globalAlpha = A;
     ctx.restore();
   }
-  // head crystals
-  ctx.fillStyle = pal.glow;
-  for (const [dx, h] of [[-0.28, 0.42], [0, 0.6], [0.28, 0.42]]) {
-    ctx.beginPath();
-    ctx.moveTo(dx * r - r * 0.1, -r * 0.62);
-    ctx.lineTo(dx * r, -r * (0.62 + h));
-    ctx.lineTo(dx * r + r * 0.1, -r * 0.62);
-    ctx.closePath();
-    ctx.fill();
+  // claws (pump while running, thrown back in the crouch)
+  for (const side of [-1, 1]) {
+    const sw = ph === 'windup' ? -0.9 : -side * step * 0.6;
+    ctx.save();
+    ctx.translate(side * r * 0.7, r * 0.1);
+    ctx.rotate(side * 0.4 + sw * side);
+    ctx.fillStyle = pal.primary;
+    ctx.strokeStyle = pal.dark;
+    ctx.lineWidth = Math.max(1.5, r * 0.07);
+    ctx.beginPath(); ctx.ellipse(0, r * 0.18, r * 0.13, r * 0.24, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff6e8';
+    for (const c of [-1, 0, 1]) {
+      ctx.beginPath(); ctx.moveTo(c * r * 0.07, r * 0.38); ctx.lineTo(c * r * 0.07 + r * 0.03, r * 0.52); ctx.lineTo(c * r * 0.07 + r * 0.06, r * 0.38); ctx.fill();
+    }
+    ctx.restore();
   }
   // body
-  ctx.fillStyle = pal.primary;
-  ctx.strokeStyle = pal.dark;
-  ctx.lineWidth = Math.max(2, r * 0.1);
-  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.82, r * 0.78, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, 0, r * 0.82, r * 0.8, 0, 0, Math.PI * 2); }, pal, r);
+  // crystal belly plate
   ctx.fillStyle = pal.light;
-  ctx.beginPath(); ctx.ellipse(0, r * 0.3, r * 0.48, r * 0.36, 0, 0, Math.PI * 2); ctx.fill();
-  // face
-  crEyes(ctx, 0, -r * 0.18, r * 0.22, r * 0.3, look, crBlink(m, t), '#1a1030', 1, pal.dark);
-  // grin with teeth
-  ctx.fillStyle = pal.dark;
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.32, r * 0.16);
-  ctx.quadraticCurveTo(0, r * (0.48 + m.windup * 0.15), r * 0.32, r * 0.16);
-  ctx.closePath();
-  ctx.fill();
+  ctx.globalAlpha = A * 0.8;
+  ctx.beginPath(); ctx.moveTo(0, r * 0.05); ctx.lineTo(r * 0.36, r * 0.32); ctx.lineTo(0, r * 0.68); ctx.lineTo(-r * 0.36, r * 0.32); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = A * 0.5;
   ctx.fillStyle = '#ffffff';
-  for (const tx of [-0.16, 0.06]) {
-    ctx.beginPath();
-    ctx.moveTo(tx * r, r * 0.17); ctx.lineTo(tx * r + r * 0.1, r * 0.17); ctx.lineTo(tx * r + r * 0.05, r * 0.28);
-    ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, r * 0.05); ctx.lineTo(r * 0.16, r * 0.24); ctx.lineTo(-r * 0.2, r * 0.3); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = A;
+  // head crystals
+  for (const [dx, h] of [[-0.3, 0.38], [0, 0.6], [0.3, 0.38]]) crGem(ctx, dx * r, -r * 0.72, r * 0.11, h * r, pal.glow, A);
+  // face
+  const snarl = ph === 'windup' ? 1 : m.windup;
+  crEyes(ctx, 0, -r * 0.2, r * 0.22, r * 0.3, look, crBlink(m, t), '#1a1030', 1 + snarl * 0.6, pal.dark);
+  ctx.fillStyle = '#2a0e1e';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.34, r * 0.14);
+  ctx.quadraticCurveTo(0, r * (0.42 + snarl * 0.22), r * 0.34, r * 0.14);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  for (const tx of [-0.2, -0.04, 0.12]) {
+    ctx.beginPath(); ctx.moveTo(tx * r, r * 0.15); ctx.lineTo(tx * r + r * 0.09, r * 0.15); ctx.lineTo(tx * r + r * 0.045, r * 0.26); ctx.closePath(); ctx.fill();
   }
 }
 
-// --- Sir Squish — crystal ooze: hops with squash & stretch, jiggly wobbly
-//     outline, inner bubbles, shiny highlight. ----------------------------
+// --- Sir Squish — crystal ooze. Jiggly translucent blob with a spinning
+//     crystal heart; squashes before a leap, stretches in the air, splats on
+//     landing. -------------------------------------------------------------
 function drawSlime(ctx, m, pal, t, look) {
-  const r = m.r;
-  const hop = (m.anim * 0.35) % 1;                 // 0..1 hop cycle
-  const air = Math.sin(hop * Math.PI);             // 0 on ground, 1 at apex
-  const land = hop < 0.12 ? 1 - hop / 0.12 : 0;    // squash right after landing
-  const sx = 1 + land * 0.25 - air * 0.1;
-  const sy = 1 - land * 0.22 + air * 0.14;
-  ctx.translate(0, -air * r * 0.35);
+  const r = m.r, A = ctx.globalAlpha;
+  const ph = m.action && m.action.phase;
+  const hop = (m.anim * 0.35) % 1;
+  const air = ph === 'burst' ? 1 : Math.sin(hop * Math.PI) * 0.6;
+  const land = hop < 0.12 ? 1 - hop / 0.12 : 0;
+  const coil = ph === 'windup' ? 1 : 0;
+  const sx = 1 + land * 0.22 + coil * 0.3 - air * 0.14;
+  const sy = 1 - land * 0.2 - coil * 0.3 + air * 0.2;
+  if (ph !== 'burst') ctx.translate(0, -air * r * 0.25);
+  ctx.translate(0, r * 0.5);
   ctx.scale(sx, sy);
-  // body — wobbly blob with flat-ish bottom
-  const N = 18;
-  ctx.beginPath();
-  for (let i = 0; i <= N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    const wob = 1 + Math.sin(a * 3 + t * 7 + m.seed) * 0.05;
-    let x = Math.cos(a) * r * 0.95 * wob;
-    let y = Math.sin(a) * r * 0.85 * wob;
-    if (y > r * 0.5) y = r * 0.5 + (y - r * 0.5) * 0.3; // flatten the base
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
-  grad.addColorStop(0, pal.light);
-  grad.addColorStop(1, pal.primary);
-  ctx.fillStyle = grad;
-  ctx.globalAlpha = 0.92;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = pal.dark;
-  ctx.lineWidth = Math.max(2, r * 0.09);
-  ctx.stroke();
-  // inner rising bubbles
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  for (let i = 0; i < 3; i++) {
-    const ph = (t * 0.6 + i * 0.33 + m.seed) % 1;
+  ctx.translate(0, -r * 0.5);
+  const blob = () => {
+    const N = 22;
     ctx.beginPath();
-    ctx.arc(Math.sin(i * 2.1 + m.seed) * r * 0.4, r * 0.4 - ph * r * 0.9, r * (0.06 + i * 0.02), 0, Math.PI * 2);
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const wob = 1 + Math.sin(a * 3 + t * 7 + m.seed) * 0.05 + Math.sin(a * 5 - t * 5) * 0.025;
+      const x = Math.cos(a) * r * 0.95 * wob;
+      let y = Math.sin(a) * r * 0.85 * wob;
+      if (y > r * 0.5) y = r * 0.5 + (y - r * 0.5) * 0.3;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  };
+  ctx.globalAlpha = A * 0.93;
+  crShade(ctx, blob, pal, r);
+  ctx.globalAlpha = A;
+  // spinning crystal heart inside
+  ctx.save();
+  ctx.rotate(t * 1.5 + m.seed);
+  ctx.globalAlpha = A * 0.55;
+  crGem(ctx, 0, r * 0.15, r * 0.2, r * 0.32, pal.glow, A * 0.55);
+  ctx.restore();
+  ctx.globalAlpha = A;
+  // rising bubbles
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i = 0; i < 4; i++) {
+    const p = (t * 0.6 + i * 0.25 + m.seed) % 1;
+    ctx.beginPath();
+    ctx.arc(Math.sin(i * 2.1 + m.seed) * r * 0.45, r * 0.4 - p * r * 0.95, r * (0.05 + (i % 3) * 0.025), 0, Math.PI * 2);
     ctx.fill();
   }
-  // highlight
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.beginPath(); ctx.ellipse(-r * 0.42, -r * 0.42, r * 0.18, r * 0.1, -0.6, 0, Math.PI * 2); ctx.fill();
+  // specular highlights
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.beginPath(); ctx.ellipse(-r * 0.42, -r * 0.45, r * 0.2, r * 0.1, -0.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-r * 0.15, -r * 0.62, r * 0.05, 0, Math.PI * 2); ctx.fill();
+  // drips along the base
+  ctx.fillStyle = pal.primary;
+  for (const dx of [-0.55, 0.1, 0.6]) {
+    const d = (Math.sin(t * 2 + dx * 9 + m.seed) * 0.5 + 0.5) * r * 0.16;
+    ctx.beginPath(); ctx.ellipse(dx * r, r * 0.52 + d * 0.5, r * 0.07, r * 0.06 + d * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  }
   // face
-  crEyes(ctx, 0, -r * 0.08, r * 0.2, r * 0.3, look, crBlink(m, t));
-  ctx.fillStyle = pal.dark;
-  ctx.beginPath(); ctx.ellipse(0, r * 0.25, r * (0.1 + air * 0.05), r * (0.07 + air * 0.08), 0, 0, Math.PI * 2); ctx.fill();
+  crEyes(ctx, 0, -r * 0.1, r * 0.21, r * 0.3, look, crBlink(m, t), '#1a1030', coil ? 1 : 0, pal.dark);
+  ctx.fillStyle = '#2a0e1e';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.24, r * (0.1 + air * 0.06), r * (0.06 + air * 0.1 + coil * 0.04), 0, 0, Math.PI * 2); ctx.fill();
 }
 
-// --- Zippy — bat-winged imp (procedural fallback when bat art missing). --
+// --- Zippy — bat-winged imp (procedural fallback for the bat art). -------
 function drawImp(ctx, m, pal, t, look) {
-  const r = m.r;
-  const flap = Math.sin(t * 18 + m.seed);
-  // wings
+  const r = m.r, A = ctx.globalAlpha;
+  const fast = m.action && m.action.phase === 'burst';
+  const flap = Math.sin(t * (fast ? 30 : 18) + m.seed);
   for (const side of [-1, 1]) {
     ctx.save();
     ctx.scale(side, 1);
-    ctx.rotate(-0.2 + flap * 0.55);
-    ctx.fillStyle = pal.dark;
-    ctx.beginPath();
-    ctx.moveTo(r * 0.3, -r * 0.1);
-    ctx.quadraticCurveTo(r * 1.2, -r * 1.0, r * 1.7, -r * 0.3);
-    ctx.quadraticCurveTo(r * 1.3, -r * 0.1, r * 1.35, r * 0.2);
-    ctx.quadraticCurveTo(r * 0.9, 0, r * 0.85, r * 0.35);
-    ctx.quadraticCurveTo(r * 0.55, r * 0.1, r * 0.3, r * 0.3);
-    ctx.closePath();
-    ctx.fill();
+    ctx.rotate(-0.2 + flap * (fast ? 0.3 : 0.55) - (fast ? 0.5 : 0));
+    const wing = () => {
+      ctx.beginPath();
+      ctx.moveTo(r * 0.3, -r * 0.1);
+      ctx.quadraticCurveTo(r * 1.2, -r * 1.0, r * 1.75, -r * 0.3);
+      ctx.quadraticCurveTo(r * 1.3, -r * 0.1, r * 1.35, r * 0.2);
+      ctx.quadraticCurveTo(r * 0.9, 0, r * 0.85, r * 0.35);
+      ctx.quadraticCurveTo(r * 0.55, r * 0.1, r * 0.3, r * 0.3);
+      ctx.closePath();
+    };
+    wing();
+    const g = ctx.createLinearGradient(r * 0.3, 0, r * 1.7, 0);
+    g.addColorStop(0, pal.dark); g.addColorStop(1, pal.shade);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = pal.glow; ctx.globalAlpha = A * 0.5; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(r * 0.35, 0); ctx.lineTo(r * 1.7, -r * 0.3); ctx.moveTo(r * 0.35, 0.05 * r); ctx.lineTo(r * 1.3, r * 0.18); ctx.stroke();
+    ctx.globalAlpha = A;
     ctx.restore();
   }
-  // tail
   ctx.strokeStyle = pal.dark;
   ctx.lineWidth = Math.max(1.5, r * 0.12);
   ctx.beginPath();
   ctx.moveTo(0, r * 0.6);
   ctx.quadraticCurveTo(Math.sin(t * 6 + m.seed) * r * 0.6, r * 1.1, Math.sin(t * 6 + m.seed + 1) * r * 0.4, r * 1.4);
   ctx.stroke();
-  ctx.fillStyle = pal.primary;
-  ctx.strokeStyle = pal.dark;
-  ctx.lineWidth = Math.max(2, r * 0.1);
-  ctx.beginPath(); ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  // horns
-  ctx.fillStyle = pal.glow;
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(side * r * 0.3, -r * 0.55); ctx.lineTo(side * r * 0.55, -r * 1.05); ctx.lineTo(side * r * 0.55, -r * 0.45);
-    ctx.closePath(); ctx.fill();
-  }
+  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2); }, pal, r * 0.85);
+  for (const side of [-1, 1]) crGem(ctx, side * r * 0.42, -r * 0.62, r * 0.1, r * 0.4, pal.glow, A);
   crEyes(ctx, 0, -r * 0.1, r * 0.2, r * 0.26, look, crBlink(m, t), '#1a1030', 1, pal.dark);
 }
 
-// --- Rattles — marching crystal skeleton: swinging bone limbs, chattering
-//     jaw while charging a shot, pulsing eye sockets. ---------------------
+// --- Rattles — crystal skeleton warden: marching bone legs with knees, a
+//     round shield, a crystal staff, tattered cape and burning eye sockets.
 function drawSkeleton(ctx, m, pal, t) {
-  const r = m.r;
+  const r = m.r, A = ctx.globalAlpha;
   const step = Math.sin(m.anim * 1.8);
-  const bone = pal.primary, dark = pal.dark, glow = pal.glow;
+  const bone = pal.light, boneDark = pal.primary;
   ctx.lineCap = 'round';
-  // legs
-  ctx.strokeStyle = bone;
-  ctx.lineWidth = Math.max(2, r * 0.13);
+  ctx.lineJoin = 'round';
+  // tattered cape behind
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.4, -r * 0.2);
+  ctx.lineTo(r * 0.4, -r * 0.2);
+  for (let i = 4; i >= 0; i--) {
+    const x = -r * 0.5 + (i / 4) * r;
+    const y = r * (0.75 + (i % 2) * 0.15) + Math.sin(t * 5 + i + m.seed) * r * 0.08;
+    ctx.lineTo(x + r * 0.05, y);
+  }
+  ctx.closePath(); ctx.fill();
+  // legs (thigh + shin with knee bend)
   for (const side of [-1, 1]) {
-    const sw = side * step * 0.45;
-    ctx.beginPath();
-    ctx.moveTo(side * r * 0.15, r * 0.5);
-    ctx.lineTo(side * r * 0.2 + Math.sin(sw) * r * 0.5, r * 0.5 + Math.cos(sw) * r * 0.5);
-    ctx.stroke();
+    const sw = side * step * 0.5;
+    const kx = side * r * 0.16 + Math.sin(sw) * r * 0.32, ky = r * 0.5 + Math.cos(sw) * r * 0.28;
+    const fx = kx + Math.sin(sw * 0.4) * r * 0.1, fy = ky + r * 0.32;
+    ctx.strokeStyle = boneDark; ctx.lineWidth = Math.max(2.5, r * 0.15);
+    ctx.beginPath(); ctx.moveTo(side * r * 0.14, r * 0.45); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1.5, r * 0.09);
+    ctx.beginPath(); ctx.moveTo(side * r * 0.14, r * 0.45); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.fillStyle = bone;
+    ctx.beginPath(); ctx.ellipse(fx + side * r * 0.06, fy, r * 0.12, r * 0.06, 0, 0, Math.PI * 2); ctx.fill();
   }
   // pelvis
-  ctx.fillStyle = bone;
-  ctx.beginPath(); ctx.ellipse(0, r * 0.5, r * 0.25, r * 0.1, 0, 0, Math.PI * 2); ctx.fill();
-  // arms (swing opposite to legs); right arm holds a crystal staff
-  for (const side of [-1, 1]) {
-    const sw = -side * step * 0.5;
-    const hx = side * r * 0.55 + Math.sin(sw) * r * 0.3;
-    const hy = r * 0.3 + Math.cos(sw) * r * 0.25;
-    ctx.beginPath();
-    ctx.moveTo(side * r * 0.4, -r * 0.08);
-    ctx.lineTo(hx, hy);
-    ctx.stroke();
-    if (side === 1) {
-      ctx.strokeStyle = dark;
-      ctx.lineWidth = Math.max(2, r * 0.09);
-      ctx.beginPath(); ctx.moveTo(hx, hy + r * 0.4); ctx.lineTo(hx, hy - r * 0.9); ctx.stroke();
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.moveTo(hx, hy - r * 1.25); ctx.lineTo(hx + r * 0.15, hy - r * 0.95); ctx.lineTo(hx, hy - r * 0.8); ctx.lineTo(hx - r * 0.15, hy - r * 0.95);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = bone;
-      ctx.lineWidth = Math.max(2, r * 0.13);
-    }
-  }
-  // ribcage + spine
-  ctx.lineWidth = Math.max(1.5, r * 0.09);
-  ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(0, r * 0.48); ctx.stroke();
+  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, r * 0.45, r * 0.26, r * 0.11, 0, 0, Math.PI * 2); }, { ...pal, light: bone }, r * 0.5);
+  // torso shadow + ribs + spine
+  ctx.fillStyle = 'rgba(10,6,20,0.55)';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.12, r * 0.4, r * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = bone;
+  ctx.lineWidth = Math.max(1.8, r * 0.09);
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(0, r * 0.45); ctx.stroke();
   for (let i = 0; i < 3; i++) {
-    const y = -r * 0.08 + i * r * 0.17;
-    const w = r * (0.42 - i * 0.07);
-    ctx.beginPath(); ctx.moveTo(-w, y); ctx.quadraticCurveTo(0, y + r * 0.1, w, y); ctx.stroke();
+    const y = -r * 0.06 + i * r * 0.16, w = r * (0.4 - i * 0.06);
+    ctx.beginPath(); ctx.moveTo(-w, y + r * 0.04); ctx.quadraticCurveTo(0, y - r * 0.06, w, y + r * 0.04); ctx.stroke();
   }
+  // shield arm (left) and staff arm (right)
+  const sw = -step * 0.4;
+  ctx.save();
+  ctx.translate(-r * 0.48, r * 0.05 + Math.sin(sw) * r * 0.05);
+  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, 0, r * 0.32, 0, Math.PI * 2); }, { ...pal, light: crMix(pal.primary, '#ffffff', 0.25) }, r * 0.4);
+  ctx.strokeStyle = pal.glow; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.18, 0, Math.PI * 2); ctx.stroke();
+  crGem(ctx, 0, r * 0.06, r * 0.07, r * 0.13, pal.glow, A);
+  ctx.restore();
+  const hx = r * 0.55 + Math.sin(-sw) * r * 0.15, hy = r * 0.25;
+  const raise = m.windup;
+  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1.8, r * 0.1);
+  ctx.beginPath(); ctx.moveTo(r * 0.36, -r * 0.08); ctx.lineTo(hx, hy - raise * r * 0.35); ctx.stroke();
+  ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(2, r * 0.08);
+  ctx.beginPath(); ctx.moveTo(hx, hy + r * 0.45 - raise * r * 0.35); ctx.lineTo(hx, hy - r * 0.95 - raise * r * 0.35); ctx.stroke();
+  crGem(ctx, hx, hy - r * 0.98 - raise * r * 0.35, r * 0.13, r * 0.24, pal.glow, A);
   // skull
   const chatter = m.windup > 0 ? Math.abs(Math.sin(t * 40)) * r * 0.08 : 0;
-  ctx.fillStyle = bone;
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = Math.max(2, r * 0.08);
-  ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.roundRect(-r * 0.2, -r * 0.27 + chatter, r * 0.4, r * 0.16, 3); ctx.fill(); ctx.stroke();
+  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, -r * 0.55, r * 0.4, 0, Math.PI * 2); }, { ...pal, light: '#ffffff', primary: bone, shade: boneDark }, r * 0.45);
+  ctx.fillStyle = bone; ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(1.5, r * 0.06);
+  ctx.beginPath(); ctx.roundRect(-r * 0.2, -r * 0.28 + chatter, r * 0.4, r * 0.16, 3); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = pal.dark; ctx.lineWidth = 1;
+  for (const tx of [-0.1, 0, 0.1]) { ctx.beginPath(); ctx.moveTo(tx * r, -r * 0.28 + chatter); ctx.lineTo(tx * r, -r * 0.16 + chatter); ctx.stroke(); }
+  // crystal crown shards
+  for (const dx of [-0.22, 0, 0.22]) crGem(ctx, dx * r, -r * 0.88, r * 0.07, r * (dx ? 0.16 : 0.24), pal.glow, A);
+  // burning eye sockets
   const pulse = 0.6 + 0.4 * Math.sin(t * 4 + m.seed);
-  ctx.fillStyle = dark;
-  ctx.beginPath(); ctx.arc(-r * 0.15, -r * 0.58, r * 0.12, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.15, -r * 0.58, r * 0.12, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = glow;
-  ctx.globalAlpha = pulse;
-  ctx.beginPath(); ctx.arc(-r * 0.15, -r * 0.58, r * 0.07, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.15, -r * 0.58, r * 0.07, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#120a1e';
+  ctx.beginPath(); ctx.ellipse(-r * 0.15, -r * 0.57, r * 0.12, r * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.15, -r * 0.57, r * 0.12, r * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+  drawGlow(ctx, -r * 0.15, -r * 0.58, r * 0.2 * pulse + r * 0.08, pal.glow, 0.8);
+  drawGlow(ctx, r * 0.15, -r * 0.58, r * 0.2 * pulse + r * 0.08, pal.glow, 0.8);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(-r * 0.15, -r * 0.58, r * 0.04, 0, Math.PI * 2); ctx.arc(r * 0.15, -r * 0.58, r * 0.04, 0, Math.PI * 2); ctx.fill();
 }
 
-// --- Mossback — hulking crystal troll: heavy stomping gait, club that
-//     winds up overhead before a shot, glowing back crystals. -----------
+// --- Mossback — hulking crystal troll. Heavy stomping gait, moss and
+//     glowing back crystals; heaves its club overhead before a ground slam.
 function drawTroll(ctx, m, pal, t, look) {
-  const r = m.r;
+  const r = m.r, A = ctx.globalAlpha;
+  const ph = m.action && m.action.phase;
   const step = Math.sin(m.anim * 1.2);
   const stomp = Math.abs(step) * r * 0.08;
   ctx.translate(0, stomp);
   // feet
-  ctx.fillStyle = pal.dark;
   for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(side * r * 0.45, r * 0.78 - (side * step > 0 ? step * side * r * 0.15 : 0), r * 0.28, r * 0.16, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const lift = side * step > 0 ? step * side * r * 0.15 : 0;
+    crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(side * r * 0.45, r * 0.8 - lift, r * 0.3, r * 0.17, 0, 0, Math.PI * 2); }, pal, r * 0.4);
   }
   // back crystals
-  ctx.fillStyle = pal.glow;
-  for (const [dx, h, a] of [[-0.5, 0.5, -0.4], [-0.15, 0.7, -0.1], [0.25, 0.55, 0.25]]) {
+  for (const [dx, h, a] of [[-0.55, 0.55, -0.45], [-0.18, 0.8, -0.1], [0.25, 0.6, 0.25]]) {
     ctx.save();
     ctx.translate(dx * r, -r * 0.45);
     ctx.rotate(a);
-    ctx.beginPath(); ctx.moveTo(-r * 0.12, 0); ctx.lineTo(0, -h * r); ctx.lineTo(r * 0.12, 0); ctx.closePath(); ctx.fill();
+    crGem(ctx, 0, 0, r * 0.14, h * r, pal.glow, A);
     ctx.restore();
   }
-  // club arm: raises overhead as the shot charges
-  const raise = m.windup;
-  const armA = 0.9 - raise * 2.4 + step * 0.15;
+  // club arm — heaved overhead for the slam / a shot
+  const raise = ph === 'windup' ? Math.min(1, m.action.t / 0.4) : ph === 'burst' ? -0.3 : m.windup;
+  // rest: hangs down-right; raise swings it overhead (angle toward π)
+  const armA = -0.45 - raise * 2.4 + step * 0.15;
   ctx.save();
   ctx.translate(r * 0.62, -r * 0.05);
   ctx.rotate(armA);
   ctx.strokeStyle = pal.primary;
-  ctx.lineWidth = r * 0.26;
+  ctx.lineWidth = r * 0.28;
   ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.55); ctx.stroke();
-  ctx.strokeStyle = pal.dark;
+  ctx.strokeStyle = '#4a2e1a';
   ctx.lineWidth = r * 0.14;
   ctx.beginPath(); ctx.moveTo(0, r * 0.45); ctx.lineTo(0, r * 1.15); ctx.stroke();
-  ctx.fillStyle = pal.dark;
-  ctx.beginPath(); ctx.ellipse(0, r * 1.2, r * 0.22, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = pal.glow;
-  ctx.beginPath(); ctx.arc(-r * 0.1, r * 1.15, r * 0.06, 0, Math.PI * 2); ctx.arc(r * 0.1, r * 1.28, r * 0.06, 0, Math.PI * 2); ctx.fill();
+  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, r * 1.22, r * 0.26, r * 0.32, 0, 0, Math.PI * 2); }, { ...pal, light: '#9a7a5a', primary: '#6a4a2e', shade: '#3a2414' }, r * 0.35);
+  for (const [sx, sy] of [[-0.14, 1.12], [0.14, 1.3], [0, 1.45]]) crGem(ctx, sx * r, sy * r, r * 0.06, r * 0.12, pal.glow, A);
   ctx.restore();
   // body
-  ctx.fillStyle = pal.primary;
-  ctx.strokeStyle = pal.dark;
-  ctx.lineWidth = Math.max(2.5, r * 0.08);
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.85, r * 0.2);
-  ctx.quadraticCurveTo(-r * 0.95, -r * 0.4, -r * 0.3, -r * 0.6);
-  ctx.quadraticCurveTo(r * 0.3, -r * 0.72, r * 0.72, -r * 0.3);
-  ctx.quadraticCurveTo(r * 0.92, r * 0.1, r * 0.65, r * 0.5);
-  ctx.quadraticCurveTo(0, r * 0.85, -r * 0.65, r * 0.6);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
+  const body = () => {
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.85, r * 0.2);
+    ctx.quadraticCurveTo(-r * 0.95, -r * 0.4, -r * 0.3, -r * 0.6);
+    ctx.quadraticCurveTo(r * 0.3, -r * 0.72, r * 0.72, -r * 0.3);
+    ctx.quadraticCurveTo(r * 0.92, r * 0.1, r * 0.65, r * 0.5);
+    ctx.quadraticCurveTo(0, r * 0.85, -r * 0.65, r * 0.6);
+    ctx.closePath();
+  };
+  crShade(ctx, body, pal, r);
+  // moss patches
+  ctx.save();
+  body(); ctx.clip();
+  ctx.fillStyle = crMix(pal.dark, '#5ca048', 0.45);
+  ctx.globalAlpha = A * 0.55;
+  for (const [mx, my, mr] of [[-0.55, -0.35, 0.3], [0.3, -0.55, 0.22], [-0.7, 0.25, 0.2]]) {
+    ctx.beginPath(); ctx.arc(mx * r, my * r, mr * r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = A;
   ctx.fillStyle = pal.light;
-  ctx.beginPath(); ctx.ellipse(0, r * 0.25, r * 0.45, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
-  // left arm swinging
+  ctx.globalAlpha = A * 0.6;
+  ctx.beginPath(); ctx.ellipse(0, r * 0.28, r * 0.45, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = A;
+  // off arm swinging
   ctx.save();
   ctx.translate(-r * 0.7, -r * 0.05);
-  ctx.rotate(-0.5 - step * 0.35);
+  ctx.rotate(0.45 + step * 0.3 + (ph === 'windup' ? 0.7 : 0));
   ctx.strokeStyle = pal.primary;
-  ctx.lineWidth = r * 0.26;
+  ctx.lineWidth = r * 0.28;
   ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.6); ctx.stroke();
+  ctx.fillStyle = pal.shade;
+  ctx.beginPath(); ctx.arc(0, r * 0.66, r * 0.17, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
   // face
-  crEyes(ctx, r * 0.05, -r * 0.25, r * 0.13, r * 0.2, look, crBlink(m, t), '#1a1030', 1.2, pal.dark);
+  const rage = ph === 'windup' ? 1 : m.windup;
+  crEyes(ctx, r * 0.05, -r * 0.25, r * 0.13, r * 0.2, look, crBlink(m, t), '#1a1030', 1.2 + rage, pal.dark);
+  ctx.fillStyle = pal.shade;
+  ctx.beginPath(); ctx.ellipse(r * 0.06, -r * 0.08, r * 0.1, r * 0.07, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2a0e1e';
+  ctx.beginPath(); ctx.ellipse(r * 0.05, r * 0.08, r * 0.2, r * (0.05 + rage * 0.07), 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#fff8ec';
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(r * 0.05 + side * r * 0.18, r * 0.02);
-    ctx.lineTo(r * 0.05 + side * r * 0.12, -r * 0.14);
-    ctx.lineTo(r * 0.05 + side * r * 0.06, r * 0.04);
+    ctx.moveTo(r * 0.05 + side * r * 0.18, r * 0.06);
+    ctx.lineTo(r * 0.05 + side * r * 0.13, -r * 0.14);
+    ctx.lineTo(r * 0.05 + side * r * 0.07, r * 0.06);
     ctx.closePath(); ctx.fill();
   }
 }
 
-// --- Bruncle, the Gate-Breaker — boss: breathing bulk, crystal crown,
-//     swinging fists, eyes and maw flare when it fires, enraged red glow
-//     under half health. ------------------------------------------------
+// --- Bruncle, the Gate-Breaker — boss: breathing shaded bulk, crystal
+//     crown, swinging fists; eyes and maw flare when it fires; red when
+//     enraged under half health. ------------------------------------------
 function drawBoss(ctx, m, pal, t, look) {
-  const r = m.r;
+  const r = m.r, A = ctx.globalAlpha;
   const breathe = Math.sin(t * 2.2) * 0.04;
   const rage = m.enraged ? 1 : 0;
   const glow = rage ? '#ff4d5a' : pal.glow;
   ctx.scale(1 + breathe, 1 - breathe);
+  // cape
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.7, -r * 0.3);
+  ctx.quadraticCurveTo(-r * 1.15, r * 0.6 + Math.sin(t * 2) * r * 0.08, -r * 0.6, r * 0.95);
+  ctx.lineTo(r * 0.6, r * 0.95);
+  ctx.quadraticCurveTo(r * 1.15, r * 0.6 + Math.sin(t * 2 + 1) * r * 0.08, r * 0.7, -r * 0.3);
+  ctx.closePath(); ctx.fill();
   // fists
   for (const side of [-1, 1]) {
     const sw = Math.sin(t * 2.4 + side) * 0.25;
@@ -441,72 +587,52 @@ function drawBoss(ctx, m, pal, t, look) {
     ctx.lineWidth = r * 0.28;
     ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(0, r * 0.4); ctx.stroke();
-    ctx.fillStyle = pal.dark;
-    ctx.beginPath(); ctx.arc(0, r * 0.52, r * 0.22, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(0, r * 0.52, r * 0.07, 0, Math.PI * 2); ctx.fill();
+    crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, r * 0.52, r * 0.23, 0, Math.PI * 2); }, pal, r * 0.3);
+    drawGlow(ctx, 0, r * 0.52, r * 0.14, glow, 0.8);
     ctx.restore();
   }
-  // body
-  const grad = ctx.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r * 0.9);
-  grad.addColorStop(0, pal.light);
-  grad.addColorStop(1, pal.primary);
-  ctx.fillStyle = grad;
-  ctx.strokeStyle = pal.dark;
-  ctx.lineWidth = Math.max(3, r * 0.06);
-  ctx.beginPath(); ctx.ellipse(0, r * 0.08, r * 0.8, r * 0.7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  // crown of crystals
+  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, r * 0.08, r * 0.8, r * 0.7, 0, 0, Math.PI * 2); }, pal, r);
+  // armored chest plate
+  ctx.fillStyle = pal.shade;
+  ctx.beginPath(); ctx.moveTo(-r * 0.4, r * 0.25); ctx.lineTo(r * 0.4, r * 0.25); ctx.lineTo(r * 0.25, r * 0.65); ctx.lineTo(-r * 0.25, r * 0.65); ctx.closePath(); ctx.fill();
+  crGem(ctx, 0, r * 0.48, r * 0.1, r * 0.16, glow, A);
+  // crown
   for (let i = -2; i <= 2; i++) {
     const h = r * (0.35 + (2 - Math.abs(i)) * 0.14);
-    const cx = i * r * 0.2;
-    ctx.fillStyle = glow;
-    ctx.globalAlpha = 0.85 + 0.15 * Math.sin(t * 5 + i);
-    ctx.beginPath();
-    ctx.moveTo(cx - r * 0.09, -r * 0.5);
-    ctx.lineTo(cx, -r * 0.5 - h);
-    ctx.lineTo(cx + r * 0.09, -r * 0.5);
-    ctx.closePath();
-    ctx.fill();
+    crGem(ctx, i * r * 0.2, -r * 0.5, r * 0.09, h, glow, A);
   }
-  ctx.globalAlpha = 1;
   // horns
-  ctx.fillStyle = pal.dark;
   for (const side of [-1, 1]) {
+    ctx.fillStyle = pal.dark;
     ctx.beginPath();
     ctx.moveTo(side * r * 0.5, -r * 0.4);
     ctx.quadraticCurveTo(side * r * 1.0, -r * 0.6, side * r * 0.85, -r * 1.05);
     ctx.lineTo(side * r * 0.3, -r * 0.52);
     ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = crMix(pal.dark, '#ffffff', 0.35); ctx.lineWidth = 1.5; ctx.stroke();
   }
-  // eyes — glow intensifies with the shot windup / rage
+  // eyes
   const eyeHeat = Math.max(m.windup, m.fireFlash > 0 ? 1 : 0, rage * 0.6);
   for (const side of [-1, 1]) {
-    ctx.fillStyle = pal.dark;
+    ctx.fillStyle = '#120a1e';
     ctx.beginPath(); ctx.ellipse(side * r * 0.28, -r * 0.08, r * 0.17, r * 0.12, side * 0.3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(side * r * 0.28 + look.x * r * 0.04, -r * 0.07 + look.y * r * 0.03, r * (0.08 + eyeHeat * 0.04), 0, Math.PI * 2); ctx.fill();
-    // angry brow
+    drawGlow(ctx, side * r * 0.28, -r * 0.07, r * (0.14 + eyeHeat * 0.12), glow, 0.9);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(side * r * 0.28 + look.x * r * 0.04, -r * 0.07 + look.y * r * 0.03, r * (0.05 + eyeHeat * 0.03), 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = pal.dark;
     ctx.lineWidth = r * 0.08;
     ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(side * r * 0.48, -r * 0.28); ctx.lineTo(side * r * 0.12, -r * 0.16); ctx.stroke();
   }
-  // maw opens on fire
+  // maw
   const open = Math.max(m.windup * 0.6, m.fireFlash > 0 ? 1 : 0);
-  ctx.fillStyle = pal.dark;
-  ctx.beginPath();
-  ctx.ellipse(0, r * 0.35, r * 0.32, r * (0.06 + open * 0.14), 0, 0, Math.PI * 2);
-  ctx.fill();
-  if (open > 0.1) {
-    ctx.fillStyle = glow;
-    ctx.globalAlpha = open;
-    ctx.beginPath(); ctx.ellipse(0, r * 0.37, r * 0.18, r * 0.06 * open, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  }
+  ctx.fillStyle = '#1a0812';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.32, r * 0.32, r * (0.06 + open * 0.14), 0, 0, Math.PI * 2); ctx.fill();
+  if (open > 0.1) drawGlow(ctx, 0, r * 0.34, r * 0.25 * open, glow, open);
   ctx.fillStyle = '#fff8ec';
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(side * r * 0.24, r * 0.28); ctx.lineTo(side * r * 0.17, r * 0.48); ctx.lineTo(side * r * 0.1, r * 0.28);
+    ctx.moveTo(side * r * 0.24, r * 0.25); ctx.lineTo(side * r * 0.17, r * 0.46); ctx.lineTo(side * r * 0.1, r * 0.25);
     ctx.closePath(); ctx.fill();
   }
 }
@@ -521,35 +647,77 @@ const CREATURE_DRAW = {
   ogreBoss: drawBoss,
 };
 
-// Main entry. look = {x, y} unit-ish vector toward the Guardian so eyes
-// track the player. batImg (optional) = current bat-art frame for imps.
-export function drawCreature(ctx, m, tint, t, look, batImg = null) {
+// Draws the creature body (no shadow/aura) at its position — used for the
+// live monster, its afterimages and its knocked-away corpse.
+function crBody(ctx, m, tint, t, look, batImg, pal, extraRot = 0, extraScale = 1) {
+  const sp = m.skin && SPECIES[m.skin];
+  const r = m.r;
+  const ph = m.action && m.action.phase;
+  ctx.save();
+  ctx.translate(m.x, m.y - (m.z || 0));
+  // windup: trembling crouch that telegraphs the move
+  if (ph === 'windup') ctx.translate((Math.random() - 0.5) * r * 0.08, 0);
+  ctx.rotate(crClamp(m.vx / 320, -0.4, 0.4) * (m.boss ? 0.25 : 1) + extraRot);
+  // splits pop out fast; everything else grows in as it comes through its rift
+  const pop = m.isChild ? crEaseOutBack(Math.min(1, m.spawnT / 0.3)) : m.boss ? 1 : crEaseOutBack(Math.min(1, m.spawnT / 0.45));
+  const sq = m.squish * 0.2 + (ph === 'windup' && m.type !== 'imp' ? 0.12 : 0);
+  ctx.scale(pop * (1 + sq) * extraScale, pop * (1 - sq) * extraScale);
+  if (sp) {
+    sp.draw(ctx, m, pal, t, look);
+  } else if (batImg && m.type === 'imp') {
+    const img = tintedImage(batImg, tint?.primary);
+    const size = r * 2.5;
+    const bw = size * (batImg.width / batImg.height);
+    if (ph === 'burst') ctx.rotate(Math.sign(m.pvx || 1) * 0.5);
+    ctx.drawImage(img, -bw / 2, -size / 2, bw, size);
+  } else {
+    (CREATURE_DRAW[m.type] || drawGoblin)(ctx, m, pal, t, look);
+  }
+  ctx.restore();
+}
+
+function crPalette(m, tint, flashAmt) {
   const primary = tint?.primary || m.color;
   const dark = tint?.dark || '#2a1f4d';
   const glow = tint?.glow || '#ffffff';
-  // Hit flash: full white pop for small fry, but a subtle tint for bosses
-  // and elites — they're hit near-constantly, and a permanent white-out
-  // would hide all their animation.
-  const flash = m.hitFlash > 0;
-  const fa = (m.boss || m.elite) ? 0.3 : 0.85;
-  const pal = {
-    primary: flash ? crMix(primary, '#ffffff', fa) : primary,
-    light: crMix(primary, '#ffffff', flash ? Math.min(1, 0.4 + fa) : 0.4),
-    dark: flash ? crMix(dark, '#ffffff', fa * 0.6) : dark,
+  const f = flashAmt;
+  const p = f > 0 ? crMix(primary, '#ffffff', f) : primary;
+  return {
+    primary: p,
+    light: crMix(primary, '#ffffff', Math.min(1, 0.26 + f)),
+    shade: f > 0 ? crMix(crMix(primary, dark, 0.72), '#ffffff', f * 0.7) : crMix(primary, dark, 0.72),
+    dark: f > 0 ? crMix(dark, '#ffffff', f * 0.5) : dark,
     glow,
+    rim: crMix(glow, '#ffffff', 0.2),
   };
-  const r = m.r;
+}
 
-  // ground shadow (flyers cast a smaller, fainter one further below)
+// Main entry. look = {x, y} unit-ish vector toward the Guardian so eyes
+// track the player. batImg (optional) = current bat-art frame for imps.
+export function drawCreature(ctx, m, tint, t, look, batImg = null) {
+  const r = m.r;
+  // Hit flash: full white pop for small fry, a subtle tint for bosses and
+  // elites (they're hit near-constantly).
+  const flashAmt = m.hitFlash > 0 ? ((m.boss || m.elite) ? 0.3 : 0.85) : 0;
+  // stage species may bring its own palette (render/species.js)
+  const sp = m.skin && SPECIES[m.skin];
+  if (sp && sp.colors) tint = sp.colors;
+  const pal = crPalette(m, tint, flashAmt);
+  const ph = m.action && m.action.phase;
+
+  // ground shadow — stays on the ground while a slime leaps, shrinking
+  const lift = (m.z || 0) / (r * 2.2);
   ctx.save();
-  ctx.globalAlpha = m.flying ? 0.14 : 0.26;
+  ctx.globalAlpha = (m.flying ? 0.14 : 0.28) * (1 - lift * 0.5);
   ctx.fillStyle = '#000';
   ctx.beginPath();
-  ctx.ellipse(m.x, m.y + r * (m.flying ? 1.8 : 0.95), r * (m.flying ? 0.5 : 0.8), r * 0.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(m.x, m.y + r * (m.flying ? 1.8 : 0.95), r * (m.flying ? 0.5 : 0.8) * (1 - lift * 0.35), r * 0.2, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // elite aura — rotating golden rune ring + soft glow
+  // soft aura in the stage glow color — keeps every enemy readable on busy
+  // backgrounds and makes the horde feel magical
+  if (CONFIG.quality.level >= 2) drawGlow(ctx, m.x, m.y - (m.z || 0), r * 1.5, pal.glow, 0.16);
   if (m.elite) {
     drawGlow(ctx, m.x, m.y, r * 2.1, '#ffcc33', 0.35 + 0.15 * Math.sin(t * 5));
     ctx.save();
@@ -562,40 +730,57 @@ export function drawCreature(ctx, m, tint, t, look, batImg = null) {
     ctx.setLineDash([]);
     ctx.restore();
   }
-  if (m.boss) drawGlow(ctx, m.x, m.y, r * 1.6, m.enraged ? '#ff3344' : glow, 0.3 + 0.1 * Math.sin(t * 3));
+  if (m.boss) drawGlow(ctx, m.x, m.y, r * 1.6, m.enraged ? '#ff3344' : pal.glow, 0.3 + 0.1 * Math.sin(t * 3));
   if (m.slowT > 0) drawGlow(ctx, m.x, m.y, r * 1.4, '#9fe8ff', 0.4);
 
-  ctx.save();
-  ctx.translate(m.x, m.y);
-  ctx.rotate(crClamp(m.vx / 320, -0.32, 0.32) * (m.boss ? 0.25 : 1));
-  const pop = m.isChild ? crEaseOutBack(Math.min(1, m.spawnT / 0.3)) : 1;
-  const sq = m.squish * 0.2;
-  ctx.scale(pop * (1 + sq), pop * (1 - sq));
-
-  if (batImg && m.type === 'imp') {
-    const img = tintedImage(batImg, tint?.primary);
-    const size = r * 2.4;
-    const bw = size * (batImg.width / batImg.height);
-    ctx.drawImage(img, -bw / 2, -size / 2, bw, size);
-    if (flash) {
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  } else {
-    (CREATURE_DRAW[m.type] || drawGoblin)(ctx, m, pal, t, look);
+  // windup tell — a pulsing ring so the player sees the move coming
+  if (ph === 'windup') {
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t * 30);
+    ctx.strokeStyle = m.type === 'troll' ? '#ff8a3d' : pal.glow;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(m.x, m.y, r * (1.2 + 0.2 * Math.sin(t * 20)), 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
-  ctx.restore();
+
+  // afterimages + speed lines while bursting
+  if (m.ghosts && m.ghosts.length > 1 && CONFIG.quality.level >= 2) {
+    const ghostPal = crPalette(m, tint, 0.6);
+    for (let i = m.ghosts.length - 1; i >= 1; i--) {
+      const g = m.ghosts[i];
+      ctx.save();
+      ctx.globalAlpha = 0.28 * (1 - i / m.ghosts.length);
+      crBody(ctx, { ...m, x: g.x, y: g.y, z: 0, action: null, ghosts: null, windup: 0 }, tint, t, look, batImg, ghostPal);
+      ctx.restore();
+    }
+    const g0 = m.ghosts[m.ghosts.length - 1];
+    const dx = m.x - g0.x, dy = m.y - (m.z || 0) - g0.y;
+    const d = Math.hypot(dx, dy) || 1;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    for (const off of [-0.6, 0, 0.6]) {
+      const nx = -dy / d * r * off, ny = dx / d * r * off;
+      ctx.beginPath();
+      ctx.moveTo(m.x - dx / d * r * 1.1 + nx, m.y - (m.z || 0) - dy / d * r * 1.1 + ny);
+      ctx.lineTo(m.x - dx / d * r * 2.4 + nx, m.y - (m.z || 0) - dy / d * r * 2.4 + ny);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  crBody(ctx, m, tint, t, look, batImg, pal, m.rot || 0, m.corpseScale || 1);
 
   // charging-shot telegraph — a growing glow orb where the shot comes from
   const w = m.windup;
   if (w > 0) {
     const oy = m.y + r * (m.boss ? 0.4 : 0.55);
     drawGlow(ctx, m.x, oy, 4 + w * r * (m.boss ? 0.9 : 0.6), m.enraged ? '#ff4d5a' : '#e07bff', 0.5 + w * 0.5);
+    ctx.save();
     ctx.fillStyle = '#ffffff';
     ctx.globalAlpha = w;
     ctx.beginPath(); ctx.arc(m.x, oy, 1.5 + w * 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 }

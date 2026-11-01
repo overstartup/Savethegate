@@ -82,6 +82,8 @@ export class Particles {
   }
 
   scoreText(x, y, str, color = '#ffd23d', size = 18) {
+    // keep "+10" / "×3" in that order when the text direction is right-to-left
+    if (/^[+\-×]/.test(str)) str = `\u2066${str}\u2069`;
     this.texts.push({ x, y, str, color, t: 0, life: 0.8, size });
   }
 

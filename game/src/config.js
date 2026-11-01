@@ -1,149 +1,250 @@
 // ============================================================
 // GateWall — ALL tunable numbers live here.
-// Balance the game by editing this file only.
+// Balance and tune the game by editing this file only.
+//   Look & feel per stage ......... data/levels.js (cast, tints, ground)
+//   Armory upgrade costs/effects .. data/upgrades.js
+//   In-run power cards ............ systems/runUpgrades.js (RUN_UPGRADES)
 // ============================================================
 export const CONFIG = {
-  // TEMP TESTING AID — set back to false before release. When true, every
-  // stage on the road map is tappable/playable regardless of progress, so
-  // all 5 themes can be tested directly instead of grinding stage 1 first.
+  // TESTING AID — keep false for release. When true, every stage on the
+  // road map is playable regardless of progress.
   devUnlockAllStages: false,
 
-  // Canvas (portrait, phone-like)
+  // Logical canvas (portrait). Everything is laid out in these units and
+  // scaled to the device screen by main.js (see `quality.maxDpr`).
   width: 420,
   height: 740,
 
-  // Player (wizard)
+  // The Guardian (hero) — see entities/player.js, render/hero.js
   player: {
-    speed: 420,          // px/sec horizontal drag speed cap
-    y: 640,              // fixed vertical position (kept a bit above the buy-button row clamp)
-    size: 36,
-    fireRate: 7,         // spells per second (base)
-    // "blood line" hit-buffer — depleting it costs 1 heart, then refills.
-    // This is only a fallback for the rare case a run somehow starts with no
-    // equipped sticker (normally the sticker's own `blood` — e.g. 200 —
-    // wins). Kept in the same 200-ish ballpark so bullets (5-10+ damage
-    // each) always take several hits to cost a heart, never just one.
+    speed: 420,          // px/sec max flying speed toward the finger
+    y: 570,              // start height: on guard just in front of the Gate
+    size: 36,            // collision diameter
+    // Shooting starts slow and grows with the level reached and the Armory
+    // (HASTE/POWER). In-run picks, portals and FEVER add on top, but never
+    // past maxFireRate.
+    fireRate: 5,         // bolts per second at Level 1, before upgrades
+    levelFireRate: 0.025, // +2.5% fire rate per level reached
+    levelDamage: 0.04,   // +4% bolt damage per level reached
+    maxFireRate: 18,     // hard cap on bolts per second from every source
+    // Blood line (hit-buffer). The equipped sticker normally sets this
+    // (starter hero: 200); this is only the fallback. Empty blood → the next
+    // hit costs a heart; it regenerates slowly when not being hit.
     maxBlood: 200,
-    invulnAfterHit: 0.8, // seconds of immunity after taking a blood-line hit (no instant double-hits)
-    stickerDamagePerBolt: 120, // sticker damage rating that equals 1 bolt damage (see Player)
+    invulnAfterHit: 0.8, // seconds of immunity after a hit
+    stickerDamagePerBolt: 100, // sticker damage rating that equals 1 bolt damage (starter hero: 1.2)
   },
 
-  // Spells
+  // The Guardian's bolts
   spell: {
-    speed: 620,          // px/sec upward
+    speed: 700,          // px/sec
     damage: 1,
     size: 10,
+    critChance: 0.1,     // chance a bolt lands a critical hit…
+    critMult: 2,         // …for this much damage (and a double knock-back)
   },
 
-  // Angels — persistent helpers (no lifetime timer). They soak hits with
-  // their own blood line before the wizard's is touched, which is what makes
-  // buying one a pure upside instead of a risk.
-  angel: {
-    maxBlood: 2,
-  },
-
-  // Enemy bullets — some monster types (see shootInterval in data/monsters.js)
-  // now shoot back. Their fire hits the blood-line buffer, same as touching a monster.
+  // Enemy bullets (shooter species and boss volleys)
   enemyBullet: {
-    speed: 260,          // px/sec downward
+    speed: 260,          // px/sec
     size: 7,
   },
 
-  // Monsters
+  // Enemies — per-species stats live in data/monsters.js
   monster: {
-    baseSpeed: 60,       // px/sec downward
-    clumpSize: [2, 6],   // min/max per clump
-    spawnInterval: 1.7,  // seconds between clumps (shrinks per wave)
+    baseSpeed: 60,       // px/sec descent at speed multiplier 1
   },
 
-  // Ships — Sea War only. Patrol the water-surface line horizontally and
-  // shoot straight down (reuses enemyBullet); destroyable like a monster.
+  // Ships — Abyssal Rift only. Sail along the water line and fire down.
   ship: {
-    waterLine: 0.5,       // fraction of CONFIG.height where hills end / water begins
-    baseSpeed: 46,        // px/sec horizontal sail speed
+    waterLine: 0.1,         // water surface (fraction of screen height): just under the HUD, so the whole stage is underwater
+    baseSpeed: 46,          // px/sec
     size: 56,
-    baseHp: 12,            // real damage sponge — takes a sustained volley to sink
-    score: 90,              // pays out more, matching the higher hp
-    shootInterval: 1.6,    // seconds between broadsides (was 2.6 — fires more often)
-    burstCount: 2,          // bullets per broadside, side-by-side spread
-    burstSpread: 16,        // px between bullets in a spread
-    spawnInterval: [7, 11], // seconds between ship spawns — fewer ships on screen at once
-    maxOnScreen: 2,         // hard cap regardless of timer, so it never gets swarmy
+    baseHp: 12,
+    score: 90,
+    shootInterval: 1.6,     // seconds between broadsides
+    burstCount: 2,          // bullets per broadside
+    burstSpread: 16,        // px between those bullets
+    spawnInterval: [7, 11], // seconds between ships
+    maxOnScreen: 2,
   },
 
-  // Obstacles & gates
+  // Airships — Clockwork City only. Same patrol/broadside behaviour as the
+  // ships above (same Ship entity, flagged .air), drawn procedurally as
+  // brass zeppelins, flying a lane inside the hittable play field.
+  airship: {
+    lineY: 104,             // px — top of the airship lane (below CONFIG.playTop=80, so always hittable)
+    laneDepth: 26,          // px — random extra drop per airship, so two don't stack on one line
+    baseSpeed: 40,          // px/sec — a touch slower than a ship, they lumber
+    size: 54,
+    baseHp: 10,
+    score: 90,
+    shootInterval: 1.9,     // seconds between bomb drops
+    burstCount: 2,          // bombs per drop
+    burstSpread: 18,        // px between those bombs
+    spawnInterval: [8, 12], // seconds between airships
+    maxOnScreen: 2,
+  },
+
+  // Drifting obstacles ("living lanes") — block bolts
   obstacle: {
-    driftSpeed: 22,      // "living lanes" — obstacles slide down slowly
+    driftSpeed: 22,      // px/sec
   },
 
-  // Player-placeable defenses — bought from the weapon bar like bomb/shield/
-  // angel, but instead of an instant effect they drop a structure into the
-  // lane above the Guardian that fights on its own until destroyed.
-  wall: {
-    cost: 35,
-    hp: 10,
-    width: 90,
-    height: 22,
-    dropY: 520,             // fixed placement row, above the Guardian
-    touchDamageToMonster: 2.5, // per second a monster is pressed against it
-    touchDamageToWall: 2,      // per second a monster is pressed against it
+  // Helpers bought from the buy row during a run (Armory upgrades add to
+  // these). Damage is a SHARE of the Guardian's current bolt damage, so
+  // helpers grow with Armory POWER and in-run level-ups instead of going
+  // useless as enemies toughen. Wall/Gun health also grows per stage.
+  helpers: {
+    bomb:   { cost: 40, power: 800 },   // blast budget (spent nearest-first)
+    shield: { cost: 45, duration: 10 }, // seconds of bullet immunity
+    wall: {
+      cost: 40, hp: 14, width: 90, height: 22, dropY: 520,
+      thorns: 2.0,       // damage/sec to enemies pressed on it, x bolt damage
+      crushDps: 2,       // hp/sec the wall loses while an enemy presses it
+    },
+    turret: {            // "GUN"
+      cost: 80, hp: 12, size: 34, dropY: 560,
+      shotInterval: 0.3, // seconds between shots
+      damage: 0.9,       // per shot, x bolt damage
+      crushDps: 3,       // hp/sec lost while an enemy touches it
+      range: 460,        // px — aims at the nearest enemy above it in range
+      turnRate: 6,       // rad/sec the head can swivel
+      maxAim: 1.1,       // rad either side of straight up
+    },
+    angel: {             // "WARD SPRITE": stays for the whole run
+      cost: 90,
+      shotInterval: 0.25,
+      damage: 0.5,       // per shot, x bolt damage
+      guard: 3,          // bullets it soaks before being knocked out
+      stun: 4,           // seconds knocked out (no shots, no blocking)
+    },
+    stageHp: 0.5,        // wall/gun hp +50% per stage
   },
-  turret: {
-    cost: 70,
-    hp: 7,
-    size: 34,
-    dropY: 560,             // slightly lower than the wall row
-    fireRate: 0.45,          // seconds between shots — fast, steady fire
-    damage: 1,
-    touchDamageFromMonster: 3, // per second a monster is pressed against it
-  },
-  // Gates are now a pure gift — no more curse/bad portal. Most of the time
-  // it's a fire-rate multiplier (×2/×3 for a few seconds); sometimes
-  // (bloodGiftChance) it's a straight partial heal of the blood line
-  // instead, so the gift stays interesting without ever punishing the
-  // player for grabbing it.
+
+  // Gift portals — always good: a fire-rate boost or a blood heal
   gate: {
-    multipliers: [2, 3],   // fire-rate gift options
-    bloodGiftChance: 0.35, // chance a gate gift is a blood-heal instead of a fire-rate mult
-    bloodGiftHeal: 0.5,    // fraction of max blood restored by a blood-gift gate
+    multipliers: [1.35, 1.6], // fire-rate boost options (temporary)
+    bloodGiftChance: 0.35, // chance the gift is a heal instead
+    bloodGiftHeal: 0.5,    // fraction of max blood restored
   },
 
-  // HUD — the bottom buy-button row's position, shared between ui/hud.js
-  // (where it draws the row) and entities/player.js (which clamps the
-  // Guardian's movement to stop above it, so the player can never fly
-  // behind/under the buttons). rowBottomOffset is measured up from the
-  // screen's bottom edge to the TOP of the row.
+  // Bottom buy-button row. rowBottomOffset = distance from the screen
+  // bottom to the TOP of the row; the hero's movement is clamped above it.
   hud: {
-    rowBottomOffset: 66, // was 76 — pushed the row further down toward the edge
+    rowBottomOffset: 66,
     rowHeight: 64,
   },
 
-  // GateWall — hearts. EVERY Shatterling that crosses the gate line costs
-  // one heart, so the level pacing (systems/spawner.js) is tuned to keep
-  // leaks rare and the player's power climbing faster than the horde.
+  // Hearts. EVERY enemy that crosses the gate line costs one heart.
   gateHealth: 5,
-  // The gate line sits just above the buy-button row so crossings are
-  // visible (render/atmosphere.js draws it as an energy barrier).
-  gateY: 740 - 66 - 12,
+  // Enemies above this line are still under the header (score, level,
+  // hearts): bolts pass them by and nothing aims at them until they come
+  // down into the play field.
+  playTop: 80,
+  gateY: 0, // set below: the gate line sits just above the buy row
 
-  // Adaptive difficulty
-  adaptive: {
-    easeAfterLosses: 2,   // consecutive losses before easing
-    easeFactor: 0.85,     // spawn density multiplier when easing
-    hardenPerWin: 1.05,
+  // Difficulty curve — the horde outgrows a hero who relies only on free
+  // in-run level-ups, so Armory upgrades and helpers become necessary.
+  // Tuned with the headless playtest bot (plays whole stages, uses helpers
+  // with coins earned in the run). Armory level needed per stage (all units):
+  //   ~4 -> Stage 1, ~8 -> Stages 2-5, ~14 -> Stages 6-9, ~20-26 -> 10-11,
+  //   ~30+ -> Stage 12. A fresh free player (no daily rewards counted)
+  //   clears Stage 1 in ~1.2 h, Stage 2 ~4 h, Stage 4 ~8 h, Stage 7 ~26 h.
+  difficulty: {
+    levelHp: 0.28,     // enemy hp +38% per level within a stage
+    // enemy hp per stage: 1 + stageHp*s + stageHpSq*s^2 (s = stage-1):
+    // x2.8 at stage 2, x7 at stage 4, x18 at stage 8, x32 at stage 12 —
+    // a gentle first step, then a steady climb the Armory has to keep up with
+    stageHp: 1.7,
+    stageHpSq: 0.1,
+    runHp: 0.05,       // enemy hp +5% per in-run level-up the player has
+    levelShoot: 0.09,  // shooters fire 9% more often per level-in-stage
+    stageShoot: 0.25,  // …and 25% more often per stage
+    levelCrowd: 1.8,   // alive-on-screen cap grows per level-in-stage
+    stageCrowd: 3,     // …and per stage
+    bossBase: 50, bossLevel: 34, bossStage: 100, bossRun: 0.08, // a boss fight lasts ~40–70s
+    runPower: 0.28,    // in-run Power Crystal: +28% per pick
+    runRate: 0.2,      // in-run Haste Rune: +20% per pick
+    feverRate: 1.4,    // fire-rate boost while FEVER lasts
+    // Enemies grow with the Guardian's Armory power too, so a strong build
+    // stays challenged: their hp gets this share of your POWER x HASTE bonus
+    // (0.15 → a hero 3x stronger than base meets foes with +30% hp).
+    armoryHp: 0.1,
+    // Enemy bullets hit harder every level and every stage:
+    // base x (1 + bulletStage x stage) x (1 + bulletLevel x level-in-stage).
+    // Stage 1: 20 -> 31 over its 10 levels; stage 5: 56 -> 87; stage 12: 119 -> 183.
+    bulletBase: 20,
+    bulletStage: 0.45,
+    bulletLevel: 0.06,
+    eliteBullet: 1.3,  // elites' shots x this
+    bossBullet: 1.5,   // stage boss volleys x this (captains: miniBullet)
+    miniBullet: 1.25,
   },
 
-  // Ads (AdMob via Capacitor — no-op in a plain browser, see src/systems/ads.js)
+  // Level pacing — every level is a run of waves (systems/spawner.js).
+  waves: {
+    quotaMult: 1.6,         // enemies per level = level's attackers x this…
+    quotaFalloff: 0.03,
+    bossLevelQuota: 0.75,   // boss levels (4, 7, 10) send this share of the attackers     // …minus this per level into the stage (x1.33 by the tenth)
+    levelTime: [70, 7],     // target seconds of releases: 70s at a stage's L1, +7s per level
+    baseWaves: 3,           // waves at a stage's first level…
+    wavesPerLevel: 0.45,    // …growing to ~7 by its tenth
+    breather: [4, 6.5],     // seconds of calm between waves
+  },
+
+  // Graphics quality — 2 high, 1 medium, 0 low. With `auto`, main.js
+  // watches the real frame time and steps down when a device struggles
+  // (and back up when there is headroom), so phones stay smooth.
+  //   high:   full effects, up to 2x pixel density
+  //   medium: 1.5x density; no creature auras / afterimages / near scenery
+  //   low:    1x density; also no fog, light rays or HUD glow shadows
+  quality: {
+    level: 2,
+    auto: true,
+    maxDpr: [1, 1.5, 2],
+  },
+
+  // Ads (AdMob via Capacitor — no-op in a plain browser, see systems/ads.js)
   ads: {
-    interstitialEveryNLevels: 2,  // full-screen ad on level-clear every N levels
-    rewardedCoins: 25,             // coins granted for watching a rewarded ad
+    interstitialEveryNLevels: 2,  // full-screen ad on level clear every N levels
   },
 
-  // Coin economy — deliberately tight. Kills/levels trickle a few coins;
-  // BOMB and ANGEL are meant to feel earned or worth buying, not free-flowing.
+  // Coin economy. Earned in play (~650 coins over Stage 1, more later),
+  // topped up by free daily rewards, spent on the Armory (a full first rank
+  // of the Guardian ≈ 2,800), helpers (35–80) and coin revives. Coin packs
+  // in the shop (data/shop.js) shortcut the grind.
+  // ONE value scale for every coin in the game: 10 coins = 1 cent, so the
+  // $3.99 pack is 4,000 coins (data/shop.js). Earning is time-based: a
+  // level takes ~1.5-2 min and pays ~4-8 cents; a whole stage (10 levels +
+  // boss, ~20 min) about 1,000 coins = $1 at stage 1, more later on. Prices
+  // follow from that: a revive costs about one level's coins, a helper
+  // about half a level, an Armory rank a few stages (data/upgrades.js).
   economy: {
-    coinDropChance: 0.35,     // only some kills drop a coin at all
-    coinDropAmount: [1, 2],   // min/max coins per drop (when one occurs)
-    levelClearBonus: 4,       // flat bonus per level, not scaled by level number
+    coinDropChance: 0.25,     // share of kills that drop coins
+    coinDropAmount: [2, 3],   // min/max coins per drop
+    levelClear: { base: 30, perLevel: 5, perStage: 25 }, // coins for clearing a level (stage 1: 35-80)
+    bossBonus: { base: 100, perStage: 50, finalMult: 1.5, miniShare: 0.4 }, // extra coins for a boss kill: stage boss (L10) x finalMult, captains (L4/L7) miniShare of that
+    // revive price: base + perStage x stage, doubling for each revive in
+    // the same run (stage 1: 100 / 200 / 400 = 10c / 20c / 40c)
+    revive: { base: 100, perStage: 25, growth: 2, max: 3 },
+    adRevives: 1,                 // free video revives per run
+    // free rewards (systems/rewards.js, Rewards page)
+    dailyLogin: [100, 150, 200, 250, 300, 400, 800], // 7-day streak, day 7 is the big one
+    giftCoins: 60, giftHours: 4,                      // free gift every few hours
+    // rewarded video: each one today pays the next step (a video earns us
+    // ~1-2c, so these stay modest), up to videoCoins.length per day
+    videoCoins: [30, 40, 50, 60, 80],
+    invite: { friendGets: 500, youGet: 1000 },        // per friend who enters your code
+    missionsPerDay: 3,
+    // Daily Challenge (systems/challenge.js): `first` for the first finished
+    // run of the day, `beatBest` for each later run that beats today's best
+    challenge: { first: 150, beatBest: 50, levels: 3 },
+    // star chest on the home map: one per `every` level stars earned,
+    // paying coins + growth x chests already opened (ui/levelStars.js)
+    starChest: { every: 10, coins: 150, growth: 10 },
   },
 };
+
+// Derived values (kept in one place so changing the HUD moves the gate too).
+CONFIG.gateY = CONFIG.height - CONFIG.hud.rowBottomOffset - 12;

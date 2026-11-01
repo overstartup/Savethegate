@@ -1,8 +1,9 @@
 // Wizard: one-finger movement is the ONLY control; casting is automatic.
 import { CONFIG } from '../config.js';
+import { statBonus } from '../data/upgrades.js';
 
 export class Player {
-  // upgrades = saveData.permanent ({ power, speed, fireRate } levels 0..UPGRADE_MAX,
+  // upgrades = saveData.permanent ({ power, speed, fireRate } levels 0 and up,
   // see data/upgrades.js) — permanent, bought from the main-menu Upgrades screen.
   // activeSticker = the currently equipped sticker (hero/tool) that defines base stats.
   constructor(upgrades = {}, activeSticker = null) {
@@ -18,10 +19,13 @@ export class Player {
     this.vy = 0;
     this.recoil = 0;    // 1 right after a shot, decays → kick + muzzle flash
     this.runRateMult = 1; // in-run upgrades + FEVER (see systems/runUpgrades.js)
+    this.levelIndex = 0;  // level being played — shooting grows with it (set by main.js)
 
     // Permanent upgrade effects
-    this.speedMult = 1 + (upgrades.speed || 0) * 0.08;      // SWIFTNESS: +8%/level
-    this.fireRateBonus = 1 + (upgrades.fireRate || 0) * 0.08; // HASTE: +8%/level
+    // (per-level amounts live in data/upgrades.js → UNITS.hero)
+    this.speedMult = statBonus('hero', 'speed', upgrades.speed || 0);         // SWIFTNESS
+    this.xpMult = statBonus('hero', 'xp', upgrades.xp || 0);                  // WISDOM
+    this.fireRateBonus = statBonus('hero', 'fireRate', upgrades.fireRate || 0); // HASTE
     
     // Base stats come from the equipped sticker, plus power upgrades
     // Sticker damage is a power RATING (the starter hero is 120) — scaled
@@ -29,12 +33,12 @@ export class Player {
     // Using the raw 120 one-shot every enemy at every stage, which made hp,
     // pips, stage toughness and damage upgrades all meaningless.
     const baseDmg = activeSticker ? activeSticker.damage / CONFIG.player.stickerDamagePerBolt : CONFIG.spell.damage;
-    this.damage = baseDmg * (1 + 0.15 * (upgrades.power || 0)); // POWER: +15% dmg/level
+    this.damage = baseDmg * statBonus('hero', 'power', upgrades.power || 0); // POWER
 
     // Blood line — a hit-buffer against enemy bullets.
     // The active sticker defines max blood (e.g., 200 HP).
     const baseBlood = activeSticker ? activeSticker.blood : CONFIG.player.maxBlood;
-    const maxBlood = Math.round(baseBlood * (1 + 0.15 * (upgrades.blood || 0))); // VITALITY: +15%/level
+    const maxBlood = Math.round(baseBlood * statBonus('hero', 'blood', upgrades.blood || 0)); // VITALITY
     this.blood = maxBlood;
     this.maxBlood = maxBlood;
     this.invuln = 0;
@@ -74,7 +78,7 @@ export class Player {
     // that full visual foot offset plus a small fixed buffer (was a much
     // bigger ~10%-of-screen buffer, which stopped the Guardian way too high
     // — he couldn't come down anywhere near the seafloor growth at all).
-    const footOffset = this.size * 1.25;
+    const footOffset = this.size * 1.0; // boots + thruster flame (render/hero.js)
     const maxY = CONFIG.height - CONFIG.hud.rowBottomOffset - footOffset - 20;
     this.y = Math.max(half + 40, Math.min(maxY, this.y)); // 40 = HUD zone
 
@@ -109,10 +113,20 @@ export class Player {
     this.shieldTime = Math.max(this.shieldTime, 0) + seconds;
   }
 
+  // Bolt damage right now: base (sticker + Armory POWER) grown by level.
+  get power() { return this.damage * (1 + CONFIG.player.levelDamage * this.levelIndex); }
+
+  // Bolts per second right now, from every source, capped.
+  get fireRate() {
+    const P = CONFIG.player;
+    return Math.min(P.maxFireRate,
+      P.fireRate * (1 + P.levelFireRate * this.levelIndex) * this.fireRateMult * this.fireRateBonus * this.runRateMult);
+  }
+
   // Returns true when it's time to cast a spell
   tryFire() {
     if (this.fireTimer <= 0) {
-      this.fireTimer = 1 / (CONFIG.player.fireRate * this.fireRateMult * this.fireRateBonus * this.runRateMult);
+      this.fireTimer = 1 / this.fireRate;
       this.recoil = 1;
       return true;
     }

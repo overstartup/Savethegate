@@ -7,6 +7,8 @@ public class GateWallDbContext(DbContextOptions<GateWallDbContext> options) : Db
     public DbSet<Player> Players => Set<Player>();
     public DbSet<ScoreEntry> Scores => Set<ScoreEntry>();
     public DbSet<ProcessedReceipt> ProcessedReceipts => Set<ProcessedReceipt>();
+    public DbSet<InviteClaim> InviteClaims => Set<InviteClaim>();
+    public DbSet<ChallengeScore> ChallengeScores => Set<ChallengeScore>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,6 +48,26 @@ public class GateWallDbContext(DbContextOptions<GateWallDbContext> options) : Db
         modelBuilder.Entity<ProcessedReceipt>()
             .HasIndex(r => r.TransactionId)
             .IsUnique();
+
+        modelBuilder.Entity<InviteClaim>()
+            .HasIndex(c => c.InviteeId)
+            .IsUnique();
+
+        modelBuilder.Entity<InviteClaim>()
+            .HasIndex(c => c.InviterId);
+
+        modelBuilder.Entity<ChallengeScore>()
+            .Property(c => c.Day)
+            .HasMaxLength(10);
+
+        modelBuilder.Entity<ChallengeScore>()
+            .HasOne(c => c.Player)
+            .WithMany()
+            .HasForeignKey(c => c.PlayerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ChallengeScore>()
+            .HasIndex(c => new { c.Day, c.Score });
 
         // --- SEED DATA ---
         var players = new List<Player>();

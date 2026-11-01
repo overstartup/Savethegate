@@ -1,0 +1,41 @@
+// Words for the bosses feature — see src/i18n.js.
+export const STR_BOSSES = {
+  'bz.warning': { en: 'WARNING!', de: 'ACHTUNG!', ar: 'تحذير!', fa: 'هشدار!' },
+  'bz.enraged': { en: 'ENRAGED!', de: 'RASEND!', ar: 'هائج!', fa: 'خشمگین!' },
+  'bz.enragedSub': { en: 'Minions incoming — hold the gate!', de: 'Diener im Anmarsch — halte das Tor!', ar: 'الأتباع قادمون — احمِ البوابة!', fa: 'نوچه‌ها در راهند — از دروازه دفاع کن!' },
+  'bz.capIncoming': { en: 'CAPTAIN INCOMING!', de: 'HAUPTMANN NAHT!', ar: 'القائد قادم!', fa: 'سرکرده در راه است!' },
+  'bz.lordIncoming': { en: 'WARLORD INCOMING!', de: 'KRIEGSHERR NAHT!', ar: 'أمير الحرب قادم!', fa: 'سردار در راه است!' },
+  'bz.capDefeated': { en: 'CAPTAIN DEFEATED!', de: 'ANFÜHRER BESIEGT!', ar: 'هُزم القائد!', fa: 'سرکرده شکست خورد!' },
+  'bz.defeated': { en: 'BOSS DEFEATED!', de: 'BOSS BESIEGT!', ar: 'هُزم الزعيم!', fa: 'غول شکست خورد!' },
+  'bz.coins': { en: '+{n} COINS', de: '+{n} MÜNZEN', ar: '⁦+{n}⁩ عملة', fa: '⁦+{n}⁩ سکه' },
+  'bz.capDefault': { en: 'THE CAPTAIN', de: 'DER HAUPTMANN', ar: 'القائد', fa: 'سرکرده' },
+  'bz.lordDefault': { en: 'THE WARLORD', de: 'DER KRIEGSHERR', ar: 'أمير الحرب', fa: 'سردار' },
+
+  // --- captains (level 4 of each stage: the stage's goblin-role species) ---
+  'bz.cap.crab': { en: 'CRAB CAPTAIN', de: 'KRABBEN-KAPITÄN', ar: 'قائد السلطعونات', fa: 'ناخدای خرچنگ‌ها' },
+  'bz.cap.frostling': { en: 'FROSTLING CAPTAIN', de: 'FROSTLING-HAUPTMANN', ar: 'قائد الصقيعيّين', fa: 'سرکردهٔ یخ‌زادها' },
+  'bz.cap.scarab': { en: 'SCARAB CAPTAIN', de: 'SKARABÄUS-HAUPTMANN', ar: 'قائد الجعارين', fa: 'سرکردهٔ سوسک‌های طلایی' },
+  'bz.cap.shardfox': { en: 'SHARDFOX CAPTAIN', de: 'SPLITTERFUCHS-HAUPTMANN', ar: 'قائد الثعالب البلّورية', fa: 'سرکردهٔ روباه‌های بلورین' },
+  'bz.cap.kobold': { en: 'KOBOLD CAPTAIN', de: 'KOBOLD-HAUPTMANN', ar: 'قائد الكوبولد', fa: 'سرکردهٔ کوبولدها' },
+  'bz.cap.finch': { en: 'FINCH CAPTAIN', de: 'FINKEN-HAUPTMANN', ar: 'قائد العصافير', fa: 'سرکردهٔ سهره‌ها' },
+  'bz.cap.gloomling': { en: 'GLOOMLING CAPTAIN', de: 'DÜSTERLING-HAUPTMANN', ar: 'قائد كائنات العتمة', fa: 'سرکردهٔ تاریک‌زادها' },
+  'bz.cap.starsprite': { en: 'STARSPRITE CAPTAIN', de: 'STERNGEIST-HAUPTMANN', ar: 'قائد جنّيات النجوم', fa: 'سرکردهٔ پریان ستاره' },
+  'bz.cap.cogbot': { en: 'COGBOT CAPTAIN', de: 'ZAHNRADBOT-HAUPTMANN', ar: 'قائد روبوتات التروس', fa: 'سرکردهٔ ربات‌های چرخ‌دنده‌ای' },
+  'bz.cap.shroomkin': { en: 'SHROOMKIN CAPTAIN', de: 'PILZLING-HAUPTMANN', ar: 'قائد قوم الفطر', fa: 'سرکردهٔ قارچ‌زادها' },
+  'bz.cap.ram': { en: 'RAM CAPTAIN', de: 'WIDDER-HAUPTMANN', ar: 'قائد الكباش', fa: 'سرکردهٔ قوچ‌ها' },
+  'bz.cap.boar': { en: 'BOAR CAPTAIN', de: 'KEILER-HAUPTMANN', ar: 'قائد الخنازير البرية', fa: 'سرکردهٔ گرازها' },
+
+  // --- warlords (level 7 of each stage: the stage's skeleton-role species) ---
+  'bz.cap.pirate': { en: 'PIRATE WARLORD', de: 'PIRATEN-KRIEGSHERR', ar: 'أمير حرب القراصنة', fa: 'سردار دزدان دریایی' },
+  'bz.cap.wraith': { en: 'WRAITH WARLORD', de: 'GESPENSTER-KRIEGSHERR', ar: 'أمير حرب الأطياف', fa: 'سردار شبح‌ها' },
+  'bz.cap.mummy': { en: 'MUMMY WARLORD', de: 'MUMIEN-KRIEGSHERR', ar: 'أمير حرب المومياوات', fa: 'سردار مومیایی‌ها' },
+  'bz.cap.treant': { en: 'TREANT WARLORD', de: 'BAUMHIRTEN-KRIEGSHERR', ar: 'أمير حرب الأشجار الحيّة', fa: 'سردار درختان جاندار' },
+  'bz.cap.emberknight': { en: 'EMBER WARLORD', de: 'GLUT-KRIEGSHERR', ar: 'أمير حرب الجمر', fa: 'سردار اخگر' },
+  'bz.cap.owl': { en: 'OWL WARLORD', de: 'EULEN-KRIEGSHERR', ar: 'أمير حرب البوم', fa: 'سردار جغدها' },
+  'bz.cap.witch': { en: 'WITCH QUEEN', de: 'HEXENKÖNIGIN', ar: 'ملكة الساحرات', fa: 'ملکهٔ جادوگران' },
+  'bz.cap.astral': { en: 'ASTRAL WARLORD', de: 'ASTRAL-KRIEGSHERR', ar: 'أمير الحرب النجمي', fa: 'سردار اختری' },
+  'bz.cap.steamsoldier': { en: 'STEAM WARLORD', de: 'DAMPF-KRIEGSHERR', ar: 'أمير حرب البخار', fa: 'سردار بخار' },
+  'bz.cap.tiki': { en: 'TIKI WARLORD', de: 'TIKI-KRIEGSHERR', ar: 'أمير حرب التيكي', fa: 'سردار تیکی' },
+  'bz.cap.guard': { en: 'GUARD COMMANDER', de: 'WACHKOMMANDANT', ar: 'قائد الحرس', fa: 'فرماندهٔ نگهبانان' },
+  'bz.cap.bonecrawler': { en: 'BONECRAWLER WARLORD', de: 'KNOCHENKRIECHER-KRIEGSHERR', ar: 'أمير حرب زواحف العظام', fa: 'سردار خزندگان استخوانی' },
+};

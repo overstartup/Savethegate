@@ -43,7 +43,7 @@ const REAL_IDS = {
 // ad unit IDs and are ready to publish. Test IDs always serve a sample ad
 // and never earn money, so there's zero risk of an AdMob policy violation
 // while you're just trying things out.
-const USE_TEST_IDS = true;
+const USE_TEST_IDS = false; // live AdMob ads (GateWall app ids are in AndroidManifest.xml / Info.plist)
 
 let AdMob = null;
 let BannerAdPosition = null;
@@ -66,10 +66,17 @@ function ids() {
 
 export const ads = {
   enabled: false,
+  // Local dev server only (never in the app): a pretend rewarded video that
+  // "plays" for a moment and pays out, so revive / free-coin flows can be
+  // tried in a browser. Same rule as the test store in systems/iap.js.
+  testMode: false,
 
   async init() {
     // Capacitor injects window.Capacitor only inside the native app shell.
     if (typeof window === 'undefined' || !window.Capacitor?.isNativePlatform?.()) {
+      const inApp = typeof window !== 'undefined' && (!!window.Capacitor || /; wv\)/.test(navigator.userAgent || ''));
+      this.testMode = !inApp && ['localhost', '127.0.0.1'].includes(window.location?.hostname)
+        && window.location.protocol === 'http:' && window.location.port !== '';
       return; // running in a normal browser tab — ads stay disabled
     }
     try {
@@ -154,9 +161,18 @@ export const ads = {
     } catch (err) { console.warn('[ads] rewarded preload failed:', err); }
   },
 
-  // onReward is called ONLY if the player watched the full ad.
+  // onReward is called ONLY if the player watched the full ad. One video at
+  // a time: extra taps while one is opening/playing are ignored, so a
+  // double tap can't pay out twice.
   async showRewarded(onReward, onUnavailable) {
+    if (this.playing) return;
+    if (this.testMode) {
+      this.playing = true;
+      setTimeout(() => { this.playing = false; onReward(); }, 700);
+      return;
+    }
     if (!ready || !rewardedLoaded) { onUnavailable?.(); return; }
+    this.playing = true;
     try {
       rewardedLoaded = false;
       let listener = null;
@@ -169,9 +185,10 @@ export const ads = {
       console.warn('[ads] rewarded show failed:', err);
       onUnavailable?.();
     } finally {
+      this.playing = false;
       this._preloadRewarded();
     }
   },
 
-  isRewardedReady() { return ready && rewardedLoaded; },
+  isRewardedReady() { return this.testMode || (ready && rewardedLoaded); },
 };

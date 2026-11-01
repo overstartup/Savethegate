@@ -1,7 +1,11 @@
 // HUD — score, coins, hearts, level name, combo, weapon buy-buttons.
+import { cfTarget } from './coinFx.js';
 import { CONFIG } from '../config.js';
 import { WEAPONS, STAGE_SIZE } from '../data/levels.js';
-import { F_TITLE, F_BODY, CANNON_FRAMES } from './screens.js';
+import { F_TITLE, F_BODY } from './screens.js';
+import { tr, fitFont } from '../i18n.js';
+import { drawGun } from '../render/gun.js';
+import { drawUnitArt } from '../render/units.js';
 
 // All 5 buy-able items (bomb, shield, wall, turret, angel) in a single
 // evenly-spaced row along the bottom, instead of the old two-row split
@@ -63,93 +67,15 @@ function coin(ctx, x, y, r) {
   ctx.fillText('¢', x, y + r * 0.45);
 }
 
-function drawBombIcon(ctx, cx, cy) {
-  ctx.fillStyle = '#333';
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = '#8a6a30';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(cx + 8, cy - 6); ctx.quadraticCurveTo(cx + 16, cy - 16, cx + 10, cy - 20); ctx.stroke();
-  ctx.fillStyle = '#ffd23d';
-  ctx.beginPath(); ctx.arc(cx + 10, cy - 21, 3.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.beginPath(); ctx.arc(cx - 5, cy - 1, 4.5, 0, Math.PI * 2); ctx.fill();
-}
-
-function drawAngelIcon(ctx, cx, cy) {
-  ctx.fillStyle = 'rgba(154,230,255,0.9)';
-  ctx.strokeStyle = '#1c3a52';
-  ctx.lineWidth = 1.5;
-  for (const s of [-1, 1]) {
-    ctx.beginPath(); ctx.ellipse(cx + s * 11, cy + 3, 8, 4, s * 0.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  }
-  ctx.fillStyle = '#bdeeff';
-  ctx.beginPath(); ctx.arc(cx, cy + 2, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = '#7fd8ff';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.ellipse(cx, cy - 11, 7, 2.5, 0, 0, Math.PI * 2); ctx.stroke();
-}
-
-function drawShieldIcon(ctx, cx, cy) {
-  ctx.fillStyle = 'rgba(127,216,255,0.85)';
-  ctx.strokeStyle = '#1c3a5c';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - 15);
-  ctx.lineTo(cx + 12, cy - 9);
-  ctx.lineTo(cx + 12, cy + 4);
-  ctx.quadraticCurveTo(cx + 12, cy + 15, cx, cy + 19);
-  ctx.quadraticCurveTo(cx - 12, cy + 15, cx - 12, cy + 4);
-  ctx.lineTo(cx - 12, cy - 9);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(cx - 4, cy - 1); ctx.lineTo(cx - 1, cy + 5); ctx.lineTo(cx + 6, cy - 7);
-  ctx.stroke();
-}
-
-function drawWallIcon(ctx, cx, cy) {
-  ctx.fillStyle = '#a9642f';
-  ctx.strokeStyle = '#5c3418';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.roundRect(cx - 14, cy - 9, 28, 18, 3); ctx.fill(); ctx.stroke();
-  // brick lines
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(cx - 14, cy); ctx.lineTo(cx + 14, cy);
-  ctx.moveTo(cx - 7, cy - 9); ctx.lineTo(cx - 7, cy);
-  ctx.moveTo(cx + 7, cy - 9); ctx.lineTo(cx + 7, cy);
-  ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + 9);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.fillRect(cx - 13, cy - 8, 26, 3);
-}
+// Buy-row icons use the same art as the Armory and the battlefield
+// (render/units.js, render/gun.js).
+function drawBombIcon(ctx, cx, cy) { drawUnitArt(ctx, 'bomb', cx, cy + 2, 34, performance.now() / 1000); }
+function drawAngelIcon(ctx, cx, cy) { drawUnitArt(ctx, 'angel', cx, cy + 2, 32, performance.now() / 1000); }
+function drawShieldIcon(ctx, cx, cy) { drawUnitArt(ctx, 'shield', cx, cy + 1, 34, performance.now() / 1000); }
+function drawWallIcon(ctx, cx, cy) { drawUnitArt(ctx, 'wall', cx, cy - 1, 30, performance.now() / 1000); }
 
 function drawTurretIcon(ctx, cx, cy) {
-  const img = CANNON_FRAMES.idle;
-  if (img) {
-    const dh = 34, dw = dh * (img.width / img.height);
-    ctx.drawImage(img, cx - dw / 2, cy + 12 - dh, dw, dh);
-    return;
-  }
-  // Fallback (art not yet loaded)
-  ctx.fillStyle = '#5a6270';
-  ctx.strokeStyle = '#20242c';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(cx, cy + 5, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.save();
-  ctx.translate(cx, cy + 5);
-  ctx.rotate(-0.5);
-  ctx.fillStyle = '#3a3f48';
-  ctx.strokeStyle = '#15171c';
-  ctx.beginPath(); ctx.roundRect(-4, -20, 8, 18, 2); ctx.fill(); ctx.stroke();
-  ctx.restore();
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.beginPath(); ctx.arc(cx - 3, cy + 2, 3, 0, Math.PI * 2); ctx.fill();
+  drawGun(ctx, cx, cy + 5, 13, { aim: -0.35, charge: 0.6 });
 }
 
 function drawTvIcon(ctx, cx, cy) {
@@ -180,7 +106,7 @@ function drawButton(ctx, key, state, adsReady) {
   // ice-arch" look without needing per-theme art for the whole HUD.
   ctx.save();
   ctx.shadowColor = affordable ? (isAd ? '#7fd8ff' : '#ffd23d') : 'rgba(255,90,90,0.5)';
-  ctx.shadowBlur = affordable ? 10 : 4;
+  ctx.shadowBlur = CONFIG.quality.level < 1 ? 0 : (affordable ? 10 : 4); // shadows are costly on phones
   ctx.fillStyle = 'rgba(20,12,45,0.75)';
   ctx.strokeStyle = affordable ? (isAd ? '#7fd8ff' : '#ffd23d') : 'rgba(255,90,90,0.6)';
   ctx.lineWidth = 2.5;
@@ -213,7 +139,8 @@ function drawButton(ctx, key, state, adsReady) {
     ctx.fillStyle = affordable ? '#7fd8ff' : '#999';
     ctx.font = `11px ${F_BODY}`;
     ctx.textAlign = 'center';
-    ctx.fillText('FREE', cx, b.y + b.h - 7);
+    ctx.font = fitFont(ctx, tr('m.hud.free'), `11px ${F_BODY}`, b.w - 6);
+    ctx.fillText(tr('m.hud.free'), cx, b.y + b.h - 7);
   } else {
     coin(ctx, cx - 12, b.y + b.h - 11, 6);
     ctx.fillStyle = affordable ? '#ffd23d' : '#ff9a9a';
@@ -258,6 +185,7 @@ function drawCoinPill(ctx, state) {
   ctx.fill(); ctx.stroke();
 
   coin(ctx, b.x + 14, b.y + b.h / 2, 8);
+  cfTarget(b.x + 14, b.y + b.h / 2); // flying coins land here
   ctx.fillStyle = '#fff';
   ctx.font = `14px ${F_BODY}`;
   ctx.textAlign = 'left';
@@ -304,9 +232,10 @@ export function renderHUD(ctx, state, adsReady = false) {
   ctx.shadowBlur = 3;
   ctx.shadowOffsetY = 1;
 
-  ctx.font = `bold 16px ${F_TITLE}`;
+  const whereStr = tr('m.hud.where', { s: stageNum, l: levelInStage, n: STAGE_SIZE });
+  ctx.font = 'bold ' + fitFont(ctx, whereStr, `16px ${F_TITLE}`, CONFIG.width - 220);
   ctx.fillStyle = '#ffe9a8';
-  ctx.fillText(`STAGE ${stageNum} · LV ${levelInStage}/${STAGE_SIZE}`, CONFIG.width / 2, 21);
+  ctx.fillText(whereStr, CONFIG.width / 2, 21);
 
   ctx.font = `bold 12px ${F_TITLE}`;
   ctx.fillStyle = 'rgba(255,233,168,0.75)';
@@ -320,6 +249,12 @@ export function renderHUD(ctx, state, adsReady = false) {
   ctx.fillRect(CONFIG.width / 2 - 55, 44, 110, 3);
   ctx.fillStyle = '#7fd8ff';
   ctx.fillRect(CONFIG.width / 2 - 55, 44, 110 * prog, 3);
+  // which wave of the level is on (quiet — no pop-up message)
+  if (state.spawner.waves) {
+    ctx.font = `10px ${F_TITLE}`;
+    ctx.fillStyle = 'rgba(255,233,168,0.7)';
+    ctx.fillText(tr('m.hud.wave', { a: state.spawner.waveNumber, b: state.spawner.waves.length }), CONFIG.width / 2, 58);
+  }
 
   // Lives (top-right, below the pause button)
   for (let i = 0; i < CONFIG.gateHealth; i++) {
@@ -362,7 +297,7 @@ export function renderHUD(ctx, state, adsReady = false) {
     ctx.font = `11px ${F_TITLE}`;
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.textAlign = 'left';
-    ctx.fillText('COMBO', 16, 104);
+    ctx.fillText(tr('m.hud.combo'), 16, 104);
     // combo timer bar — how long until the chain drops
     const tw = 54 * Math.max(0, Math.min(1, state.comboTimer / 1.2));
     ctx.fillStyle = col;
@@ -376,7 +311,7 @@ export function renderHUD(ctx, state, adsReady = false) {
     ctx.font = `15px ${F_BODY}`;
     ctx.fillStyle = p.fireRateMult > 1 ? '#58e07f' : '#b358e0';
     ctx.fillText(
-      `${p.fireRateMult > 1 ? '×' + p.fireRateMult : '×½'} magic ${Math.ceil(p.fireRateMultTime)}s`,
+      tr('m.hud.magic', { x: p.fireRateMult > 1 ? '×' + p.fireRateMult : '×½', s: Math.ceil(p.fireRateMultTime) }),
       p.x, p.y - 42
     );
   }
@@ -384,7 +319,7 @@ export function renderHUD(ctx, state, adsReady = false) {
     ctx.textAlign = 'center';
     ctx.font = `15px ${F_BODY}`;
     ctx.fillStyle = '#7fd8ff';
-    ctx.fillText(`🛡 shield ${Math.ceil(p.shieldTime)}s`, p.x, p.y - (p.fireRateMultTime > 0 ? 60 : 42));
+    ctx.fillText(tr('m.hud.shield', { s: Math.ceil(p.shieldTime) }), p.x, p.y - (p.fireRateMultTime > 0 ? 60 : 42));
   }
 
   // All 5 buy-able items in one row along the bottom, plus the free
@@ -395,4 +330,32 @@ export function renderHUD(ctx, state, adsReady = false) {
   drawButton(ctx, 'turret', state, adsReady);
   drawButton(ctx, 'angel', state, adsReady);
   if (adsReady) drawButton(ctx, 'watchAd', state, adsReady);
+  if (state.helperHint && BUTTONS[state.helperHint]) drawHelperHint(ctx, BUTTONS[state.helperHint]);
+}
+
+// Pulsing ring + bouncing "TAP!" arrow over the helper that would save the
+// player right now (chosen by pickHelperHint in main.js).
+function drawHelperHint(ctx, b) {
+  const t = performance.now() / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 10);
+  const cx = b.x + b.w / 2;
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,232,120,${0.55 + pulse * 0.45})`;
+  ctx.shadowColor = '#ffd23d';
+  ctx.shadowBlur = 12 + pulse * 10;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(b.x - 4 - pulse * 3, b.y - 4 - pulse * 3, b.w + 8 + pulse * 6, b.h + 8 + pulse * 6, 14); ctx.stroke();
+  ctx.shadowBlur = 0;
+  const ay = b.y - 18 - Math.abs(Math.sin(t * 6)) * 8;
+  ctx.fillStyle = '#ffd23d';
+  ctx.strokeStyle = '#2a1f4d';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx - 9, ay - 8); ctx.lineTo(cx + 9, ay - 8); ctx.lineTo(cx, ay + 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+  const tapStr = tr('m.hud.tap');
+  ctx.font = fitFont(ctx, tapStr, `14px ${F_TITLE}`, b.w + 16);
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeText(tapStr, cx, ay - 12);
+  ctx.fillText(tapStr, cx, ay - 12);
+  ctx.restore();
 }

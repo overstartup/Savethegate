@@ -61,6 +61,7 @@ export function renderAtmosphereBack(ctx, def, t) {
   const W = CONFIG.width, H = CONFIG.height;
   const col = def.decorColor || '#ffffff';
 
+  if (CONFIG.quality.level < 1) return; // low quality: skip rays/fog/motes
   // god rays from the top, slowly swaying
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';

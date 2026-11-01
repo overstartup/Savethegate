@@ -16,3 +16,4 @@ extract_gunner.py
 extract_icons.py
 place_icons.py
 app-native/android/build_release.bat
+store-assets/release/

@@ -5,28 +5,35 @@
 // stack into builds: fans of bolts, piercing shards, orbiting blades that
 // also eat enemy bullets, chain lightning, homing seekers, frost novas.
 // ============================================================
+import { cfBurst } from '../ui/coinFx.js';
 import { CONFIG } from '../config.js';
 import { Spell } from '../entities/spell.js';
 import { drawGlow } from '../render/creatures.js';
+import { tr, fitFont, isRtl } from '../i18n.js';
 
+// Card name/description are looked up at draw time: tr('g.up.<key>') and
+// tr('g.up.<key>.d', dv) — see src/lang/game.js.
 export const RUN_UPGRADES = {
-  multishot: { name: 'Twin Bolts', desc: '+1 bolt in every volley', max: 4, icon: '✦', color: '#7fd8ff', weight: 4 },
-  rapid:     { name: 'Haste Rune', desc: '+20% fire rate', max: 5, icon: '⚡', color: '#ffd23d', weight: 4 },
-  power:     { name: 'Power Crystal', desc: '+35% bolt damage', max: 5, icon: '◆', color: '#ff7ad9', weight: 4 },
-  pierce:    { name: 'Piercing Shards', desc: 'Bolts pass through +1 foe', max: 3, icon: '➤', color: '#c8a2ff', weight: 3 },
-  side:      { name: 'Wing Cannons', desc: 'Extra diagonal bolts', max: 2, icon: '⋎', color: '#58e07f', weight: 3 },
-  orbit:     { name: 'Orbit Blades', desc: 'Spinning blades cut foes & block bullets', max: 4, icon: '✺', color: '#9ae6ff', weight: 3 },
-  chain:     { name: 'Chain Lightning', desc: 'Lightning leaps between foes', max: 3, icon: 'ϟ', color: '#bfe9ff', weight: 3 },
-  seeker:    { name: 'Seeker Missiles', desc: 'Homing missiles hunt foes', max: 3, icon: '➶', color: '#ff9a3d', weight: 3 },
-  nova:      { name: 'Frost Nova', desc: 'Pulses freeze & slow nearby foes', max: 2, icon: '❄', color: '#aef2ff', weight: 2 },
-  magnet:    { name: 'Gem Magnet', desc: 'Pull gems from much further', max: 2, icon: '◎', color: '#ffe680', weight: 2 },
-  heal:      { name: 'Mend', desc: 'Restore 60% of your blood line', max: 99, icon: '♥', color: '#ff5c7a', weight: 3 },
-  treasure:  { name: 'Treasure', desc: '+15 coins right now', max: 99, icon: '●', color: '#ffd23d', weight: 0 },
+  // at most two bolt lines: the Guardian grows by power and speed, not by
+  // filling the lane with streams of bolts
+  multishot: { max: 1, icon: '✦', color: '#7fd8ff', weight: 4 },
+  rapid:     { dv: { n: Math.round(CONFIG.difficulty.runRate * 100) }, max: 5, icon: '⚡', color: '#ffd23d', weight: 4 },
+  power:     { dv: { n: Math.round(CONFIG.difficulty.runPower * 100) }, max: 5, icon: '◆', color: '#ff7ad9', weight: 4 },
+  pierce:    { max: 3, icon: '➤', color: '#c8a2ff', weight: 3 },
+  orbit:     { max: 3, icon: '✺', color: '#9ae6ff', weight: 3 },
+  chain:     { max: 3, icon: 'ϟ', color: '#bfe9ff', weight: 3 },
+  seeker:    { max: 3, icon: '➶', color: '#ff9a3d', weight: 3 },
+  nova:      { max: 2, icon: '❄', color: '#aef2ff', weight: 2 },
+  magnet:    { max: 2, icon: '◎', color: '#ffe680', weight: 2 },
+  heal:      { dv: { n: 60 }, max: 99, icon: '♥', color: '#ff5c7a', weight: 3 },
+  treasure:  { dv: { n: 15 }, max: 99, icon: '●', color: '#ffd23d', weight: 0 },
 };
 
-// Power climbs step by step: the first few level-ups come quickly (5, 7,
-// 13, 23 gems…) so a new run feels the Guardian grow within Level 1.
-const xpNeed = (lvl) => 5 + 2 * lvl * lvl;
+// A power pick is a reward, not a constant interruption: about one per
+// level after the first two (8, 28, 60, 104 … gems, x the wave quota
+// multiplier since levels hold more enemies), each one strong (see
+// CONFIG.difficulty).
+const xpNeed = (lvl) => Math.round((8 + 14 * lvl + 6 * lvl * lvl) * CONFIG.waves.quotaMult);
 
 export function createRun() {
   return {
@@ -44,8 +51,8 @@ export function createRun() {
 
 export const runLevel = (run, key) => run.picks[key] || 0;
 
-export function damageMult(run) { return 1 + 0.35 * runLevel(run, 'power'); }
-export function rateMult(run) { return (1 + 0.2 * runLevel(run, 'rapid')) * (run.fever > 0 ? 1.6 : 1); }
+export function damageMult(run) { return 1 + CONFIG.difficulty.runPower * runLevel(run, 'power'); }
+export function rateMult(run) { return (1 + CONFIG.difficulty.runRate * runLevel(run, 'rapid')) * (run.fever > 0 ? CONFIG.difficulty.feverRate : 1); }
 
 // Volley pattern for one trigger pull of the Guardian.
 export function runFire(run, mx, my, baseDamage, spells) {
@@ -58,12 +65,6 @@ export function runFire(run, mx, my, baseDamage, spells) {
   for (let i = 0; i < n; i++) {
     const f = i - (n - 1) / 2;
     spells.push(new Spell(mx + f * 9, my, dmg, { angle: f * 0.07, pierce, kind, hue: hue + i * 40 }));
-  }
-  const side = runLevel(run, 'side');
-  const angles = side >= 2 ? [0.42, 0.8] : side >= 1 ? [0.42] : [];
-  for (const a of angles) {
-    spells.push(new Spell(mx, my, dmg * 0.8, { angle: a, pierce, kind, hue }));
-    spells.push(new Spell(mx, my, dmg * 0.8, { angle: -a, pierce, kind, hue }));
   }
 }
 
@@ -108,7 +109,7 @@ function rollChoices(run, player) {
 // Applies a chosen card. Returns true if another level-up is already queued.
 export function applyPick(run, key, st) {
   if (key === 'heal') st.player.healBlood(0.6);
-  else if (key === 'treasure') st.coins += 15;
+  else if (key === 'treasure') { st.coins += 15; cfBurst(15, CONFIG.width / 2, 300); }
   else run.picks[key] = runLevel(run, key) + 1;
   run.choices = null;
   return checkLevelUp(run, st.player);
@@ -119,13 +120,13 @@ function checkLevelUp(run, player) {
   if (run.bonus > 0) {
     // free hand-picked powers (Veteran Boost) — no XP cost
     run.bonus--;
-    run.choiceTitle = 'VETERAN BOOST';
+    run.choiceTitle = 'g.cardVeteran'; // i18n key, resolved when drawn
     run.choices = rollChoices(run, player);
     run.choiceT = 0;
     return true;
   }
   if (run.xp < run.need) return false;
-  run.choiceTitle = 'LEVEL UP!';
+  run.choiceTitle = 'g.cardReward';
   run.xp -= run.need;
   run.lvl++;
   run.need = xpNeed(run.lvl);
@@ -140,8 +141,8 @@ function checkLevelUp(run, player) {
 // last few are hand-picked from cards as the level opens.
 export function grantCatchUp(run, player, levelIndex) {
   if (levelIndex <= 0) return 0;
-  const total = Math.min(22, Math.round(2 + 1.1 * levelIndex));
-  const manual = Math.min(3, total);
+  const total = Math.min(14, Math.round(1 + 0.7 * levelIndex));
+  const manual = Math.min(1, total); // one hand-picked card, the rest auto-drafted
   for (let i = 0; i < total - manual; i++) {
     const key = rollChoices(run, player).find((k) => k !== 'heal' && k !== 'treasure');
     if (key) run.picks[key] = runLevel(run, key) + 1;
@@ -155,7 +156,7 @@ export function grantCatchUp(run, player, levelIndex) {
 const nearest = (list, x, y, maxD, skip) => {
   let best = null, bd = maxD * maxD;
   for (const m of list) {
-    if (m.dead || (skip && skip.has(m))) continue;
+    if (m.dead || m.y < CONFIG.playTop || (skip && skip.has(m))) continue;
     const d = (m.x - x) ** 2 + (m.y - y) ** 2;
     if (d < bd) { bd = d; best = m; }
   }
@@ -166,7 +167,7 @@ const nearest = (list, x, y, maxD, skip) => {
 // Returns true when a level-up choice just became pending.
 export function runUpdate(dt, run, st, api) {
   const p = st.player;
-  const dmgBase = p.damage * damageMult(run);
+  const dmgBase = p.power * damageMult(run);
   if (run.fever > 0) run.fever -= dt;
   if (run.xpFlash > 0) run.xpFlash -= dt;
   let leveled = false;
@@ -193,7 +194,7 @@ export function runUpdate(dt, run, st, api) {
     g.y += g.vy * dt;
     if (d < 20) {
       g.dead = true;
-      run.xp += g.value;
+      run.xp += g.value * (p.xpMult || 1); // Armory WISDOM
       run.xpFlash = 0.15;
       api.audio.gem?.();
     } else if (g.y > CONFIG.height + 20) g.dead = true;
@@ -296,22 +297,35 @@ export function runUpdate(dt, run, st, api) {
 }
 
 // --- Rendering -------------------------------------------------------------
-const GEM_COLORS = ['#7fd8ff', '#58e07f', '#d27bff'];
+// XP gems are round-cut stones in green / gold / pink — never the bolts'
+// icy blue diamond, so rewards and shots don't get mixed up.
+const GEM_COLORS = [['#6ff0a0', '#1f9a52'], ['#ffe066', '#c88a10'], ['#ff8ad8', '#b02a8a']];
 
 export function renderRunWorld(ctx, run, p, t) {
   for (const g of run.gems) {
-    const s = 4 + g.tier * 2.2;
-    const col = GEM_COLORS[g.tier];
-    drawGlow(ctx, g.x, g.y, s * 2.6, col, 0.45);
+    const s = 4 + g.tier * 2;
+    const [light, dark] = GEM_COLORS[g.tier];
+    drawGlow(ctx, g.x, g.y, s * 2.2, light, 0.35);
     ctx.save();
     ctx.translate(g.x, g.y + Math.sin(g.spin) * 1.5);
-    ctx.scale(Math.cos(g.spin * 0.8) * 0.4 + 0.8, 1);
-    ctx.fillStyle = col;
+    ctx.scale(Math.cos(g.spin * 0.8) * 0.25 + 0.85, 1);
+    ctx.beginPath(); // hexagonal cut
+    for (let k = 0; k < 6; k++) {
+      const a = Math.PI / 6 + k * Math.PI / 3;
+      ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+    }
+    ctx.closePath();
+    ctx.fillStyle = dark; ctx.fill();
+    ctx.strokeStyle = 'rgba(10,20,10,0.75)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = light; // table facet
     ctx.beginPath();
-    ctx.moveTo(0, -s * 1.3); ctx.lineTo(s, 0); ctx.lineTo(0, s * 1.3); ctx.lineTo(-s, 0);
+    for (let k = 0; k < 6; k++) {
+      const a = Math.PI / 6 + k * Math.PI / 3;
+      ctx.lineTo(Math.cos(a) * s * 0.55, Math.sin(a) * s * 0.55 - s * 0.1);
+    }
     ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.beginPath(); ctx.moveTo(0, -s * 1.3); ctx.lineTo(s * 0.35, -s * 0.1); ctx.lineTo(-s * 0.5, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.arc(-s * 0.25, -s * 0.35, s * 0.18, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
@@ -376,12 +390,12 @@ export function renderXPBar(ctx, run) {
   if (run.fever > 0) {
     ctx.font = '12px "Luckiest Guy", Arial';
     ctx.fillStyle = `hsl(${(performance.now() / 3) % 360},100%,70%)`;
-    ctx.fillText(`FEVER ${Math.ceil(run.fever)}s`, CONFIG.width / 2, y - 5);
+    ctx.fillText(tr('g.feverTimer', { n: Math.ceil(run.fever) }), CONFIG.width / 2, y - 5);
   }
   ctx.restore();
 }
 
-const CARD = { x: 34, w: CONFIG.width - 68, h: 104, gap: 16, top: 214 };
+const CARD = { x: 52, w: CONFIG.width - 104, h: 74, gap: 10, top: 270 };
 export const cardRect = (i) => ({ x: CARD.x, y: CARD.top + i * (CARD.h + CARD.gap), w: CARD.w, h: CARD.h });
 
 export function levelUpTap(run, x, y) {
@@ -399,36 +413,37 @@ export function renderLevelUp(ctx, run, t) {
   if (!run.choices) return;
   const ct = run.choiceT;
   ctx.save();
-  ctx.fillStyle = `rgba(8,4,20,${Math.min(0.72, ct * 3)})`;
+  ctx.fillStyle = `rgba(8,4,20,${Math.min(0.55, ct * 3)})`;
   ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
 
   // radiating light behind the title
   ctx.save();
-  ctx.translate(CONFIG.width / 2, 150);
+  ctx.translate(CONFIG.width / 2, CARD.top - 40);
   ctx.rotate(t * 0.4);
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = '#d27bff';
+  ctx.globalAlpha = 0.1;
+  ctx.fillStyle = '#ffd23d';
   for (let i = 0; i < 12; i++) {
     ctx.rotate(Math.PI / 6);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-18, -260); ctx.lineTo(18, -260); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-12, -120); ctx.lineTo(12, -120); ctx.closePath(); ctx.fill();
   }
   ctx.restore();
 
   const ts = easeOutBack(Math.min(1, ct / 0.35));
   ctx.save();
-  ctx.translate(CONFIG.width / 2, 150);
+  ctx.translate(CONFIG.width / 2, CARD.top - 34);
   ctx.scale(ts, ts);
   ctx.textAlign = 'center';
-  ctx.font = '40px "Luckiest Guy", Arial';
-  ctx.lineWidth = 6;
+  ctx.font = '28px "Luckiest Guy", Arial';
+  ctx.lineWidth = 5;
   ctx.strokeStyle = '#2a1f4d';
-  const title = run.choiceTitle || 'LEVEL UP!';
+  const title = tr(run.choiceTitle || 'g.cardLevelUp');
+  ctx.font = fitFont(ctx, title, ctx.font, CONFIG.width - 40);
   ctx.strokeText(title, 0, 0);
   ctx.fillStyle = '#ffd23d';
   ctx.fillText(title, 0, 0);
-  ctx.font = '16px "Fredoka", Arial';
+  ctx.font = '13px "Fredoka", Arial';
   ctx.fillStyle = '#e8dcff';
-  ctx.fillText('Choose a power', 0, 30);
+  ctx.fillText(tr('g.pickOne'), 0, 20);
   ctx.restore();
 
   run.choices.forEach((key, i) => {
@@ -439,7 +454,7 @@ export function renderLevelUp(ctx, run, t) {
     const e = easeOutBack(local);
     const lvlNow = runLevel(run, key);
     ctx.save();
-    ctx.translate(r.x + r.w / 2 + (1 - e) * 260 * (i % 2 ? 1 : -1), r.y + r.h / 2);
+    ctx.translate(r.x + r.w / 2 + (1 - e) * 200 * (i % 2 ? 1 : -1), r.y + r.h / 2);
     const hover = Math.sin(t * 3 + i) * 2;
     ctx.translate(0, hover);
     ctx.globalAlpha = Math.min(1, local * 2);
@@ -450,10 +465,10 @@ export function renderLevelUp(ctx, run, t) {
     ctx.fillStyle = grad;
     ctx.strokeStyle = u.color;
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.roundRect(-r.w / 2, -r.h / 2, r.w, r.h, 16); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(-r.w / 2, -r.h / 2, r.w, r.h, 14); ctx.fill(); ctx.stroke();
     // shimmering sweep
     ctx.save();
-    ctx.beginPath(); ctx.roundRect(-r.w / 2, -r.h / 2, r.w, r.h, 16); ctx.clip();
+    ctx.beginPath(); ctx.roundRect(-r.w / 2, -r.h / 2, r.w, r.h, 14); ctx.clip();
     const sweep = ((t * 0.6 + i * 0.3) % 1.6) * r.w * 1.4 - r.w;
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = '#ffffff';
@@ -461,36 +476,41 @@ export function renderLevelUp(ctx, run, t) {
     ctx.moveTo(sweep, -r.h / 2); ctx.lineTo(sweep + 40, -r.h / 2); ctx.lineTo(sweep - 10, r.h / 2); ctx.lineTo(sweep - 50, r.h / 2);
     ctx.closePath(); ctx.fill();
     ctx.restore();
-    // icon orb
-    const ix = -r.w / 2 + 50;
-    drawGlow(ctx, ix, 0, 44, u.color, 0.5 + 0.2 * Math.sin(t * 4 + i));
+    // icon orb (on the right in Arabic/Persian: the card is mirrored, s = -1)
+    const s = isRtl() ? -1 : 1;
+    const ix = s * (-r.w / 2 + 38);
+    drawGlow(ctx, ix, 0, 30, u.color, 0.5 + 0.2 * Math.sin(t * 4 + i));
     ctx.fillStyle = '#140c28';
     ctx.strokeStyle = u.color;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(ix, 0, 30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(ix, 0, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = u.color;
-    ctx.font = '30px "Fredoka", Arial';
+    ctx.font = '22px "Fredoka", Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(u.icon, ix, 11);
-    // text
-    ctx.textAlign = 'left';
+    ctx.fillText(u.icon, ix, 8);
+    // text, starting next to the orb on the reading side
+    ctx.textAlign = s > 0 ? 'left' : 'right';
     ctx.fillStyle = '#ffffff';
-    ctx.font = '21px "Luckiest Guy", Arial';
-    ctx.fillText(u.name, ix + 44, -12);
-    ctx.font = '14px "Fredoka", Arial';
+    const tx = ix + s * 32;
+    const textW = r.w / 2 - 12 - (s * ix + 32);
+    const cardName = tr(`g.up.${key}`);
+    ctx.font = fitFont(ctx, cardName, '17px "Luckiest Guy", "Noto Sans Arabic", Arial', textW - (u.max < 99 && lvlNow === 0 ? 34 : 0));
+    ctx.fillText(cardName, tx, -9);
+    const cardDesc = tr(`g.up.${key}.d`, u.dv);
+    ctx.font = fitFont(ctx, cardDesc, '12px "Fredoka", "Noto Sans Arabic", Arial', textW);
     ctx.fillStyle = '#d8ccf5';
-    ctx.fillText(u.desc, ix + 44, 12);
+    ctx.fillText(cardDesc, tx, 9);
     // level pips
     if (u.max < 99) {
       for (let k = 0; k < u.max; k++) {
         ctx.fillStyle = k < lvlNow ? u.color : k === lvlNow ? '#ffffff' : 'rgba(255,255,255,0.18)';
-        ctx.beginPath(); ctx.arc(ix + 50 + k * 14, 34, 4.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ix + s * (37 + k * 11), 25, 3.5, 0, Math.PI * 2); ctx.fill();
       }
       if (lvlNow === 0) {
         ctx.fillStyle = '#ffd23d';
-        ctx.font = '12px "Luckiest Guy", Arial';
-        ctx.textAlign = 'right';
-        ctx.fillText('NEW!', r.w / 2 - 14, -r.h / 2 + 22);
+        ctx.font = '11px "Luckiest Guy", "Noto Sans Arabic", Arial';
+        ctx.textAlign = s > 0 ? 'right' : 'left';
+        ctx.fillText(tr('g.cardNew'), s * (r.w / 2 - 12), -r.h / 2 + 18);
       }
     }
     ctx.restore();

@@ -1,5 +1,6 @@
 // All hit checks. Mutates state; reports events back via the events object.
 import { CONFIG } from '../config.js';
+import { abWallBlock, abShieldBlock } from './abilities.js';
 
 export function resolveCollisions(state, events, dt = 1 / 60) {
   const { spells, monsters, obstacles, gates, player, enemyBullets, angels, ships, walls, turrets } = state;
@@ -16,7 +17,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
   for (const s of spells) {
     if (s.dead) continue;
     for (const m of monsters) {
-      if (m.dead) continue;
+      if (m.dead || m.y < CONFIG.playTop) continue; // safe under the header
       if (s.hitSet && s.hitSet.has(m)) continue; // piercing shot already went through this one
       const dx = s.x - m.x, dy = s.y - m.y, rr = s.r + m.r;
       if (dx * dx + dy * dy <= rr * rr) {
@@ -26,7 +27,9 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
         } else {
           s.dead = true;
         }
-        const children = m.onHit(s.damage);
+        // critical hits: double damage, double knock-back (CONFIG.spell)
+        s.crit = Math.random() < CONFIG.spell.critChance;
+        const children = m.onHit(s.crit ? s.damage * CONFIG.spell.critMult : s.damage, s.crit ? 2 : 1);
         if (m.dead) {
           events.kill(m, s);
           if (children) monsters.push(...children);
@@ -63,7 +66,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
         if (b.dead) continue;
         for (const w of walls) {
           if (w.dead) continue;
-          if (w.contains(b.x, b.y, b.r)) { b.dead = true; w.onHit(1); break; }
+          if (w.contains(b.x, b.y, b.r)) { b.dead = true; w.onHit(1); abWallBlock(state, w, b); break; }
         }
       }
     }
@@ -90,8 +93,8 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
         if (w.contains(m.x, m.y, m.r)) {
           m.y = w.y - w.h / 2 - m.r; // hold it just above the wall
           if (m.pvy > 0) m.pvy = 0;
-          w.onHit(CONFIG.wall.touchDamageToWall * dt);
-          const children = m.onHit(CONFIG.wall.touchDamageToMonster * (w.thorns || 1) * dt);
+          w.onHit(CONFIG.helpers.wall.crushDps * dt);
+          const children = m.onHit(w.thorns * (state.boltDamage || 1) * dt);
           if (m.dead) {
             events.kill(m);
             if (children) monsters.push(...children);
@@ -113,7 +116,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
         if (t.dead) continue;
         const dx = m.x - t.x, dy = m.y - t.y, rr = m.r + t.r;
         if (dx * dx + dy * dy <= rr * rr) {
-          t.onHit(CONFIG.turret.touchDamageFromMonster * dt);
+          t.onHit(CONFIG.helpers.turret.crushDps * dt);
           break;
         }
       }
@@ -162,10 +165,10 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
     }
   }
 
-  // Enemy bullets ↔ angels first (angels screen the wizard — this is what
-  // makes buying one a pure upside instead of a risk), then ↔ player.
-  // Neither ever "dies" from this — depleting a blood line just docks one
-  // shared heart and refills, per design.
+  // Enemy bullets ↔ ward sprites first (they screen the Guardian — a pure
+  // upside: a sprite that runs out of guard is only knocked out for a while,
+  // it never costs a heart), then ↔ player. The player never "dies" from
+  // this — depleting the blood line docks one shared heart and refills.
   if (enemyBullets && enemyBullets.length) {
     for (const b of enemyBullets) {
       if (b.dead) continue;
@@ -173,6 +176,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
       let absorbed = false;
       if (angels && angels.length) {
         for (const a of angels) {
+          if (!a.guarding) continue;
           const dx = b.x - a.x, dy = b.y - a.y, rr = b.r + 12;
           if (dx * dx + dy * dy <= rr * rr) {
             b.dead = true;
@@ -180,7 +184,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
             // Fire feedback on EVERY graze, not just when the line fully
             // empties — otherwise the first two hits look like nothing happened.
             events.grazed(a);
-            if (a.takeHit(b.damage)) events.bloodLost(a);
+            a.takeHit();
             break;
           }
         }
@@ -191,7 +195,7 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
       if (dx * dx + dy * dy <= rr * rr) {
         b.dead = true;
         if (player.shieldTime > 0) {
-          events.shieldBlock(player); // bullet fizzles — no blood/heart loss while shielded
+          events.shieldBlock(player); abShieldBlock(state, b); // bullet fizzles — no blood/heart loss while shielded
         } else {
           events.grazed(player);
           if (player.takeHit(b.damage)) events.bloodLost(player);
