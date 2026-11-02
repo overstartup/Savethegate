@@ -289,17 +289,28 @@ app.MapPost("/api/store/verify", async (StoreVerificationRequest req, GateWallDb
         else if (req.Platform == "google")
         {
             var packageName = config["Store:GooglePlay:PackageName"];
+            // Whole service-account key JSON (same env var as Solvino:
+            // GooglePlay__ServiceAccountJson), or the older email + PrivateKey pair.
+            var keyJson = config["GooglePlay:ServiceAccountJson"] ?? config["Store:GooglePlay:ServiceAccountJson"];
             var email = config["Store:GooglePlay:ServiceAccountEmail"];
             var privateKey = config["Store:GooglePlay:PrivateKey"];
-            
-            if (string.IsNullOrEmpty(packageName) || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(privateKey))
-                return Results.StatusCode(500);
+            if (string.IsNullOrEmpty(packageName)) return Results.StatusCode(500);
 
-            var credential = new ServiceAccountCredential(
-                new ServiceAccountCredential.Initializer(email)
-                {
-                    Scopes = new[] { AndroidPublisherService.Scope.Androidpublisher }
-                }.FromPrivateKey(privateKey.Replace("\\n", "\n")));
+            Google.Apis.Http.IConfigurableHttpClientInitializer credential;
+            if (!string.IsNullOrWhiteSpace(keyJson))
+            {
+                credential = GoogleCredential.FromJson(keyJson).CreateScoped(AndroidPublisherService.Scope.Androidpublisher);
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(privateKey) || privateKey.Contains("..."))
+                    return Results.StatusCode(500);
+                credential = new ServiceAccountCredential(
+                    new ServiceAccountCredential.Initializer(email)
+                    {
+                        Scopes = new[] { AndroidPublisherService.Scope.Androidpublisher }
+                    }.FromPrivateKey(privateKey.Replace("\\n", "\n")));
+            }
 
             var service = new AndroidPublisherService(new BaseClientService.Initializer
             {
