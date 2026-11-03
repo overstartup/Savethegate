@@ -151,6 +151,22 @@ for (let i = 0; i < BAT_FRAME_COUNT; i++) {
 }
 envData += batData;
 
+let enemySpriteData = 'const ENEMY_SPRITE_DATA = {};\n';
+const enemyNames = ['goblin', 'slime', 'imp', 'skeleton', 'troll', 'ogreBoss'];
+for (const n of enemyNames) {
+  const webp = readFileSync(`assets/sprites/enemies/${n}.webp`);
+  enemySpriteData += `ENEMY_SPRITE_DATA[${JSON.stringify(n)}] = "data:image/webp;base64,${webp.toString('base64')}";\n`;
+}
+envData += enemySpriteData;
+
+let seaSpriteData = 'const SEA_SPRITE_DATA = {};\n';
+const seaNames = ['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken'];
+for (const n of seaNames) {
+  const webp = readFileSync(`assets/sprites/sea/${n}.webp`);
+  seaSpriteData += `SEA_SPRITE_DATA[${JSON.stringify(n)}] = "data:image/webp;base64,${webp.toString('base64')}";\n`;
+}
+envData += seaSpriteData;
+
 spriteData += envData;
 code = code
   .replace('bgImg.src = `assets/env/bg_${n}.jpg`;', 'if (BG_DATA[i]) bgImg.src = BG_DATA[i];')
@@ -160,7 +176,9 @@ code = code
   .replace('img.src = `assets/env/kenney_castle/${n}.png`;', 'img.src = KENNEY_CASTLE_DATA[n];')
   .replace('img.src = `assets/env/desert_plants/${n}.png`;', 'img.src = DESERT_PLANTS_DATA[n];')
   .replace('img.src = `assets/env/ice_glacial/${n}.png`;', 'img.src = ICE_GLACIAL_DATA[n];')
-  .replace('img.src = `assets/sprites/bat_ice/bat_${String(i).padStart(2, \'0\')}.png`;', 'img.src = BAT_DATA[i];');
+  .replace('img.src = `assets/sprites/bat_ice/bat_${String(i).padStart(2, \'0\')}.png`;', 'img.src = BAT_DATA[i];')
+  .replace('img.src = `assets/sprites/enemies/${name}.webp`;', 'img.src = ENEMY_SPRITE_DATA[name];')
+  .replace('img.src = `assets/sprites/sea/${name}.webp`;', 'img.src = SEA_SPRITE_DATA[name];');
 
 // Inline the home-page shield emblem (src/ui/screens.js).
 const emblemUri = `data:image/png;base64,${readFileSync('assets/ui/emblem.png').toString('base64')}`;

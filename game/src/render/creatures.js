@@ -649,7 +649,7 @@ const CREATURE_DRAW = {
 
 // Draws the creature body (no shadow/aura) at its position — used for the
 // live monster, its afterimages and its knocked-away corpse.
-function crBody(ctx, m, tint, t, look, batImg, pal, extraRot = 0, extraScale = 1) {
+function crBody(ctx, m, tint, t, look, batImg, pal, extraRot = 0, extraScale = 1, enemyImg = null) {
   const sp = m.skin && SPECIES[m.skin];
   const r = m.r;
   const ph = m.action && m.action.phase;
@@ -662,8 +662,25 @@ function crBody(ctx, m, tint, t, look, batImg, pal, extraRot = 0, extraScale = 1
   const pop = m.isChild ? crEaseOutBack(Math.min(1, m.spawnT / 0.3)) : m.boss ? 1 : crEaseOutBack(Math.min(1, m.spawnT / 0.45));
   const sq = m.squish * 0.2 + (ph === 'windup' && m.type !== 'imp' ? 0.12 : 0);
   ctx.scale(pop * (1 + sq) * extraScale, pop * (1 - sq) * extraScale);
-  if (sp) {
+  if (sp && sp.sprite && sp.sprite.width) {
+    const img = sp.sprite;
+    const aspect = img.width / img.height;
+    const mult = m.boss ? 3.0 : (m.type === 'troll' ? 2.6 : (m.type === 'imp' ? 2.4 : 2.3));
+    const h = r * mult * (m.type === 'slimeSmall' ? 0.72 : 1);
+    const w = h * aspect;
+    if (ph === 'burst') ctx.rotate(Math.sign(m.pvx || 1) * 0.3);
+    const drawImg = (pal?.flashAmt && pal.flashAmt > 0.3) ? img : (tint?.primary ? tintedImage(img, tint.primary) : img);
+    ctx.drawImage(drawImg, -w / 2, -h / 2, w, h);
+  } else if (sp) {
     sp.draw(ctx, m, pal, t, look);
+  } else if (enemyImg && enemyImg.width) {
+    const aspect = enemyImg.width / enemyImg.height;
+    const mult = m.boss ? 3.0 : (m.type === 'troll' ? 2.6 : (m.type === 'imp' ? 2.4 : 2.3));
+    const h = r * mult * (m.type === 'slimeSmall' ? 0.72 : 1);
+    const w = h * aspect;
+    if (ph === 'burst') ctx.rotate(Math.sign(m.pvx || 1) * 0.3);
+    const drawImg = (pal?.flashAmt && pal.flashAmt > 0.3) ? enemyImg : (tint?.primary ? tintedImage(enemyImg, tint.primary) : enemyImg);
+    ctx.drawImage(drawImg, -w / 2, -h / 2, w, h);
   } else if (batImg && m.type === 'imp') {
     const img = tintedImage(batImg, tint?.primary);
     const size = r * 2.5;
@@ -689,12 +706,13 @@ function crPalette(m, tint, flashAmt) {
     dark: f > 0 ? crMix(dark, '#ffffff', f * 0.5) : dark,
     glow,
     rim: crMix(glow, '#ffffff', 0.2),
+    flashAmt: f,
   };
 }
 
 // Main entry. look = {x, y} unit-ish vector toward the Guardian so eyes
 // track the player. batImg (optional) = current bat-art frame for imps.
-export function drawCreature(ctx, m, tint, t, look, batImg = null) {
+export function drawCreature(ctx, m, tint, t, look, batImg = null, enemyImg = null) {
   const r = m.r;
   // Hit flash: full white pop for small fry, a subtle tint for bosses and
   // elites (they're hit near-constantly).
@@ -750,7 +768,7 @@ export function drawCreature(ctx, m, tint, t, look, batImg = null) {
       const g = m.ghosts[i];
       ctx.save();
       ctx.globalAlpha = 0.28 * (1 - i / m.ghosts.length);
-      crBody(ctx, { ...m, x: g.x, y: g.y, z: 0, action: null, ghosts: null, windup: 0 }, tint, t, look, batImg, ghostPal);
+      crBody(ctx, { ...m, x: g.x, y: g.y, z: 0, action: null, ghosts: null, windup: 0 }, tint, t, look, batImg, ghostPal, 0, 1, enemyImg);
       ctx.restore();
     }
     const g0 = m.ghosts[m.ghosts.length - 1];
@@ -770,7 +788,7 @@ export function drawCreature(ctx, m, tint, t, look, batImg = null) {
     ctx.restore();
   }
 
-  crBody(ctx, m, tint, t, look, batImg, pal, m.rot || 0, m.corpseScale || 1);
+  crBody(ctx, m, tint, t, look, batImg, pal, m.rot || 0, m.corpseScale || 1, enemyImg);
 
   // charging-shot telegraph — a growing glow orb where the shot comes from
   const w = m.windup;

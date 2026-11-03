@@ -1,3 +1,4 @@
+import { SPECIES } from '../render/species.js';
 // Gamified dialogs — ribbon titles, glowing cards, star ratings, pulsing buttons.
 // Fonts: 'Luckiest Guy' (titles) + 'Fredoka' (body), embedded free game fonts.
 import { CONFIG } from '../config.js';
@@ -146,6 +147,29 @@ for (let i = 0; i < BAT_FRAME_COUNT; i++) {
   const img = new Image();
   img.src = `assets/sprites/bat_ice/bat_${String(i).padStart(2, '0')}.png`;
   img.onload = () => { BAT_FRAMES[i] = img; };
+}
+
+// High-definition AI-crafted Shatterling enemy sprites (Grumbles, Sir Squish, Zippy, Rattles, Mossback, Bruncle)
+export const ENEMY_SPRITE_NAMES = ['goblin', 'slime', 'imp', 'skeleton', 'troll', 'ogreBoss'];
+export const ENEMY_SPRITES = {};
+for (const name of ENEMY_SPRITE_NAMES) {
+  const img = new Image();
+  img.src = `assets/sprites/enemies/${name}.webp`;
+  img.onload = () => { ENEMY_SPRITES[name] = img; };
+}
+
+// Stage 1 'Sea War' Ocean Horde enemy sprites (Snapper, Jelly, Urchin, Lanternfin, Pirate, Turtle, Kraken)
+export const SEA_SPRITE_NAMES = ['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken'];
+export const SEA_SPRITES = {};
+for (const name of SEA_SPRITE_NAMES) {
+  const img = new Image();
+  img.src = `assets/sprites/sea/${name}.webp`;
+  img.onload = () => {
+    SEA_SPRITES[name] = img;
+    if (typeof SPECIES !== 'undefined' && SPECIES[name]) {
+      SPECIES[name].sprite = img;
+    }
+  };
 }
 
 function star(ctx, x, y, r, fill = '#ffd23d', rot = 0) {
