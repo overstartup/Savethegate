@@ -19,8 +19,8 @@ export function resolveCollisions(state, events, dt = 1 / 60) {
     for (const m of monsters) {
       if (m.dead || m.y < CONFIG.playTop) continue; // safe under the header
       if (s.hitSet && s.hitSet.has(m)) continue; // piercing shot already went through this one
-      const dx = s.x - m.x, dy = s.y - m.y, rr = s.r + m.r;
-      if (dx * dx + dy * dy <= rr * rr) {
+      const hit = m.hitTest ? m.hitTest(s.x, s.y, s.r) : ((s.x - m.x) ** 2 + (s.y - m.y) ** 2 <= (s.r + m.r) ** 2);
+      if (hit) {
         if (s.pierce > 0) {
           s.pierce--;
           (s.hitSet || (s.hitSet = new Set())).add(m);

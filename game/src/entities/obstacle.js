@@ -19,7 +19,11 @@ export class Obstacle {
     this.x += this.vx * dt;
     // roll with the distance travelled: forward downhill, plus sideways slides
     const r = Math.min(this.w, this.h) / 2;
-    this.roll += (CONFIG.obstacle.driftSpeed + this.vx * 0.6) * dt / r;
+    if (this.rotSpeed) {
+      this.roll += this.rotSpeed * dt;
+    } else {
+      this.roll += (CONFIG.obstacle.driftSpeed + this.vx * 0.6) * dt / r;
+    }
     // bounce off screen edges
     if (this.x - this.w / 2 < 0) { this.x = this.w / 2; this.vx = Math.abs(this.vx); }
     if (this.x + this.w / 2 > CONFIG.width) { this.x = CONFIG.width - this.w / 2; this.vx = -Math.abs(this.vx); }

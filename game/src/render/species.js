@@ -19,249 +19,365 @@ const SP_TAU = Math.PI * 2;
 
 // ---------------------------------------------------------------- SEA ----
 
-// Snapper — scuttling reef crab: wide shell, snapping claws, six legs.
+// Snapper — scuttling reef crab: direct front-facing stance, 6 articulated running legs, snapping runic claws, bubbles & breathing
 function spCrab(ctx, m, pal, t, look) {
   const r = m.r, A = ctx.globalAlpha;
   const ph = m.action && m.action.phase;
-  const scuttle = m.anim * (ph === 'burst' ? 5 : 3);
-  // legs (3 per side), alternating gait
-  ctx.strokeStyle = pal.shade;
-  ctx.lineWidth = Math.max(2, r * 0.1);
-  ctx.lineCap = 'round';
+  const scuttle = (m.anim || 0) * (ph === 'burst' ? 5.5 : 3.6);
+  const runBounce = Math.abs(Math.sin(scuttle * 0.8)) * r * 0.14;
+  ctx.translate(0, -runBounce);
+
+  // 1. Articulated 6 legs with alternating running gait and sharp chitin joints
   for (const side of [-1, 1]) {
     for (let i = 0; i < 3; i++) {
-      const ph2 = Math.sin(scuttle + i * 2.1 + (side > 0 ? Math.PI : 0));
-      const bx = side * r * 0.55, by = r * (0.05 + i * 0.18);
-      const kx = side * r * (0.95 + i * 0.05), ky = by - r * 0.15 + ph2 * r * 0.06;
-      const fx = side * r * (1.15 + i * 0.05), fy = by + r * 0.3 + ph2 * r * 0.1;
-      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+      const legPhase = scuttle + i * 1.9 + (side > 0 ? Math.PI : 0);
+      const lift = Math.max(0, Math.sin(legPhase));
+      const push = Math.cos(legPhase);
+      const bx = side * r * 0.55, by = r * (-0.1 + i * 0.22);
+      // Hip to knee (upper segment)
+      const kx = side * r * (0.95 + i * 0.08), ky = by - r * 0.25 + lift * r * 0.18;
+      // Knee to sharp claw tip (lower segment pushing ground)
+      const fx = side * r * (1.25 + i * 0.1) + push * side * r * 0.15, fy = by + r * 0.35 + (1 - lift) * r * 0.12;
+      
+      // Upper leg
+      ctx.strokeStyle = pal.primary; ctx.lineWidth = Math.max(2, r * 0.09); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(kx, ky); ctx.stroke();
+      // Lower leg
+      ctx.strokeStyle = crMix(pal.primary, pal.dark, 0.4); ctx.lineWidth = Math.max(1.5, r * 0.07);
+      ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+      // Chitin highlight on knee
+      ctx.fillStyle = pal.light;
+      ctx.beginPath(); ctx.arc(kx, ky, r * 0.06, 0, SP_TAU); ctx.fill();
     }
   }
-  // claws — raised, snapping open/closed; wide open in the windup
-  const snap = ph === 'windup' ? 1 : (Math.sin(t * 6 + m.seed) * 0.5 + 0.5) * 0.7;
+
+  // 2. Direct front-facing claws with glowing runic inlays
+  const snap = ph === 'windup' ? 1.0 : (Math.sin(t * 7 + m.seed) * 0.5 + 0.5) * 0.8;
+  const clawPump = Math.sin(scuttle * 0.8) * r * 0.1;
   for (const side of [-1, 1]) {
     ctx.save();
-    ctx.translate(side * r * 0.75, -r * 0.35);
-    ctx.rotate(side * (0.5 + Math.sin(scuttle * 0.5) * 0.1));
-    ctx.strokeStyle = pal.primary; ctx.lineWidth = r * 0.16;
-    ctx.beginPath(); ctx.moveTo(0, r * 0.3); ctx.lineTo(side * r * 0.1, -r * 0.1); ctx.stroke();
-    ctx.translate(side * r * 0.12, -r * 0.3);
-    crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, 0, r * 0.3, r * 0.22, 0, 0, SP_TAU); }, pal, r * 0.35);
-    // pincer gap
-    ctx.fillStyle = 'rgba(10,20,30,0.85)';
-    ctx.beginPath(); ctx.moveTo(-r * 0.05, -r * 0.05); ctx.lineTo(side * r * 0.32, -r * 0.08 - snap * r * 0.14); ctx.lineTo(side * r * 0.32, -r * 0.02 + snap * r * 0.06); ctx.closePath(); ctx.fill();
+    ctx.translate(side * r * 0.8, -r * 0.3 + (side > 0 ? clawPump : -clawPump));
+    ctx.rotate(side * (0.45 + Math.sin(scuttle * 0.6) * 0.12 + (ph === 'windup' ? 0.3 : 0)));
+    // Forearm
+    ctx.strokeStyle = pal.primary; ctx.lineWidth = r * 0.18; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, r * 0.28); ctx.lineTo(side * r * 0.12, -r * 0.12); ctx.stroke();
+    ctx.translate(side * r * 0.14, -r * 0.22);
+    // Armored pincer bulb
+    crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, 0, r * 0.32, r * 0.24, 0, 0, SP_TAU); }, pal, r * 0.38);
+    // Glowing runic glyph on claw
+    drawGlow(ctx, 0, 0, r * 0.25, pal.glow, 0.6);
+    ctx.fillStyle = pal.glow;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.09, 0, SP_TAU); ctx.fill();
+    // Pincer cut / snapping jaws
+    ctx.fillStyle = pal.dark;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.06, -r * 0.05);
+    ctx.lineTo(side * r * 0.36, -r * 0.09 - snap * r * 0.16);
+    ctx.lineTo(side * r * 0.36, -r * 0.01 + snap * r * 0.08);
+    ctx.closePath();
+    ctx.fill();
+    // Power spark on pincer tip when snapping
+    if (snap > 0.6) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(side * r * 0.35, -r * 0.05, r * 0.06, 0, SP_TAU); ctx.fill();
+    }
     ctx.restore();
   }
-  // shell
+
+  // 3. Spiked armored shell with multi-layer shading
   crShade(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(-r * 0.9, r * 0.1);
-    ctx.quadraticCurveTo(-r * 0.85, -r * 0.55, 0, -r * 0.6);
-    ctx.quadraticCurveTo(r * 0.85, -r * 0.55, r * 0.9, r * 0.1);
-    ctx.quadraticCurveTo(r * 0.5, r * 0.55, 0, r * 0.5);
-    ctx.quadraticCurveTo(-r * 0.5, r * 0.55, -r * 0.9, r * 0.1);
+    ctx.moveTo(-r * 0.95, r * 0.08);
+    // Top spikes
+    ctx.lineTo(-r * 0.8, -r * 0.45);
+    ctx.lineTo(-r * 0.45, -r * 0.72);
+    ctx.lineTo(-r * 0.2, -r * 0.58);
+    ctx.lineTo(0, -r * 0.78); // Center crown spike
+    ctx.lineTo(r * 0.2, -r * 0.58);
+    ctx.lineTo(r * 0.45, -r * 0.72);
+    ctx.lineTo(r * 0.8, -r * 0.45);
+    ctx.lineTo(r * 0.95, r * 0.08);
+    // Bottom ridge
+    ctx.quadraticCurveTo(r * 0.55, r * 0.58, 0, r * 0.54);
+    ctx.quadraticCurveTo(-r * 0.55, r * 0.58, -r * 0.95, r * 0.08);
     ctx.closePath();
-  }, pal, r);
-  // shell spots + barnacle
+  }, pal, r * 1.1);
+
+  // Central glowing energy crest on carapace
+  drawGlow(ctx, 0, -r * 0.1, r * 0.4, pal.glow, 0.75);
+  crGem(ctx, 0, -r * 0.1, r * 0.16, r * 0.24, pal.glow, A);
+
+  // Shell barnacles and armor studs
   ctx.fillStyle = pal.light;
-  ctx.globalAlpha = A * 0.6;
-  for (const [x, y, s] of [[-0.4, -0.25, 0.1], [0.35, -0.3, 0.08], [0.1, -0.05, 0.06]]) { ctx.beginPath(); ctx.arc(x * r, y * r, s * r, 0, SP_TAU); ctx.fill(); }
-  ctx.globalAlpha = A;
-  crGem(ctx, -r * 0.55, -r * 0.05, r * 0.07, r * 0.13, pal.glow, A);
-  // eye stalks
-  for (const side of [-1, 1]) {
-    const sway = Math.sin(t * 3 + side + m.seed) * r * 0.05;
-    ctx.strokeStyle = pal.shade; ctx.lineWidth = r * 0.08;
-    ctx.beginPath(); ctx.moveTo(side * r * 0.2, -r * 0.5); ctx.lineTo(side * r * 0.25 + sway, -r * 0.82); ctx.stroke();
-    crEyes(ctx, side * r * 0.25 + sway, -r * 0.86, r * 0.13, 0.0001, look, crBlink(m, t), '#1a1030', 0, pal.dark);
+  ctx.globalAlpha = A * 0.7;
+  for (const [x, y, s] of [[-0.45, -0.22, 0.1], [0.45, -0.22, 0.1], [-0.3, 0.15, 0.08], [0.3, 0.15, 0.08]]) {
+    ctx.beginPath(); ctx.arc(x * r, y * r, s * r, 0, SP_TAU); ctx.fill();
   }
-  // mouth
-  ctx.strokeStyle = pal.dark; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(-r * 0.15, r * 0.18); ctx.quadraticCurveTo(0, r * (0.12 + (ph === 'windup' ? 0.1 : 0)), r * 0.15, r * 0.18); ctx.stroke();
+  ctx.globalAlpha = A;
+
+  // 4. Bubbles rising from mouth/gills
+  for (let i = 0; i < 3; i++) {
+    const bt = (t * 2.8 + i * 0.7 + m.seed) % 1;
+    const bx = (i - 1) * r * 0.28 + Math.sin(t * 6 + i) * r * 0.06;
+    const by = -r * 0.5 - bt * r * 0.85;
+    ctx.strokeStyle = pal.glow; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(bx, by, (1 - bt * 0.5) * r * 0.07, 0, SP_TAU); ctx.stroke();
+  }
+
+  // 5. Swaying direct front-facing eye stalks
+  for (const side of [-1, 1]) {
+    const sway = Math.sin(t * 3.5 + side + m.seed) * r * 0.06;
+    ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(2, r * 0.1); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(side * r * 0.25, -r * 0.45); ctx.lineTo(side * r * 0.3 + sway, -r * 0.92); ctx.stroke();
+    crEyes(ctx, side * r * 0.3 + sway, -r * 0.96, r * 0.15, 0.0001, look, crBlink(m, t), '#1a1030', 0, pal.dark);
+  }
+
+  // 6. Direct front-facing mandible mouth
+  ctx.strokeStyle = pal.dark; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.2, r * 0.2);
+  ctx.quadraticCurveTo(0, r * (0.12 + (ph === 'windup' ? 0.14 : 0)), r * 0.2, r * 0.2);
+  ctx.stroke();
 }
 
 // Glimmerjelly — translucent jellyfish: pulsing bell, frills, trailing
 // tentacles that ripple behind it, bioluminescent spots.
+// Glimmerjelly — pulsating translucent swimming jellyfish with glowing organ core & trailing tentacles
 function spJelly(ctx, m, pal, t, look) {
   const r = m.r, A = ctx.globalAlpha;
   const ph = m.action && m.action.phase;
-  const pulse = Math.sin(t * 4 + m.seed);
-  const squeeze = ph === 'windup' ? 0.25 : ph === 'burst' ? -0.15 : pulse * 0.08;
-  // tentacles (behind)
+  const pulse = Math.sin(t * 4.5 + m.seed);
+  const squeeze = ph === 'windup' ? 0.3 : ph === 'burst' ? -0.2 : pulse * 0.12;
+
+  // 1. Undulating tentacles trailing behind with bioluminescent glow
   ctx.lineCap = 'round';
-  for (let i = 0; i < 6; i++) {
-    const x0 = (-0.6 + i * 0.24) * r;
-    ctx.strokeStyle = crMix(pal.glow, pal.primary, (i % 2) * 0.5);
-    ctx.globalAlpha = A * 0.75;
-    ctx.lineWidth = Math.max(1.2, r * (i % 2 ? 0.05 : 0.08));
+  for (let i = 0; i < 7; i++) {
+    const x0 = (-0.66 + i * 0.22) * r;
+    ctx.strokeStyle = crMix(pal.glow, pal.primary, (i % 2) * 0.4);
+    ctx.globalAlpha = A * 0.8;
+    ctx.lineWidth = Math.max(1.5, r * (i % 2 ? 0.06 : 0.09));
     ctx.beginPath();
     ctx.moveTo(x0, r * 0.25);
     for (let k = 1; k <= 5; k++) {
-      const y = r * 0.25 + k * r * 0.22;
-      ctx.lineTo(x0 + Math.sin(t * 5 - k * 0.9 + i + m.seed) * r * 0.12 * k * 0.5, y);
+      const y = r * 0.25 + k * r * 0.24;
+      const wave = Math.sin(t * 6 - k * 0.9 + i * 0.8 + m.seed) * r * 0.14 * (k * 0.45);
+      ctx.lineTo(x0 + wave, y);
     }
     ctx.stroke();
+    // Glowing bulb tip on tentacles
+    if (i % 2 === 0) {
+      const tipY = r * 1.45, tipX = x0 + Math.sin(t * 6 - 4.5 + i * 0.8 + m.seed) * r * 0.28;
+      ctx.fillStyle = pal.glow;
+      ctx.beginPath(); ctx.arc(tipX, tipY, r * 0.045, 0, SP_TAU); ctx.fill();
+    }
   }
   ctx.globalAlpha = A;
+
+  // 2. Translucent dome with expanding/contracting swimming cadence
   ctx.save();
   ctx.scale(1 + squeeze, 1 - squeeze);
-  // bell
-  ctx.globalAlpha = A * 0.88;
+
+  // Inner bioluminescent crystal nucleus (matches hero core)
+  drawGlow(ctx, 0, -r * 0.2, r * 0.4, pal.glow, 0.85);
+  crGem(ctx, 0, -r * 0.2, r * 0.16, r * 0.24, pal.glow, A);
+
+  // Outer bell dome
+  ctx.globalAlpha = A * 0.72;
   crShade(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(-r * 0.9, r * 0.25);
-    ctx.bezierCurveTo(-r * 0.95, -r * 0.75, r * 0.95, -r * 0.75, r * 0.9, r * 0.25);
+    ctx.moveTo(-r * 0.92, r * 0.25);
+    ctx.bezierCurveTo(-r * 0.98, -r * 0.82, r * 0.98, -r * 0.82, r * 0.92, r * 0.25);
     for (let i = 6; i >= 0; i--) {
-      const x = -r * 0.9 + (i / 6) * r * 1.8;
-      ctx.quadraticCurveTo(x + r * 0.15, r * 0.42, x, r * 0.25);
+      const x = -r * 0.92 + (i / 6) * r * 1.84;
+      ctx.quadraticCurveTo(x + r * 0.15, r * 0.44, x, r * 0.25);
     }
     ctx.closePath();
-  }, pal, r);
+  }, pal, r * 1.05);
+
   ctx.globalAlpha = A;
-  // glowing spots
-  for (const [x, y] of [[-0.45, -0.1], [0, -0.35], [0.45, -0.1], [-0.2, 0.08], [0.25, 0.1]]) {
-    drawGlow(ctx, x * r, y * r, r * 0.16, pal.glow, 0.5 + 0.3 * Math.sin(t * 3 + x * 7));
+  // Bioluminescent spots pulsing inside
+  for (const [x, y] of [[-0.45, -0.1], [0, -0.42], [0.45, -0.1], [-0.22, 0.08], [0.22, 0.08]]) {
+    drawGlow(ctx, x * r, y * r, r * 0.18, pal.glow, 0.6 + 0.35 * Math.sin(t * 3.5 + x * 7));
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.beginPath(); ctx.ellipse(-r * 0.35, -r * 0.4, r * 0.18, r * 0.08, -0.5, 0, SP_TAU); ctx.fill();
-  crEyes(ctx, 0, -r * 0.05, r * 0.16, r * 0.24, look, crBlink(m, t), '#1a1030', ph === 'windup' ? 1 : 0, pal.dark);
+  // Specular dome glaze
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.beginPath(); ctx.ellipse(-r * 0.35, -r * 0.42, r * 0.2, r * 0.09, -0.5, 0, SP_TAU); ctx.fill();
+
+  // 3. Direct front-facing blinking eyes
+  crEyes(ctx, 0, -r * 0.06, r * 0.16, r * 0.26, look, crBlink(m, t), '#1a1030', ph === 'windup' ? 1 : 0, pal.dark);
+
+  // Rising bubbles from bell
+  for (let b = 0; b < 2; b++) {
+    const bt = (t * 3 + b * 1.4 + m.seed) % 1;
+    ctx.strokeStyle = pal.glow; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc((b - 0.5) * r * 0.4, -r * 0.4 - bt * r * 0.8, r * 0.06 * (1 - bt * 0.4), 0, SP_TAU); ctx.stroke();
+  }
   ctx.restore();
 }
 
 // Drowned Corsair — skeleton pirate: tricorn hat, eyepatch, cutlass, a
 // flintlock that flashes when it fires, seaweed draped on its bones.
+// Drowned Corsair — direct front-facing skeleton pirate: marching bony legs, swinging cutlass & kicking flintlock, glowing eye socket
 function spPirate(ctx, m, pal, t) {
   const r = m.r, A = ctx.globalAlpha;
-  const step = Math.sin(m.anim * 1.8);
-  const bone = '#e8e0cc', boneDark = '#9a9078';
+  const step = Math.sin((m.anim || 0) * 2.8);
+  const runBounce = Math.abs(Math.sin((m.anim || 0) * 2.8)) * r * 0.14;
+  const bone = '#fbf8ee', boneDark = '#b8b09a';
   ctx.lineCap = 'round';
-  // legs
+  ctx.translate(0, -runBounce);
+
+  // 1. Direct front-facing marching skeleton legs with jointed knees & boots
   for (const side of [-1, 1]) {
-    const sw = side * step * 0.5;
-    ctx.strokeStyle = bone; ctx.lineWidth = Math.max(2, r * 0.1);
-    const kx = side * r * 0.16 + Math.sin(sw) * r * 0.3, ky = r * 0.5 + Math.cos(sw) * r * 0.28;
-    ctx.beginPath(); ctx.moveTo(side * r * 0.14, r * 0.42); ctx.lineTo(kx, ky); ctx.lineTo(kx, ky + r * 0.3); ctx.stroke();
-    ctx.fillStyle = '#3a2a1a';
-    ctx.beginPath(); ctx.ellipse(kx + side * r * 0.05, ky + r * 0.32, r * 0.13, r * 0.07, 0, 0, SP_TAU); ctx.fill();
+    const sw = side * step * 0.55;
+    ctx.strokeStyle = bone; ctx.lineWidth = Math.max(2.5, r * 0.11);
+    const kx = side * r * 0.18 + Math.sin(sw) * r * 0.32;
+    const ky = r * 0.48 + Math.cos(sw) * r * 0.28;
+    ctx.beginPath(); ctx.moveTo(side * r * 0.15, r * 0.4); ctx.lineTo(kx, ky); ctx.lineTo(kx, ky + r * 0.32); ctx.stroke();
+    // Heavy pirate leather boot with buckle
+    ctx.fillStyle = '#2a1a10';
+    ctx.beginPath(); ctx.roundRect(kx - r * 0.1, ky + r * 0.26, r * 0.22, r * 0.14, 2); ctx.fill();
+    ctx.fillStyle = '#ffd23d';
+    ctx.beginPath(); ctx.rect(kx - r * 0.04, ky + r * 0.28, r * 0.08, r * 0.06); ctx.fill();
   }
-  // tattered coat
+
+  // 2. Tattered captain coat with gold trim & peeking ribs
   crShade(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(-r * 0.42, -r * 0.2); ctx.lineTo(r * 0.42, -r * 0.2);
-    ctx.lineTo(r * 0.5, r * 0.5); ctx.lineTo(r * 0.25, r * 0.4); ctx.lineTo(r * 0.1, r * 0.55);
-    ctx.lineTo(-r * 0.1, r * 0.42); ctx.lineTo(-r * 0.3, r * 0.56); ctx.lineTo(-r * 0.5, r * 0.45);
+    ctx.moveTo(-r * 0.46, -r * 0.2); ctx.lineTo(r * 0.46, -r * 0.2);
+    ctx.lineTo(r * 0.52, r * 0.52); ctx.lineTo(r * 0.26, r * 0.42); ctx.lineTo(r * 0.1, r * 0.58);
+    ctx.lineTo(-r * 0.1, r * 0.44); ctx.lineTo(-r * 0.3, r * 0.58); ctx.lineTo(-r * 0.52, r * 0.48);
     ctx.closePath();
-  }, { ...pal, light: '#5a7a9a', primary: '#2a4a6a', shade: '#122438', dark: '#08121e' }, r * 0.6);
-  // ribs peeking through
-  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1.4, r * 0.06);
-  for (let i = 0; i < 3; i++) { const y = -r * 0.05 + i * r * 0.13; ctx.beginPath(); ctx.moveTo(-r * 0.18, y); ctx.quadraticCurveTo(0, y - r * 0.05, r * 0.18, y); ctx.stroke(); }
-  // seaweed strands
-  ctx.strokeStyle = '#3f8a4a'; ctx.lineWidth = Math.max(1.5, r * 0.06);
-  ctx.beginPath(); ctx.moveTo(-r * 0.35, -r * 0.2); ctx.quadraticCurveTo(-r * 0.5 + Math.sin(t * 3) * r * 0.1, r * 0.1, -r * 0.38, r * 0.4); ctx.stroke();
-  // cutlass arm (left)
-  ctx.save();
-  ctx.translate(-r * 0.45, -r * 0.05);
-  ctx.rotate(0.6 + step * 0.25);
-  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1.6, r * 0.08);
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.35); ctx.stroke();
-  ctx.strokeStyle = '#d8dde8'; ctx.lineWidth = r * 0.09;
-  ctx.beginPath(); ctx.moveTo(0, r * 0.35); ctx.quadraticCurveTo(-r * 0.15, r * 0.7, r * 0.05, r * 0.95); ctx.stroke();
-  ctx.fillStyle = '#ffd23d';
-  ctx.beginPath(); ctx.arc(0, r * 0.36, r * 0.06, 0, SP_TAU); ctx.fill();
-  ctx.restore();
-  // flintlock arm (right) — raised while aiming
-  const aim = Math.max(m.windup, m.fireFlash > 0 ? 1 : 0);
-  ctx.save();
-  ctx.translate(r * 0.42, -r * 0.05);
-  ctx.rotate(-0.2 - aim * 0.9 + Math.sin(-step) * 0.15);
-  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1.6, r * 0.08);
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.35); ctx.stroke();
-  ctx.fillStyle = '#4a2e1a';
-  ctx.beginPath(); ctx.roundRect(-r * 0.06, r * 0.3, r * 0.12, r * 0.4, 2); ctx.fill();
-  if (m.fireFlash > 0) drawGlow(ctx, 0, r * 0.75, r * 0.3, '#ffd88a', 1);
-  ctx.restore();
-  // skull
-  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, -r * 0.5, r * 0.33, 0, SP_TAU); }, { ...pal, light: '#ffffff', primary: bone, shade: boneDark, dark: '#3a3428' }, r * 0.4);
-  ctx.fillStyle = '#1a120a';
-  ctx.beginPath(); ctx.ellipse(r * 0.12, -r * 0.52, r * 0.09, r * 0.1, 0, 0, SP_TAU); ctx.fill();
-  drawGlow(ctx, r * 0.12, -r * 0.52, r * 0.14, pal.glow, 0.8);
-  // eyepatch
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.ellipse(-r * 0.13, -r * 0.52, r * 0.1, r * 0.09, 0, 0, SP_TAU); ctx.fill();
-  ctx.strokeStyle = '#111'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(-r * 0.32, -r * 0.62); ctx.lineTo(r * 0.3, -r * 0.42); ctx.stroke();
-  ctx.fillStyle = bone;
-  ctx.beginPath(); ctx.roundRect(-r * 0.16, -r * 0.3, r * 0.32, r * 0.1, 2); ctx.fill();
-  // tricorn hat
-  ctx.fillStyle = '#1e1a2a';
+  }, { ...pal, light: '#7dd3fc', primary: '#0ea5e9', shade: '#0369a1', dark: '#0c4a6e' }, r * 0.65);
+
+  // Ribs peeking through torn coat
+  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(1.8, r * 0.07);
+  for (let i = 0; i < 3; i++) {
+    const y = -r * 0.06 + i * r * 0.14;
+    ctx.beginPath(); ctx.moveTo(-r * 0.2, y); ctx.quadraticCurveTo(0, y - r * 0.06, r * 0.2, y); ctx.stroke();
+  }
+
+  // Seaweed strands swaying with water current
+  ctx.strokeStyle = '#3fa85a'; ctx.lineWidth = Math.max(1.8, r * 0.07);
   ctx.beginPath();
-  ctx.moveTo(-r * 0.5, -r * 0.68);
-  ctx.quadraticCurveTo(0, -r * 0.6, r * 0.5, -r * 0.68);
-  ctx.quadraticCurveTo(r * 0.3, -r * 1.15, 0, -r * 1.0);
-  ctx.quadraticCurveTo(-r * 0.3, -r * 1.15, -r * 0.5, -r * 0.68);
+  ctx.moveTo(-r * 0.38, -r * 0.18);
+  ctx.quadraticCurveTo(-r * 0.55 + Math.sin(t * 3.5) * r * 0.12, r * 0.15, -r * 0.4, r * 0.45);
+  ctx.stroke();
+
+  // 3. Cutlass arm (left) — swinging in cadence
+  ctx.save();
+  ctx.translate(-r * 0.48, -r * 0.05);
+  ctx.rotate(0.5 + step * 0.35);
+  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(2, r * 0.09);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.38); ctx.stroke();
+  // Curved steel cutlass blade with specular highlight
+  ctx.strokeStyle = '#d8dde8'; ctx.lineWidth = r * 0.11;
+  ctx.beginPath(); ctx.moveTo(0, r * 0.38); ctx.quadraticCurveTo(-r * 0.18, r * 0.72, r * 0.06, r * 1.0); ctx.stroke();
+  ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.arc(0, r * 0.4, r * 0.07, 0, SP_TAU); ctx.fill();
+  ctx.restore();
+
+  // 4. Flintlock arm (right) — aiming and kicking on attack
+  const aim = Math.max(m.windup || 0, m.fireFlash > 0 ? 1 : 0);
+  ctx.save();
+  ctx.translate(r * 0.46, -r * 0.05);
+  ctx.rotate(-0.25 - aim * 0.95 + Math.sin(-step) * 0.2);
+  ctx.strokeStyle = bone; ctx.lineWidth = Math.max(2, r * 0.09);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, r * 0.38); ctx.stroke();
+  ctx.fillStyle = '#4a2e1a';
+  ctx.beginPath(); ctx.roundRect(-r * 0.07, r * 0.32, r * 0.14, r * 0.45, 2); ctx.fill();
+  if (aim > 0.3) {
+    drawGlow(ctx, 0, r * 0.8, r * (0.35 + aim * 0.3), '#ffd88a', 1.0);
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, r * 0.8, r * 0.08, 0, SP_TAU); ctx.fill();
+  }
+  ctx.restore();
+
+  // 5. Skull with glowing abyssal eye socket & pirate tricorn hat
+  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, -r * 0.52, r * 0.35, 0, SP_TAU); }, { ...pal, light: '#ffffff', primary: bone, shade: boneDark, dark: '#3a3428' }, r * 0.42);
+  // Glowing eye socket
+  drawGlow(ctx, r * 0.14, -r * 0.54, r * 0.22, pal.glow, 0.9);
+  ctx.fillStyle = pal.glow;
+  ctx.beginPath(); ctx.arc(r * 0.14, -r * 0.54, r * 0.07, 0, SP_TAU); ctx.fill();
+  // Eyepatch
+  ctx.fillStyle = '#111116';
+  ctx.beginPath(); ctx.ellipse(-r * 0.14, -r * 0.54, r * 0.1, r * 0.09, 0, 0, SP_TAU); ctx.fill();
+  ctx.strokeStyle = '#111116'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-r * 0.34, -r * 0.65); ctx.lineTo(r * 0.32, -r * 0.44); ctx.stroke();
+
+  // Tricorn hat with gold trim & skull emblem
+  ctx.fillStyle = '#181424';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, -r * 0.7);
+  ctx.quadraticCurveTo(0, -r * 0.62, r * 0.55, -r * 0.7);
+  ctx.quadraticCurveTo(r * 0.35, -r * 1.2, 0, -r * 1.05);
+  ctx.quadraticCurveTo(-r * 0.35, -r * 1.2, -r * 0.55, -r * 0.7);
   ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 1.2; ctx.stroke();
-  ctx.fillStyle = '#e8e0cc';
-  ctx.beginPath(); ctx.arc(0, -r * 0.85, r * 0.07, 0, SP_TAU); ctx.fill();
+  ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, -r * 0.88, r * 0.07, 0, SP_TAU); ctx.fill();
 }
 
 // Krakoth — kraken boss: huge mantle, glowing eyes, beak, eight writhing
 // suckered tentacles that rear up when it charges a volley.
+// Krakoth — direct front-facing abyssal kraken boss: gigantic mantle, 8 writhing suckered tentacles, ancient crown rune & glaring eyes
 function spKraken(ctx, m, pal, t, look) {
   const r = m.r, A = ctx.globalAlpha;
   const rage = m.enraged ? 1 : 0;
   const glow = rage ? '#ff4d5a' : pal.glow;
-  const heave = Math.max(m.windup, m.fireFlash > 0 ? 1 : 0);
-  // tentacles
+  const heave = Math.max(m.windup || 0, m.fireFlash > 0 ? 1 : 0);
+
+  // 1. Eight articulated tentacles writhing symmetrically left and right
   for (let i = 0; i < 8; i++) {
     const side = i < 4 ? -1 : 1;
     const k = i % 4;
-    const base = { x: side * r * (0.2 + k * 0.15), y: r * 0.35 };
+    const base = { x: side * r * (0.2 + k * 0.16), y: r * 0.36 };
     ctx.strokeStyle = crMix(pal.primary, pal.dark, 0.25);
     ctx.lineCap = 'round';
     let x = base.x, y = base.y;
     const segs = 8;
     for (let s = 0; s < segs; s++) {
-      // fan outward (left tentacles lean left), curl at the tips, rear up
-      // and outward while it charges a volley
-      const fan = 0.25 + k * 0.32;
-      const a = Math.PI / 2 - side * fan + side * s * 0.13 + Math.sin(t * 2.5 + i + s * 0.6) * 0.3 * (s / segs + 0.3) - side * heave * 0.9 * (s / segs);
-      const len = r * 0.21;
+      const fan = 0.26 + k * 0.32;
+      const a = Math.PI / 2 - side * fan + side * s * 0.14 + Math.sin(t * 3.0 + i + s * 0.6) * 0.35 * (s / segs + 0.3) - side * heave * 0.95 * (s / segs);
+      const len = r * 0.22;
       const nx = x + Math.cos(a) * len, ny = y + Math.sin(a) * len;
-      ctx.lineWidth = r * 0.18 * (1 - s / segs) + 2;
+      ctx.lineWidth = r * 0.2 * (1 - s / segs) + 2.5;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(nx, ny); ctx.stroke();
-      if (s % 2 === 0) { ctx.fillStyle = pal.light; ctx.beginPath(); ctx.arc(nx, ny, r * 0.03 + 1, 0, SP_TAU); ctx.fill(); }
+      // Glowing suction cups along the inner edge
+      if (s % 2 === 0) {
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(nx, ny, r * 0.04 + 1.2, 0, SP_TAU); ctx.fill();
+      }
       x = nx; y = ny;
     }
   }
-  // mantle
+
+  // 2. Giant armored mantle with layered shading
   crShade(ctx, () => {
     ctx.beginPath();
-    ctx.moveTo(-r * 0.75, r * 0.4);
-    ctx.bezierCurveTo(-r * 0.95, -r * 0.4, -r * 0.4, -r * 1.05, 0, -r * 1.0);
-    ctx.bezierCurveTo(r * 0.4, -r * 1.05, r * 0.95, -r * 0.4, r * 0.75, r * 0.4);
-    ctx.quadraticCurveTo(0, r * 0.6, -r * 0.75, r * 0.4);
+    ctx.moveTo(-r * 0.78, r * 0.4);
+    ctx.bezierCurveTo(-r * 0.98, -r * 0.45, -r * 0.42, -r * 1.1, 0, -r * 1.05);
+    ctx.bezierCurveTo(r * 0.42, -r * 1.1, r * 0.98, -r * 0.45, r * 0.78, r * 0.4);
+    ctx.quadraticCurveTo(0, r * 0.62, -r * 0.78, r * 0.4);
     ctx.closePath();
-  }, pal, r);
-  ctx.fillStyle = pal.light; ctx.globalAlpha = A * 0.4;
-  for (const [x, y, s] of [[-0.35, -0.55, 0.12], [0.3, -0.7, 0.09], [0.1, -0.35, 0.07], [-0.1, -0.8, 0.06]]) { ctx.beginPath(); ctx.arc(x * r, y * r, s * r, 0, SP_TAU); ctx.fill(); }
-  ctx.globalAlpha = A;
-  // eyes
+  }, pal, r * 1.15);
+
+  // Crown gem and runic crest
+  drawGlow(ctx, 0, -r * 0.82, r * 0.4, glow, 0.9);
+  crGem(ctx, 0, -r * 0.82, r * 0.14, r * 0.25, glow, A);
+
+  // 3. Staring abyssal eyes tracking the player
   for (const side of [-1, 1]) {
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.ellipse(side * r * 0.32, -r * 0.05, r * 0.17, r * 0.14, 0, 0, SP_TAU); ctx.fill();
-    drawGlow(ctx, side * r * 0.32, -r * 0.05, r * (0.15 + heave * 0.1), glow, 0.7);
-    ctx.fillStyle = '#120a1e';
-    ctx.beginPath(); ctx.ellipse(side * r * 0.32 + look.x * r * 0.05, -r * 0.05 + look.y * r * 0.04, r * 0.05, r * 0.11, 0, 0, SP_TAU); ctx.fill();
-    ctx.strokeStyle = pal.dark; ctx.lineWidth = r * 0.06;
-    ctx.beginPath(); ctx.moveTo(side * r * 0.5, -r * 0.25); ctx.lineTo(side * r * 0.15, -r * 0.16); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(side * r * 0.32, -r * 0.05, r * 0.18, r * 0.15, 0, 0, SP_TAU); ctx.fill();
+    drawGlow(ctx, side * r * 0.32, -r * 0.05, r * (0.2 + heave * 0.12), glow, 0.85);
+    ctx.fillStyle = '#100618';
+    ctx.beginPath(); ctx.ellipse(side * r * 0.32 + (look?.x || 0) * r * 0.06, -r * 0.05 + (look?.y || 0) * r * 0.05, r * 0.06, r * 0.12, 0, 0, SP_TAU); ctx.fill();
+    ctx.strokeStyle = pal.dark; ctx.lineWidth = r * 0.07;
+    ctx.beginPath(); ctx.moveTo(side * r * 0.52, -r * 0.26); ctx.lineTo(side * r * 0.15, -r * 0.16); ctx.stroke();
   }
-  // beak
-  const open = heave * r * 0.1;
-  ctx.fillStyle = '#2a1a10';
-  ctx.beginPath(); ctx.moveTo(-r * 0.12, r * 0.22); ctx.lineTo(0, r * 0.38 + open); ctx.lineTo(r * 0.12, r * 0.22); ctx.closePath(); ctx.fill();
-  if (heave > 0.2) drawGlow(ctx, 0, r * 0.3, r * 0.2 * heave, glow, heave);
-  crGem(ctx, 0, -r * 0.82, r * 0.1, r * 0.2, glow, A);
+
+  // 4. Menacing razor beak opening wide on charge
+  const open = heave * r * 0.14;
+  ctx.fillStyle = '#1e1008';
+  ctx.beginPath(); ctx.moveTo(-r * 0.14, r * 0.22); ctx.lineTo(0, r * 0.4 + open); ctx.lineTo(r * 0.14, r * 0.22); ctx.closePath(); ctx.fill();
+  if (heave > 0.2) drawGlow(ctx, 0, r * 0.32, r * 0.3 * heave, glow, heave);
 }
 
 // ------------------------------------------------------------- GLACIER ----
@@ -2304,79 +2420,134 @@ function spFlytrap(ctx, m, pal, t, look) {
 
 // Lanternfin — deep-sea angler: round body, toothy grin, a glowing lure on
 // a stalk that flares as it charges a shot, fins fanning as it swims.
+// Lanternfin — direct front-facing deep-sea angler fish: fanning fins, flexible glowing lure stalk, razor fangs & glowing spots
 function spLanternfin(ctx, m, pal, t, look) {
   const r = m.r, A = ctx.globalAlpha;
-  const fan = Math.sin(t * 9 + m.seed);
-  ctx.save(); ctx.translate(0, -r * 0.75); ctx.rotate(fan * 0.25);
-  crShade(ctx, () => { ctx.beginPath(); ctx.moveTo(0, r * 0.1); ctx.lineTo(-r * 0.45, -r * 0.45); ctx.quadraticCurveTo(0, -r * 0.25, r * 0.45, -r * 0.45); ctx.closePath(); }, { ...pal, primary: pal.shade }, r * 0.5);
+  const fan = Math.sin(t * 12 + (m.seed || 0));
+
+  // 1. Caudal tail fin wagging behind
+  ctx.save(); ctx.translate(0, -r * 0.78); ctx.rotate(fan * 0.28);
+  crShade(ctx, () => {
+    ctx.beginPath();
+    ctx.moveTo(0, r * 0.12);
+    ctx.lineTo(-r * 0.5, -r * 0.5);
+    ctx.quadraticCurveTo(0, -r * 0.28, r * 0.5, -r * 0.5);
+    ctx.closePath();
+  }, { ...pal, primary: pal.shade }, r * 0.55);
   ctx.restore();
+
+  // 2. High-speed fanning pectoral fins on sides
   for (const side of [-1, 1]) {
-    ctx.save(); ctx.translate(side * r * 0.78, r * 0.05); ctx.rotate(side * (0.3 + fan * 0.35));
-    crShade(ctx, () => { ctx.beginPath(); ctx.moveTo(0, -r * 0.15); ctx.quadraticCurveTo(side * r * 0.55, -r * 0.05, side * r * 0.45, r * 0.35); ctx.quadraticCurveTo(side * r * 0.2, r * 0.2, 0, r * 0.15); ctx.closePath(); }, pal, r * 0.4);
+    ctx.save();
+    ctx.translate(side * r * 0.82, r * 0.05);
+    ctx.rotate(side * (0.35 + fan * 0.4));
+    crShade(ctx, () => {
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.16);
+      ctx.quadraticCurveTo(side * r * 0.6, -r * 0.06, side * r * 0.5, r * 0.38);
+      ctx.quadraticCurveTo(side * r * 0.22, r * 0.22, 0, r * 0.16);
+      ctx.closePath();
+    }, pal, r * 0.45);
     ctx.restore();
   }
-  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, 0, r * 0.85, 0, SP_TAU); }, pal, r);
-  ctx.fillStyle = pal.glow; ctx.globalAlpha = A * 0.4;
-  for (const [sx, sy] of [[-0.55, 0.1], [0.55, 0.05], [-0.4, -0.45], [0.42, -0.42]]) { ctx.beginPath(); ctx.arc(sx * r, sy * r, r * 0.06, 0, SP_TAU); ctx.fill(); }
-  ctx.globalAlpha = A;
-  // jaws open wide as the shot charges
-  const open = 0.35 + 0.65 * Math.max(m.windup || 0, m.fireFlash > 0 ? 1 : 0);
-  const mh = r * (0.05 + 0.18 * open), my = r * 0.34;
-  ctx.fillStyle = '#0a0612';
-  ctx.beginPath(); ctx.ellipse(0, my, r * 0.52, mh, 0, 0, SP_TAU); ctx.fill();
-  ctx.fillStyle = '#f4f0e0';
-  for (let i = -3; i <= 3; i++) {
-    const x = i * r * 0.13, w = r * 0.05;
-    ctx.beginPath(); ctx.moveTo(x - w, my - mh); ctx.lineTo(x, my - mh + r * 0.12); ctx.lineTo(x + w, my - mh); ctx.fill();
-    if (i > -3 && i < 3) { ctx.beginPath(); ctx.moveTo(x - w, my + mh); ctx.lineTo(x, my + mh - r * 0.1); ctx.lineTo(x + w, my + mh); ctx.fill(); }
+
+  // 3. Round fish body with deep shading
+  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, 0, r * 0.88, 0, SP_TAU); }, pal, r * 1.05);
+
+  // Bioluminescent spots along flanks
+  ctx.fillStyle = pal.glow; ctx.globalAlpha = A * 0.5;
+  for (const [sx, sy] of [[-0.58, 0.1], [0.58, 0.08], [-0.42, -0.45], [0.44, -0.42], [-0.25, 0.35], [0.25, 0.35]]) {
+    ctx.beginPath(); ctx.arc(sx * r, sy * r, r * 0.07, 0, SP_TAU); ctx.fill();
   }
-  crEyes(ctx, 0, -r * 0.15, r * 0.14, r * 0.3, look, crBlink(m, t), '#1a1030', 1, pal.dark);
-  const lx = Math.sin(t * 2 + m.seed) * r * 0.2, ly = -r * 1.3;
-  ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(1.5, r * 0.07); ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(0, -r * 0.78); ctx.quadraticCurveTo(r * 0.15, -r * 1.35, lx, ly); ctx.stroke();
-  const pulse = 0.7 + 0.3 * Math.sin(t * 5 + m.seed) + (m.windup || 0) * 0.8;
-  drawGlow(ctx, lx, ly, r * 0.5 * pulse, pal.glow, 0.9);
-  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(lx, ly, r * 0.11, 0, SP_TAU); ctx.fill();
+  ctx.globalAlpha = A;
+
+  // 4. Snapping jaws with razor fangs (opens wide when charging/firing)
+  const open = 0.38 + 0.62 * Math.max(m.windup || 0, m.fireFlash > 0 ? 1 : 0);
+  const mh = r * (0.06 + 0.2 * open), my = r * 0.35;
+  ctx.fillStyle = crMix(pal.dark, pal.primary, 0.3);
+  ctx.beginPath(); ctx.ellipse(0, my, r * 0.55, mh, 0, 0, SP_TAU); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  for (let i = -3; i <= 3; i++) {
+    const x = i * r * 0.14, w = r * 0.055;
+    ctx.beginPath(); ctx.moveTo(x - w, my - mh); ctx.lineTo(x, my - mh + r * 0.14); ctx.lineTo(x + w, my - mh); ctx.fill();
+    if (i > -3 && i < 3) {
+      ctx.beginPath(); ctx.moveTo(x - w, my + mh); ctx.lineTo(x, my + mh - r * 0.12); ctx.lineTo(x + w, my + mh); ctx.fill();
+    }
+  }
+
+  // 5. Direct front-facing blinking eyes
+  crEyes(ctx, 0, -r * 0.14, r * 0.15, r * 0.32, look, crBlink(m, t), '#1a1030', 1, pal.dark);
+
+  // 6. Flexible glowing angler stalk with pulsing beacon
+  const lx = Math.sin(t * 3.5 + (m.seed || 0)) * r * 0.22, ly = -r * 1.35;
+  ctx.strokeStyle = crMix(pal.primary, pal.dark, 0.4); ctx.lineWidth = Math.max(1.5, r * 0.07); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.8); ctx.quadraticCurveTo(r * 0.18, -r * 1.4, lx, ly); ctx.stroke();
+  const pulse = 0.75 + 0.35 * Math.sin(t * 6 + (m.seed || 0)) + (m.windup || 0) * 1.1;
+  drawGlow(ctx, lx, ly, r * 0.65 * pulse, pal.glow, 0.95);
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(lx, ly, r * 0.14, 0, SP_TAU); ctx.fill();
 }
 
 // Reefback — giant sea turtle: plated shell grown over with coral and
 // barnacles, paddling flippers; tucks its head in before it fires.
+// Reefback — direct front-facing giant sea turtle: 4 paddling flippers, coral growth, hexagonal scutes & bobbing armored head
 function spTurtle(ctx, m, pal, t, look) {
   const r = m.r, A = ctx.globalAlpha;
   const ph = m.action && m.action.phase;
-  const paddle = Math.sin(m.anim * 1.1);
-  const skin = { ...pal, light: '#bfe8c0', primary: '#6aa878', shade: '#3a6a4a', dark: '#14281c' };
+  const paddle = Math.sin((m.anim || 0) * 1.8);
+  const skin = { ...pal, light: '#d1fae5', primary: '#6ee7b7', shade: '#10b981', dark: '#047857' };
+
+  // 1. 4 swimming flippers paddling symmetrically
   for (const side of [-1, 1]) {
-    for (const [fy, len, k] of [[-0.35, 0.75, 1], [0.45, 0.5, -1]]) {
-      ctx.save(); ctx.translate(side * r * 0.68, fy * r); ctx.rotate(side * (0.5 + paddle * 0.35 * k));
-      crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(side * r * len * 0.5, 0, r * len * 0.55, r * 0.17, 0, 0, SP_TAU); }, skin, r * 0.4);
+    for (const [fy, len, k] of [[-0.35, 0.8, 1], [0.45, 0.55, -1]]) {
+      ctx.save();
+      ctx.translate(side * r * 0.7, fy * r);
+      ctx.rotate(side * (0.5 + paddle * 0.38 * k));
+      crShade(ctx, () => {
+        ctx.beginPath();
+        ctx.ellipse(side * r * len * 0.5, 0, r * len * 0.58, r * 0.18, 0, 0, SP_TAU);
+      }, skin, r * 0.45);
       ctx.restore();
     }
   }
-  const tuck = ph === 'windup' || (m.windup || 0) > 0.5 ? 0.14 : 0;
-  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, r * (0.8 - tuck), r * 0.3, r * 0.26, 0, 0, SP_TAU); }, skin, r * 0.35);
-  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.82, r * 0.72, 0, 0, SP_TAU); }, pal, r);
-  ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(1.2, r * 0.04); ctx.globalAlpha = A * 0.7;
+
+  // 2. Direct front-facing bobbing armored head
+  const tuck = ph === 'windup' || (m.windup || 0) > 0.5 ? 0.16 : 0;
+  const headBob = Math.sin(t * 3.2) * r * 0.05;
+  crShade(ctx, () => {
+    ctx.beginPath();
+    ctx.ellipse(0, r * (0.82 - tuck) + headBob, r * 0.32, r * 0.28, 0, 0, SP_TAU);
+  }, skin, r * 0.4);
+
+  // 3. Massive hexagonal plated carapace with glowing runes
+  crShade(ctx, () => { ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.86, r * 0.76, 0, 0, SP_TAU); }, pal, r * 1.05);
+
+  // Carapace hex plate lines
+  ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(1.5, r * 0.045); ctx.globalAlpha = A * 0.75;
   const hex = (cx, cy, s) => {
     ctx.beginPath();
     for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + Math.PI / 6; ctx.lineTo(cx + Math.cos(a) * s, cy + Math.sin(a) * s * 0.85); }
     ctx.closePath(); ctx.stroke();
   };
-  hex(0, -r * 0.08, r * 0.24);
-  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; hex(Math.cos(a) * r * 0.48, -r * 0.08 + Math.sin(a) * r * 0.4, r * 0.17); }
+  hex(0, -r * 0.08, r * 0.25);
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; hex(Math.cos(a) * r * 0.5, -r * 0.08 + Math.sin(a) * r * 0.42, r * 0.18); }
   ctx.globalAlpha = A;
-  ctx.strokeStyle = '#ff7a8a'; ctx.lineWidth = Math.max(2, r * 0.07); ctx.lineCap = 'round';
-  for (const [cx, seed] of [[-0.35, 0], [0.3, 1.7]]) {
-    const x = cx * r, y = -r * 0.55, sw = Math.sin(t * 2 + seed) * r * 0.05;
+
+  // Living coral formations on shell with glowing tips
+  ctx.strokeStyle = '#ff6a8a'; ctx.lineWidth = Math.max(2.2, r * 0.08); ctx.lineCap = 'round';
+  for (const [cx, seed] of [[-0.38, 0], [0.35, 1.7]]) {
+    const x = cx * r, y = -r * 0.58, sw = Math.sin(t * 2.5 + seed) * r * 0.06;
     ctx.beginPath();
-    ctx.moveTo(x, y); ctx.lineTo(x + sw, y - r * 0.3);
-    ctx.moveTo(x + sw * 0.5, y - r * 0.14); ctx.lineTo(x - r * 0.12 + sw, y - r * 0.27);
-    ctx.moveTo(x + sw * 0.6, y - r * 0.18); ctx.lineTo(x + r * 0.12 + sw, y - r * 0.3);
+    ctx.moveTo(x, y); ctx.lineTo(x + sw, y - r * 0.32);
+    ctx.moveTo(x + sw * 0.5, y - r * 0.15); ctx.lineTo(x - r * 0.14 + sw, y - r * 0.28);
+    ctx.moveTo(x + sw * 0.6, y - r * 0.2); ctx.lineTo(x + r * 0.14 + sw, y - r * 0.32);
     ctx.stroke();
+    // Glowing coral tips
+    drawGlow(ctx, x + sw, y - r * 0.32, r * 0.15, '#ff8aa8', 0.8);
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x + sw, y - r * 0.32, r * 0.04, 0, SP_TAU); ctx.fill();
   }
-  ctx.fillStyle = '#e8e0cc'; ctx.strokeStyle = pal.dark; ctx.lineWidth = 1;
-  for (const [bx, by] of [[0.5, 0.25], [-0.55, 0.15], [0.1, 0.42]]) { ctx.beginPath(); ctx.arc(bx * r, by * r, r * 0.06, 0, SP_TAU); ctx.fill(); ctx.stroke(); }
-  crEyes(ctx, 0, r * (0.84 - tuck), r * 0.08, r * 0.13, look, crBlink(m, t), '#0a1a10', 1 + (m.windup || 0), skin.dark);
+
+  // 4. Glowing eyes on front head
+  crEyes(ctx, 0, r * (0.86 - tuck) + headBob, r * 0.09, r * 0.15, look, crBlink(m, t), '#0a1a10', 1 + (m.windup || 0), skin.dark);
 }
 
 // Bats — leathery wings on finger bones, fuzzy body, big ears and fangs.
@@ -3012,39 +3183,97 @@ function spBoneDragon(ctx, m, pal, t, look) {
 
 // ---------------------------------------------------- ABYSSAL RIFT (extra) ----
 
-// Rollspine — spiky purple sea urchin that rolls along on its spines; the
-// face stays upright while the spine ball turns.
+// Spiny Urchin — direct front-facing crystalline sea urchin: articulated needle spines,
+// ground shockwave skittering, radiant energy nodes & glowing abyssal eye
 function spUrchin(ctx, m, pal, t, look) {
   const r = m.r, A = ctx.globalAlpha;
   const ph = m.action && m.action.phase;
   const coil = ph === 'windup' ? 1 : 0;
-  ctx.save();
-  ctx.rotate(m.anim * 0.9 + m.seed);
-  const n = 14;
-  for (let k = 0; k < n; k++) {
-    const a = k / n * SP_TAU, len = r * (k % 2 ? 0.95 : 1.15) * (1 + coil * 0.12);
-    const ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca, w = r * 0.09;
-    ctx.fillStyle = k % 2 ? pal.shade : pal.primary;
-    ctx.beginPath(); ctx.moveTo(ca * r * 0.5 + px * w, sa * r * 0.5 + py * w); ctx.lineTo(ca * len, sa * len); ctx.lineTo(ca * r * 0.5 - px * w, sa * r * 0.5 - py * w); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = pal.dark; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = pal.glow; ctx.beginPath(); ctx.arc(ca * len, sa * len, r * 0.05, 0, SP_TAU); ctx.fill();
+  const walk = (m.anim || 0) * 4.2;
+  const bounce = Math.abs(Math.sin(walk)) * r * 0.15;
+  ctx.translate(0, -bounce);
+
+  // 1. Radiating needle spines with animated twitch and breathing pulse
+  const spineCount = 16;
+  const pulse = Math.sin(t * 8 + (m.seed || 0)) * 0.1;
+  for (let k = 0; k < spineCount; k++) {
+    const baseAngle = (k / spineCount) * SP_TAU;
+    // Walk spine stepping wobble + coil outward extension
+    const wobble = Math.sin(walk + k * 0.8) * 0.12;
+    const a = baseAngle + wobble;
+    const isLong = k % 2 === 0;
+    const len = r * (isLong ? 1.25 : 0.95) * (1 + coil * 0.28 + pulse);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const px = -sa, py = ca;
+    const baseW = r * 0.11;
+
+    // Spine body
+    ctx.fillStyle = isLong ? pal.primary : pal.shade;
+    ctx.beginPath();
+    ctx.moveTo(ca * r * 0.45 + px * baseW, sa * r * 0.45 + py * baseW);
+    ctx.lineTo(ca * len, sa * len);
+    ctx.lineTo(ca * r * 0.45 - px * baseW, sa * r * 0.45 - py * baseW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = pal.dark; ctx.lineWidth = Math.max(1, r * 0.04); ctx.stroke();
+
+    // Bioluminescent energy bead on needle tip
+    ctx.fillStyle = pal.glow;
+    ctx.beginPath();
+    ctx.arc(ca * len, sa * len, r * (isLong ? 0.07 : 0.05) * (1 + coil * 0.5), 0, SP_TAU);
+    ctx.fill();
+    if (coil > 0 || isLong) {
+      drawGlow(ctx, ca * len, sa * len, r * 0.16, pal.glow, 0.45 + coil * 0.4);
+    }
   }
-  ctx.restore();
-  crShade(ctx, () => { ctx.beginPath(); ctx.arc(0, 0, r * 0.6, 0, SP_TAU); }, pal, r * 0.7);
-  ctx.fillStyle = pal.light; ctx.globalAlpha = A * 0.5;
-  for (const [x, y] of [[-0.3, -0.3], [0.32, -0.25], [-0.05, -0.45]]) { ctx.beginPath(); ctx.arc(x * r, y * r, r * 0.05, 0, SP_TAU); ctx.fill(); }
+
+  // 2. Central spherical armored carapace with multi-stop 3D shading
+  crShade(ctx, () => {
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.65, 0, SP_TAU);
+  }, pal, r * 0.72);
+
+  // 3. Carapace gem node studs & specular crystal highlights
+  ctx.fillStyle = pal.light;
+  ctx.globalAlpha = A * 0.7;
+  for (const [sx, sy, sr] of [[-0.3, -0.28, 0.07], [0.32, -0.24, 0.06], [-0.08, -0.42, 0.08], [0.22, 0.28, 0.05], [-0.25, 0.25, 0.05]]) {
+    ctx.beginPath();
+    ctx.arc(sx * r, sy * r, sr * r, 0, SP_TAU);
+    ctx.fill();
+  }
   ctx.globalAlpha = A;
-  crEyes(ctx, 0, -r * 0.02, r * 0.15, r * 0.2, look, crBlink(m, t), '#1e0a34', coil, pal.dark);
-  ctx.fillStyle = pal.dark; ctx.beginPath(); ctx.ellipse(0, r * 0.26, r * 0.08, r * (0.03 + coil * 0.04), 0, 0, SP_TAU); ctx.fill();
+
+  // 4. Expressive direct front-facing eyes with tracking slit pupils
+  crEyes(ctx, 0, -r * 0.04, r * 0.18, r * 0.24, look, crBlink(m, t), pal.dark, coil, pal.dark);
+
+  // 5. Menacing toothy chatter mouth with glowing maw
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath();
+  const mouthH = r * (0.05 + (coil ? 0.12 : Math.abs(Math.sin(walk * 1.5)) * 0.06));
+  ctx.ellipse(0, r * 0.28, r * 0.16, mouthH, 0, 0, SP_TAU);
+  ctx.fill();
+  if (coil > 0) {
+    // Sharp fangs
+    ctx.fillStyle = '#ffffff';
+    for (let f = -2; f <= 2; f++) {
+      ctx.beginPath();
+      ctx.moveTo(f * r * 0.05, r * 0.24);
+      ctx.lineTo(f * r * 0.05 + r * 0.02, r * 0.32);
+      ctx.lineTo(f * r * 0.05 - r * 0.02, r * 0.32);
+      ctx.closePath();
+      ctx.fill();
+    }
+    drawGlow(ctx, 0, r * 0.28, r * 0.2, pal.glow, 0.7);
+  }
 }
 
 // ----------------------------------------------------------- registry ----
 // name is shown on the boss bar for bosses.
 export const SPECIES = {
-  crab: { draw: spCrab, colors: { primary: '#e8603c', dark: '#3a1208', glow: '#ffd2a8' } },
-  jelly: { draw: spJelly, colors: { primary: '#c87ae8', dark: '#2a0e44', glow: '#9ff4ff' } },
-  pirate: { draw: spPirate },
-  kraken: { draw: spKraken, get name() { return tr('d.boss.kraken'); }, colors: { primary: '#7a4ab8', dark: '#1a0a30', glow: '#9ff4ff' } },
+  crab: { draw: spCrab, colors: { primary: '#ff6f52', dark: '#521a14', glow: '#fff0d4' } },
+  jelly: { draw: spJelly, colors: { primary: '#f472d0', dark: '#4c1d70', glow: '#67e8f9' } },
+  pirate: { draw: spPirate, colors: { primary: '#38bdf8', dark: '#0369a1', glow: '#a5f3fc' } },
+  kraken: { draw: spKraken, get name() { return tr('d.boss.kraken'); }, colors: { primary: '#a855f7', dark: '#3b0764', glow: '#38bdf8' } },
   frostling: { draw: spFrostling },
   snowblob: { draw: spSnowblob },
   wraith: { draw: spWraith },
@@ -3109,8 +3338,8 @@ export const SPECIES = {
   mantis: { draw: spMantis },
   mossbear: { draw: spMossBear },
   flytrap: { draw: spFlytrap, get name() { return tr('d.boss.flytrap'); } },
-  lanternfin: { draw: spLanternfin, colors: { primary: '#2a5a7a', dark: '#06141e', glow: '#9ff4ff' } },
-  turtle: { draw: spTurtle, colors: { primary: '#4a8a7a', dark: '#0e2a24', glow: '#9ff4ff' } },
+  lanternfin: { draw: spLanternfin, colors: { primary: '#06b6d4', dark: '#0e7490', glow: '#fef08a' } },
+  turtle: { draw: spTurtle, colors: { primary: '#34d399', dark: '#064e3b', glow: '#a7f3d0' } },
   icebat: { draw: spIceBat, colors: { primary: '#6a9ac8', dark: '#14243a', glow: '#dff6ff' } },
   firebat: { draw: spFireBat, colors: { primary: '#8a2a1a', dark: '#1a0604', glow: '#ffb347' } },
   vulture: { draw: spVulture, colors: { primary: '#5a4436', dark: '#1a120c', glow: '#ffd23d' } },
@@ -3124,5 +3353,5 @@ export const SPECIES = {
   shroomgiant: { draw: spShroomGiant, colors: { primary: '#8a3ad0', dark: '#1a0630', glow: '#7affe0' } },
   bonecrawler: { draw: spBonecrawler, colors: { primary: '#d8d0ae', dark: '#1a2210', glow: '#9aff7a' } },
   bonedragon: { draw: spBoneDragon, get name() { return tr('d.boss.bonedragon'); }, colors: { primary: '#d8d0ae', dark: '#1a2210', glow: '#b8ff7a' } },
-  urchin: { draw: spUrchin, colors: { primary: '#9a3ad0', dark: '#1e0a34', glow: '#ff9af0' } },
+  urchin: { draw: spUrchin, colors: { primary: '#c084fc', dark: '#581c87', glow: '#67e8f9' } },
 };

@@ -167,6 +167,26 @@ for (const n of seaNames) {
 }
 envData += seaSpriteData;
 
+let iceSpriteData = 'const ICE_SPRITE_DATA = {};\n';
+const iceNames = ['frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant'];
+for (const n of iceNames) {
+  const webp = readFileSync(`assets/sprites/ice/${n}.webp`);
+  iceSpriteData += `ICE_SPRITE_DATA[${JSON.stringify(n)}] = "data:image/webp;base64,${webp.toString('base64')}";\n`;
+}
+envData += iceSpriteData;
+
+// Baked enemy movement frames (tools/make_enemy_frames.py): 8 per enemy.
+let animData = 'const ANIM_DATA = {};\n';
+for (const n of ['goblin', 'troll', 'skeleton', 'slime', 'ogreBoss', 'imp', 'crab', 'urchin', 'pirate', 'jelly', 'kraken', 'turtle', 'lanternfin', 'frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant', 'scarab', 'dustdevil', 'vulture', 'mummy', 'scorpion', 'sphinx', 'shardfox', 'mushling', 'moth', 'treant', 'crystalgolem', 'eldertreant', 'kobold', 'magma', 'firebat', 'emberknight', 'drake', 'dragon', 'finch', 'chick', 'toucan', 'owl', 'griffin', 'phoenix', 'gloomling', 'wisp', 'raven', 'witch', 'bramble', 'shadowstag', 'starsprite', 'bloom', 'seedling', 'comet', 'astral', 'moongolem', 'seraph', 'cogbot', 'gearball', 'drone', 'steamsoldier', 'juggernaut', 'chronos', 'shroomkin', 'sporeling', 'glowmoth', 'tiki', 'shroomgiant', 'serpent', 'ram', 'boulder', 'pebble', 'eagle', 'guard', 'ogre', 'mountainking', 'boar', 'puff', 'spore', 'dragonfly', 'bonecrawler', 'mossbear', 'bonedragon']) {
+  const frames = [];
+  for (let i = 0; i < 8; i++) {
+    const webp = readFileSync(`assets/sprites/anim/${n}_${i}.webp`);
+    frames.push(`"data:image/webp;base64,${webp.toString('base64')}"`);
+  }
+  animData += `ANIM_DATA[${JSON.stringify(n)}] = [${frames.join(',')}];\n`;
+}
+envData += animData;
+
 spriteData += envData;
 code = code
   .replace('bgImg.src = `assets/env/bg_${n}.jpg`;', 'if (BG_DATA[i]) bgImg.src = BG_DATA[i];')
@@ -178,7 +198,8 @@ code = code
   .replace('img.src = `assets/env/ice_glacial/${n}.png`;', 'img.src = ICE_GLACIAL_DATA[n];')
   .replace('img.src = `assets/sprites/bat_ice/bat_${String(i).padStart(2, \'0\')}.png`;', 'img.src = BAT_DATA[i];')
   .replace('img.src = `assets/sprites/enemies/${name}.webp`;', 'img.src = ENEMY_SPRITE_DATA[name];')
-  .replace('img.src = `assets/sprites/sea/${name}.webp`;', 'img.src = SEA_SPRITE_DATA[name];');
+  .replace('img.src = `assets/sprites/sea/${name}.webp`;', 'img.src = SEA_SPRITE_DATA[name];')
+  .replace('img.src = `assets/sprites/anim/${name}_${i}.webp`;', 'img.src = ANIM_DATA[name][i];');
 
 // Inline the home-page shield emblem (src/ui/screens.js).
 const emblemUri = `data:image/png;base64,${readFileSync('assets/ui/emblem.png').toString('base64')}`;

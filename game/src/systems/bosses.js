@@ -20,9 +20,9 @@ import { audio } from './audio.js';
 import { F_TITLE } from '../ui/screens.js';
 
 export const BZ_TUNE = {
-  miniScale: 1.8,      // captain / warlord size vs the regular species
+  miniScale: 1.4,      // captain / warlord size vs the regular species
   miniHp: 0.6,         // share of the old boss-hp formula a captain gets
-  finalScale: 1.25,    // stage boss size vs before
+  finalScale: 1.0,     // stage boss size vs before
   finalHp: 1.25,       // stage boss hp vs the old formula (phase 2 adds minions)
   introDur: 3.0,       // seconds of the stage-boss intro (no damage, no fire)
   summonEvery: 10,     // phase 2: seconds between minion summons

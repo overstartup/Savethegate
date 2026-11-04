@@ -159,10 +159,22 @@ for (const name of ENEMY_SPRITE_NAMES) {
 }
 
 // Stage 1 'Sea War' Ocean Horde enemy sprites (Snapper, Jelly, Urchin, Lanternfin, Pirate, Turtle, Kraken)
+// Baked movement frames (tools/make_enemy_frames.py): 8 looping frames per enemy.
+export const ANIM_FRAMES = {};
+for (const name of ['goblin', 'troll', 'skeleton', 'slime', 'ogreBoss', 'imp', 'crab', 'urchin', 'pirate', 'jelly', 'kraken', 'turtle', 'lanternfin', 'frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant', 'scarab', 'dustdevil', 'vulture', 'mummy', 'scorpion', 'sphinx', 'shardfox', 'mushling', 'moth', 'treant', 'crystalgolem', 'eldertreant', 'kobold', 'magma', 'firebat', 'emberknight', 'drake', 'dragon', 'finch', 'chick', 'toucan', 'owl', 'griffin', 'phoenix', 'gloomling', 'wisp', 'raven', 'witch', 'bramble', 'shadowstag', 'starsprite', 'bloom', 'seedling', 'comet', 'astral', 'moongolem', 'seraph', 'cogbot', 'gearball', 'drone', 'steamsoldier', 'juggernaut', 'chronos', 'shroomkin', 'sporeling', 'glowmoth', 'tiki', 'shroomgiant', 'serpent', 'ram', 'boulder', 'pebble', 'eagle', 'guard', 'ogre', 'mountainking', 'boar', 'puff', 'spore', 'dragonfly', 'bonecrawler', 'mossbear', 'bonedragon']) {
+  ANIM_FRAMES[name] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+    const img = new Image();
+    img.src = `assets/sprites/anim/${name}_${i}.webp`;
+    return img;
+  });
+}
+
 export const SEA_SPRITE_NAMES = ['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken'];
 export const SEA_SPRITES = {};
 for (const name of SEA_SPRITE_NAMES) {
   const img = new Image();
+  SEA_SPRITES[name] = img;
+  if (typeof SPECIES !== "undefined" && SPECIES[name]) SPECIES[name].sprite = img;
   img.src = `assets/sprites/sea/${name}.webp`;
   img.onload = () => {
     SEA_SPRITES[name] = img;
@@ -172,6 +184,21 @@ for (const name of SEA_SPRITE_NAMES) {
   };
 }
 
+
+export const ICE_SPRITE_NAMES = ['frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant'];
+export const ICE_SPRITES = {};
+for (const name of ICE_SPRITE_NAMES) {
+  const img = new Image();
+  ICE_SPRITES[name] = img;
+  if (typeof SPECIES !== 'undefined' && SPECIES[name]) SPECIES[name].sprite = img;
+  img.src = `assets/sprites/ice/${name}.webp`;
+  img.onload = () => {
+    ICE_SPRITES[name] = img;
+    if (typeof SPECIES !== 'undefined' && SPECIES[name]) {
+      SPECIES[name].sprite = img;
+    }
+  };
+}
 function star(ctx, x, y, r, fill = '#ffd23d', rot = 0) {
   ctx.save();
   ctx.translate(x, y);
@@ -804,8 +831,8 @@ export function homeLayout(scrollY = 0) {
       size,
     };
   });
-  // Exact square tile bounds, reused by main.js for tap hit-testing.
-  const rows = nodes.map((n) => ({ x: n.cx - n.size / 2, y: n.cy - n.size / 2, w: n.size, h: n.size }));
+  // Generous island bounds so tapping the island art, banner, or name triggers the stage
+  const rows = nodes.map((n) => ({ x: n.cx - 90, y: n.cy - 75, w: 180, h: 150 }));
   return { stageTop, stageBottom, nodes, rows, scrollMax, scrollY: sy };
 }
 
@@ -1789,6 +1816,36 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
   // Nav bar drawn LAST so it stays visible and tappable even while the
   // continue dialog is open — you can still jump to Upgrades/Settings/Ranks
   // without closing it first.
+  // Quick Stage Select Bar above bottom nav
+  const STAGE_COLORS = [
+    '#38bdf8', '#93c5fd', '#fcd34d', '#c084fc', '#f87171', '#fbbf24',
+    '#a855f7', '#818cf8', '#fb923c', '#4ade80', '#94a3b8', '#22c55e'
+  ];
+  ctx.save();
+  ctx.fillStyle = 'rgba(12, 8, 28, 0.85)';
+  ctx.beginPath();
+  ctx.roundRect(6, NAV_Y - 40, W - 12, 36, 10);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 210, 61, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  STAGE_PICK_BUTTONS.forEach((b, i) => {
+    ctx.fillStyle = STAGE_COLORS[i % STAGE_COLORS.length];
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.font = `13px ${F_TITLE}`;
+    ctx.fillStyle = '#0a0a14';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(b.stage), b.x + b.w / 2, b.y + b.h / 2 + 4.5);
+  });
+  ctx.restore();
+
   drawBottomNav(ctx, 'play');
   st3DrawChestPop(ctx, t); // star chest dialog, when open
 }
@@ -1797,11 +1854,42 @@ export function renderMenu(ctx, best, playerName, coins = 0, progressLevelIndex 
 // A genuine transient dialog (not a nav-bar page) — dims and freezes the
 // run behind it, with two clear actions: resume, or exit back to the home
 // page (the run itself is simply abandoned, same as any other quit).
-const PAUSE_CARD = { x: 50, y: 250, w: W - 100, h: 220 };
-const PAUSE_BTN_W = (PAUSE_CARD.w - 56) / 2, PAUSE_BTN_H = 54;
+
+export const STAGE_PICK_BUTTONS = Array.from({ length: 12 }, (_, i) => {
+  const btnW = 30, gap = 4;
+  const totalW = 12 * btnW + 11 * gap;
+  const startX = (W - totalW) / 2;
+  return {
+    x: startX + i * (btnW + gap),
+    y: NAV_Y - 34,
+    w: btnW,
+    h: 28,
+    stage: i + 1,
+    level: i * STAGE_SIZE,
+  };
+});
+
+export const PAUSE_CARD = { x: 30, y: 150, w: W - 60, h: 340 };
+export const PAUSE_STAGE_BUTTONS = [];
+for (let i = 0; i < 12; i++) {
+  const row = Math.floor(i / 6);
+  const col = i % 6;
+  const bw = (PAUSE_CARD.w - 44) / 6;
+  const bh = 34;
+  PAUSE_STAGE_BUTTONS.push({
+    x: PAUSE_CARD.x + 12 + col * (bw + 4),
+    y: PAUSE_CARD.y + 112 + row * (bh + 8),
+    w: bw,
+    h: bh,
+    stage: i + 1,
+    level: i * STAGE_SIZE,
+  });
+}
+
+const PAUSE_BTN_W = (PAUSE_CARD.w - 56) / 2, PAUSE_BTN_H = 46;
 export const PAUSE_BUTTONS = {
-  resume: { x: PAUSE_CARD.x + 20, y: PAUSE_CARD.y + 140, w: PAUSE_BTN_W, h: PAUSE_BTN_H },
-  exit:   { x: PAUSE_CARD.x + 20 + PAUSE_BTN_W + 16, y: PAUSE_CARD.y + 140, w: PAUSE_BTN_W, h: PAUSE_BTN_H },
+  resume: { x: PAUSE_CARD.x + 20, y: PAUSE_CARD.y + 265, w: PAUSE_BTN_W, h: PAUSE_BTN_H },
+  exit:   { x: PAUSE_CARD.x + 20 + PAUSE_BTN_W + 16, y: PAUSE_CARD.y + 265, w: PAUSE_BTN_W, h: PAUSE_BTN_H },
 };
 
 // --- Placement pause banner (drag a wall/turret into position) ---------
@@ -1865,7 +1953,34 @@ export function renderPause(ctx) {
   const pauseSub = tr('m.pause.sub');
   ctx.font = fitFont(ctx, pauseSub, `14px ${F_BODY}`, c.w - 24);
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText(pauseSub, W / 2, c.y + 90);
+  ctx.fillText(pauseSub, W / 2, c.y + 80);
+
+  // Quick Stage Selector inside Pause Menu
+  ctx.font = `12px ${F_TITLE}`;
+  ctx.fillStyle = '#ffd23d';
+  ctx.fillText('⚡ TAP ANY STAGE TO TEST ⚡', W / 2, c.y + 102);
+
+  const STAGE_COLORS = [
+    '#38bdf8', '#93c5fd', '#fcd34d', '#c084fc', '#f87171', '#fbbf24',
+    '#a855f7', '#818cf8', '#fb923c', '#4ade80', '#94a3b8', '#22c55e'
+  ];
+
+  PAUSE_STAGE_BUTTONS.forEach((b, i) => {
+    ctx.save();
+    ctx.fillStyle = STAGE_COLORS[i % STAGE_COLORS.length] + '40';
+    ctx.strokeStyle = STAGE_COLORS[i % STAGE_COLORS.length];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = `14px ${F_TITLE}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(b.stage), b.x + b.w / 2, b.y + b.h / 2 + 5);
+    ctx.restore();
+  });
 
   const rb = PAUSE_BUTTONS.resume;
   ctx.fillStyle = '#3fbf6f';

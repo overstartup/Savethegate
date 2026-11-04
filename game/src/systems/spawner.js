@@ -140,7 +140,7 @@ export class Spawner {
   }
 
   mk(state, type, x, y) {
-    const def = this.def, t = this.t;
+    const def = this.def, t = this.t || { hpMult: 1, dmg: 10, splitSmall: false, splitBig: false };
     const m = new Monster(type, x, y, def.speed, null, t.hpMult);
     m.damage = t.dmg;
     m.splitSmall = t.splitSmall; // small ones may split again
@@ -159,7 +159,13 @@ export class Spawner {
   }
 
   flock(state, size, x) {
-    const def = this.def, groupType = weightedPick(def.spawns), d = MONSTERS[groupType];
+    const def = this.def;
+    // Heavy brutes and bosses never spawn in swarming flocks
+    const flockSpawns = { ...def.spawns };
+    delete flockSpawns.troll;
+    delete flockSpawns.ogreBoss;
+    const groupType = Object.keys(flockSpawns).length ? weightedPick(flockSpawns) : weightedPick(def.spawns);
+    const d = MONSTERS[groupType];
     const flock = new Flock({
       x: x ?? rand(60, CONFIG.width - 60),
       formation: pickFormation(this.lis + this.stageIdx * 2),
@@ -329,6 +335,11 @@ export class Spawner {
       // Sea War's obstacle is real Kenney barrel/crate art (see drawObstacle
       // in main.js) — pick which one this particular piece of cargo is.
       if (def.decor === 'bubbles') o.spriteChoice = Math.random() < 0.5 ? 'barrel' : 'crate';
+      if (def.decor === 'snow') {
+        const iceChoices = ['ice_rocks_large', 'ice_rocks_small', 'crystal_large', 'crystal_medium'];
+        o.spriteChoice = iceChoices[Math.floor(Math.random() * iceChoices.length)];
+        o.rotSpeed = (Math.random() < 0.5 ? -1 : 1) * (1.8 + Math.random() * 1.5);
+      }
       state.obstacles.push(o);
     }
 

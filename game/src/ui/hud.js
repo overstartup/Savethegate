@@ -23,7 +23,6 @@ export const BUTTONS = {
   wall: rowSlot(2),
   turret: rowSlot(3),
   angel: rowSlot(4),
-  watchAd: { x: CONFIG.width / 2 - 34, y: CONFIG.height - 114, w: 68, h: 44 },
   shop: { x: 6, y: 42, w: 76, h: 24 },  // tap the coin pill to open the shop
   pause: { x: CONFIG.width - 34, y: 6, w: 28, h: 28 },  // top-right corner
 };
@@ -256,10 +255,7 @@ export function renderHUD(ctx, state, adsReady = false) {
     ctx.fillText(tr('m.hud.wave', { a: state.spawner.waveNumber, b: state.spawner.waves.length }), CONFIG.width / 2, 58);
   }
 
-  // Lives (top-right, below the pause button)
-  for (let i = 0; i < CONFIG.gateHealth; i++) {
-    heart(ctx, CONFIG.width - 22 - i * 25, HEART_Y, 18, i < state.lives);
-  }
+  // Hearts removed: hero blood line under feet represents his life
 
   // Pause button (top-right corner)
   {
@@ -329,7 +325,6 @@ export function renderHUD(ctx, state, adsReady = false) {
   drawButton(ctx, 'wall', state, adsReady);
   drawButton(ctx, 'turret', state, adsReady);
   drawButton(ctx, 'angel', state, adsReady);
-  if (adsReady) drawButton(ctx, 'watchAd', state, adsReady);
   if (state.helperHint && BUTTONS[state.helperHint]) drawHelperHint(ctx, BUTTONS[state.helperHint]);
 }
 

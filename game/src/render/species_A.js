@@ -2008,13 +2008,7 @@ function sxaSphinx(ctx, m, pal, t, look) {
 }
 
 // ============================================================ registry ====
-Object.assign(SPECIES.crab, { draw: sxaCrab, colors: { primary: '#7a2432', dark: '#100308', glow: '#5ae8ff' } });
-Object.assign(SPECIES.jelly, { draw: sxaJelly, colors: { primary: '#5a2a8a', dark: '#0c0418', glow: '#ff5ad8' } });
-Object.assign(SPECIES.urchin, { draw: sxaUrchin, colors: { primary: '#3a1a52', dark: '#080210', glow: '#ff6ad0' } });
-Object.assign(SPECIES.lanternfin, { draw: sxaLanternfin, colors: { primary: '#263c4c', dark: '#03070c', glow: '#7ff6ff' } });
-Object.assign(SPECIES.pirate, { draw: sxaPirate, colors: { primary: '#2c443c', dark: '#050a08', glow: '#5affc8' } });
-Object.assign(SPECIES.turtle, { draw: sxaTurtle, colors: { primary: '#34402e', dark: '#050804', glow: '#7ff6ff' } });
-Object.assign(SPECIES.kraken, { draw: sxaKraken, colors: { primary: '#4c2a62', dark: '#08020e', glow: '#6ff6ff' } });
+// Sea species overrides disabled: keep bright cartoon designs from species.js
 Object.assign(SPECIES.frostling, { draw: sxaFrostling, colors: { primary: '#5a7088', dark: '#080e18', glow: '#9fefff' } });
 Object.assign(SPECIES.snowblob, { draw: sxaSnowblob, colors: { primary: '#8eaecb', dark: '#0a1628', glow: '#8ff0ff' } });
 Object.assign(SPECIES.icebat, { draw: sxaIceBat, colors: { primary: '#344264', dark: '#05070f', glow: '#9fefff' } });

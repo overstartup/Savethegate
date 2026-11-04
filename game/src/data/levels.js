@@ -19,7 +19,7 @@ import { tr } from '../i18n.js';
 // New enemy types are introduced one at a time (goblins → slimes → bats →
 // skeletons → trolls) so each level teaches one new threat.
 const LEVEL_PROGRESSION = [
-  { attackers: 30,  spawns: { goblin: 1 }, speed: 0.8, boss: false, movingObstacles: false },
+  { attackers: 32,  spawns: { goblin: 3, slime: 2, imp: 2, skeleton: 2, troll: 1 }, speed: 0.8, boss: true, movingObstacles: false },
   { attackers: 40,  spawns: { goblin: 5, slime: 2 }, speed: 0.85, boss: false, movingObstacles: false },
   { attackers: 50,  spawns: { goblin: 4, slime: 3, imp: 1 }, speed: 0.9, boss: false, movingObstacles: false },
   { attackers: 60,  spawns: { goblin: 4, slime: 3, imp: 2, skeleton: 1 }, speed: 0.95, boss: true, movingObstacles: false },
@@ -170,9 +170,12 @@ export const STAGE_THEMES = [
 //   noElite — no elite (tanky, glowing) variants on that level
 //   timeMult — scales the level's target length (CONFIG.waves.levelTime)
 const TU_STAGE1_EASE = [
-  { attackers: 18, speed: 0.7, crowd: -1, noElite: true, timeMult: 0.75 },
-  { attackers: 32, speed: 0.78, crowd: -1 },
-  { attackers: 44, speed: 0.86 },
+  { attackers: 36, speed: 0.75, crowd: 0, noElite: true, timeMult: 0.85,
+    spawns: { goblin: 4, slime: 3, slimeSmall: 2, imp: 2, skeleton: 2, troll: 1 }, boss: true },
+  { attackers: 45, speed: 0.80, crowd: 0,
+    spawns: { goblin: 4, slime: 3, slimeSmall: 2, imp: 2, skeleton: 2, troll: 1 }, boss: true },
+  { attackers: 55, speed: 0.85,
+    spawns: { goblin: 4, slime: 3, slimeSmall: 2, imp: 3, skeleton: 2, troll: 1 }, boss: true },
 ];
 
 export const STAGE_SIZE = LEVEL_PROGRESSION.length; // 10 levels per stage

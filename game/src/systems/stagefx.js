@@ -59,13 +59,7 @@ export function sxReset(st, index) {
   if (!sx.on) return;
   const id = info.id;
   if (id === 'ice') {
-    const n = 1 + Math.round(sx.k * 2);
-    for (let i = 0; i < n; i++) {
-      // spread the patches across the hero's usual band, one per column
-      const col = (i + 0.5) / n;
-      sx.items.push({ x: sxClamp(col * CONFIG.width + sxRand(-30, 30), 70, CONFIG.width - 70), y: sxRand(400, 590),
-        rx: sxRand(62, 80), ry: sxRand(26, 34), seed: Math.random() * 10 });
-    }
+    // Disabled circle in center: field kept clean and natural for Stage 2
   } else if (id === 'crystal') {
     const n = 2 + Math.round(sx.k * 2);
     for (let i = 0; i < n; i++) {
@@ -375,40 +369,7 @@ export function sxDrawBack(ctx, st) {
   const id = sx.info.id, t = st.levelTime;
   ctx.save();
   if (id === 'ice') {
-    for (const e of sx.items) {
-      ctx.globalAlpha = 1;
-      const g = ctx.createRadialGradient(e.x - e.rx * 0.3, e.y - e.ry * 0.3, 2, e.x, e.y, e.rx);
-      g.addColorStop(0, 'rgba(200,245,255,0.9)');
-      g.addColorStop(0.5, 'rgba(80,185,245,0.8)');
-      g.addColorStop(1, 'rgba(30,120,210,0.8)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.ellipse(e.x, e.y, e.rx, e.ry, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = 0.9; ctx.stroke();
-      ctx.lineWidth = 2.5; ctx.strokeStyle = '#1b4f7a'; ctx.globalAlpha = 0.85;
-      ctx.beginPath(); ctx.ellipse(e.x, e.y, e.rx + 3, e.ry + 3, 0, 0, Math.PI * 2); ctx.stroke();
-      // snowflake mark so it reads as "slippery", not as scenery
-      ctx.globalAlpha = 0.8; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = 0; i < 3; i++) {
-        const a = i * Math.PI / 3 + t * 0.3;
-        ctx.moveTo(e.x + e.rx * 0.5 - Math.cos(a) * 8, e.y - Math.sin(a) * 8);
-        ctx.lineTo(e.x + e.rx * 0.5 + Math.cos(a) * 8, e.y + Math.sin(a) * 8);
-      }
-      ctx.stroke();
-      // cracks + a sweeping glint
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      for (let i = 0; i < 3; i++) {
-        const a = e.seed + i * 2.1;
-        ctx.moveTo(e.x + Math.cos(a) * e.rx * 0.15, e.y + Math.sin(a) * e.ry * 0.15);
-        ctx.lineTo(e.x + Math.cos(a) * e.rx * 0.65, e.y + Math.sin(a) * e.ry * 0.6);
-      }
-      ctx.stroke();
-      const gx = e.x - e.rx + ((t * 50 + e.seed * 40) % (e.rx * 3));
-      ctx.globalAlpha = 0.5; ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.ellipse(gx, e.y - e.ry * 0.3, 6, e.ry * 0.25, -0.5, 0, Math.PI * 2); ctx.fill();
-    }
+    // Disabled circle in center for Stage 2
   } else if (id === 'lava') {
     for (const c of sx.items) {
       const warnF = Math.min(1, c.t / c.warn);

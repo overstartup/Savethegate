@@ -484,10 +484,7 @@ export function renderLevelUp(ctx, run, t) {
     ctx.strokeStyle = u.color;
     ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(ix, 0, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = u.color;
-    ctx.font = '22px "Fredoka", Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(u.icon, ix, 8);
+    drawUpgradePreview(ctx, key, ix, 0, 15, u.color, t, i);
     // text, starting next to the orb on the reading side
     ctx.textAlign = s > 0 ? 'left' : 'right';
     ctx.fillStyle = '#ffffff';
@@ -515,5 +512,87 @@ export function renderLevelUp(ctx, run, t) {
     }
     ctx.restore();
   });
+  ctx.restore();
+}
+
+// A small animated picture of what each power does, drawn in the card's icon
+// orb: the shots, their count and where they go. (cx, cy) = orb centre,
+// R = picture radius, t = seconds. Unknown keys fall back to the glyph.
+function drawUpgradePreview(ctx, key, cx, cy, R, color, t, seed = 0) {
+  const cyc = (speed, off = 0) => ((t * speed + off) % 1 + 1) % 1;
+  const shot = (x, y, len, w) => {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(x - w / 2, y - len / 2, w, len, w / 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.roundRect(x - w / 5, y - len / 2, w * 0.4, len * 0.55, w / 4); ctx.fill();
+  };
+  const foe = (x, y, r) => {
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  };
+  ctx.save();
+  switch (key) {
+    case 'multishot': // twin shots side by side
+      for (const dx of [-0.38, 0.38]) shot(cx + dx * R, cy + R - cyc(1.1) * 2 * R, R * 0.7, R * 0.3);
+      break;
+    case 'rapid': // a fast stream of shots
+      for (let k = 0; k < 3; k++) shot(cx, cy + R - cyc(2.4, k / 3) * 2 * R, R * 0.45, R * 0.24);
+      break;
+    case 'power': // one big shot
+      shot(cx, cy + R - cyc(0.8) * 2 * R, R * 1.2, R * 0.6);
+      break;
+    case 'pierce': // a shot going straight through a foe
+      foe(cx, cy - R * 0.2, R * 0.4);
+      shot(cx, cy + R - cyc(0.9) * 2 * R, R * 0.6, R * 0.26);
+      break;
+    case 'orbit': // blades circling the Guardian
+      for (let k = 0; k < 3; k++) {
+        const a = t * 2.4 + (k * Math.PI * 2) / 3;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(cx + Math.cos(a) * R * 0.75, cy + Math.sin(a) * R * 0.75, R * 0.22, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    case 'chain': // lightning zig-zag between two foes
+      ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let k = 0; k <= 4; k++) {
+        const x = cx - R + (2 * R * k) / 4;
+        const jitter = (Math.sin(Math.floor(t * 10) * 7.1 + k * 3.3 + seed) * 0.5 + 0.5) * R * 0.5 * (k % 2 ? 1 : -1);
+        k ? ctx.lineTo(x, cy + jitter) : ctx.moveTo(x, cy + jitter);
+      }
+      ctx.stroke();
+      break;
+    case 'seeker': // homing shot curving onto a target
+      foe(cx + R * 0.55, cy - R * 0.45, R * 0.3);
+      {
+        const p = cyc(0.8);
+        const x = cx - R * 0.8 + p * R * 1.3, y = cy + R * 0.6 - Math.sin(p * Math.PI) * R * 0.9;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(x, y, R * 0.22, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    case 'nova': // expanding ring blast
+      {
+        const p = cyc(0.9);
+        ctx.strokeStyle = color; ctx.lineWidth = 3;
+        ctx.globalAlpha = 1 - p;
+        ctx.beginPath(); ctx.arc(cx, cy, R * (0.2 + p * 0.85), 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    case 'magnet': // gems pulled into the centre
+      for (let k = 0; k < 4; k++) {
+        const p = cyc(0.9, k / 4), a = k * Math.PI / 2 + 0.4;
+        const rr = R * (1 - p);
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, R * 0.18, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    default: // heal, treasure and anything else: the glyph
+      ctx.fillStyle = color;
+      ctx.font = '22px "Fredoka", Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(RUN_UPGRADES[key].icon, cx, cy + 8);
+  }
   ctx.restore();
 }

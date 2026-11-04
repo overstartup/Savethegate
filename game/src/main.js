@@ -23,7 +23,7 @@ import { resolveCollisions } from './systems/collision.js';
 import { Particles } from './systems/particles.js';
 import { audio } from './systems/audio.js';
 import { renderHUD, buttonAt, BUTTONS } from './ui/hud.js';
-import { renderMenu, renderLevelClear, LC_TIMES, renderVictory, renderGameOver, GAMEOVER_BUTTONS, renderRewards, REWARDS_BUTTONS, navHit, setNavBadges, drawBottomNav, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, unitDialog, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, homePlayRect, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, ENEMY_SPRITES } from './ui/screens.js';
+import { renderMenu, renderLevelClear, LC_TIMES, renderVictory, renderGameOver, GAMEOVER_BUTTONS, renderRewards, REWARDS_BUTTONS, navHit, setNavBadges, drawBottomNav, renderShop, SHOP_BUTTONS, MENU_BUTTONS, END_MENU_BUTTON, renderUpgrades, UPGRADE_BUTTONS, unitDialog, unitDialogRows, renderLeaderboard, LEADERBOARD_BUTTONS, renderSettings, SETTINGS_BUTTONS, PRIVACY_URL, homeLayout, homePlayRect, CONTINUE_CLOSE_BUTTON, CONTINUE_CARD_RECT, CONTINUE_PLAY_BUTTON, envIcon, renderPause, PAUSE_BUTTONS, renderPlacementBanner, PLACEMENT_CONTINUE_BUTTON, BG_IMAGES, KENNEY_SEA, KENNEY_PIRATE, KENNEY_CASTLE, DESERT_PLANTS, ICE_GLACIAL, BAT_FRAMES, BAT_FRAME_COUNT, ENEMY_SPRITES, ANIM_FRAMES, STAGE_PICK_BUTTONS, PAUSE_STAGE_BUTTONS } from './ui/screens.js';
 import { drawGun } from './render/gun.js';
 import { drawUnitArt, drawStoneWall, unitRanks } from './render/units.js';
 import { Announcer } from './ui/announce.js';
@@ -607,7 +607,7 @@ let state = null;
 let resetArmed = false; // "tap RESET PROGRESS twice" confirmation guard
 // The How-to-play card only greets brand-new players; anyone who has played
 // before lands straight on the map with its big PLAY button.
-let continueDismissed = (saveData.progress?.levelIndex || 0) > 0 || (saveData.best || 0) > 0;
+let continueDismissed = CONFIG.devUnlockAllStages || (saveData.progress?.levelIndex || 0) > 0 || (saveData.best || 0) > 0;
 
 // Stage road-map scrolling — the map lays out nodes at a fixed size/spacing
 // regardless of how many stages exist, so once there are more than fit on
@@ -715,6 +715,10 @@ function closeNameEntry() {
 // straight into Stage 1 Level 1 with the guided hints (systems/tutorial.js),
 // skipping the home page's How-to-play card.
 function tuStartFirstRun() {
+  if (CONFIG.devUnlockAllStages) {
+    continueDismissed = true;
+    return;
+  }
   if (renaming || mode !== 'MENU' || !tuIsNewPlayer(saveData)) return;
   continueDismissed = true;
   newGame(0);
@@ -900,6 +904,7 @@ function newGame(startIndex = 0) {
     run: createRun(),
     onBoss: (b) => bzOnBoss(b, state, particles), // banners / intro: systems/bosses.js
   };
+  window.state = state;
   startLevel(idx);
   tuBegin(state, saveData, idx); // guided first run (brand-new players, L1 only)
   const boost = grantCatchUp(state.run, state.player, idx);
@@ -1244,11 +1249,32 @@ input.onTap((x, y) => {
 
   if (mode === 'MENU') {
     if (x === null) return;
-    // A fresh press always clears the previous gesture's "was this a
-    // scroll drag" flag immediately (not just next frame via update()) —
-    // otherwise a very quick tap right after a drag could still read the
-    // old drag's mapMoved=true and get silently ignored.
     mapMoved = false;
+
+    // Quick Stage Pick buttons (1-12)
+    for (const b of STAGE_PICK_BUTTONS) {
+      if (hit(b, x, y)) {
+        audio.pick();
+        continueDismissed = true;
+        newGame(b.level);
+        mode = 'PLAYING';
+        syncBanner();
+        return;
+      }
+    }
+
+    // Direct tap on any stage island
+    const layout = homeLayout(mapScrollY);
+    for (let i = 0; i < layout.rows.length; i++) {
+      if (hit(layout.rows[i], x, y)) {
+        audio.pick();
+        continueDismissed = true;
+        newGame(i * STAGE_SIZE);
+        mode = 'PLAYING';
+        syncBanner();
+        return;
+      }
+    }
     if (continueDismissed && st3MenuTap(x, y, saveData, addCoins)) return; // star chest (or its dialog)
     // Header: only the coin pill is tappable (opens the buy-coins shop).
     // The avatar/name area no longer opens name-edit — that now lives in
@@ -1645,18 +1671,20 @@ const events = {
   // A Shatterling crossed the gate line — costs one heart, always.
   breach(m) {
     if (mode !== 'PLAYING') return; // run already ended this frame
-    state.lives--;
+    // A breach directly damages the hero's blood bar
+    state.player.blood = Math.max(0, state.player.blood - state.player.maxBlood * 0.35);
     state.combo = 0;
     state.gateFlash = 0.5;
     audio.crack();
     particles.addShake(10);
     particles.shatter(m.x, CONFIG.gateY, '#ff5c7a', 14, 10);
     particles.ring(m.x, CONFIG.gateY, '#ff5c7a', 120, 0.45, 6);
-    particles.scoreText(m.x, CONFIG.gateY - 20, '-1 ♥', '#ff5c7a', 22);
+    particles.scoreText(m.x, CONFIG.gateY - 20, '-GATE', '#ff5c7a', 22);
     state.player.hurtFlash = 0.4;
-    if (state.lives === 1) announcer.show(tr('g.lastGate'), tr('g.protectGate'), '#ff5c7a', 1.3);
-    if (state.lives <= 0 && state.dc) { dcFinish(false); return; } // Daily Challenge: straight to its results
-    if (state.lives <= 0) {
+    if (state.player.blood <= 0) {
+      state.lives = 0;
+      if (state.dc) { dcFinish(false); return; }
+      mode = 'GAMEOVER';
       mode = 'GAMEOVER';
       audio.gameOver();
       persistCoins();
@@ -1717,17 +1745,19 @@ const events = {
   // Costs one shared gate. Blood stays empty afterward — it no longer
   // auto-refills — so it only comes back via a blood-gift gate.
   bloodLost(who) {
-    state.lives--;
-    // Losing a heart restores half the blood line — prevents a drained
-    // Guardian from chain-losing every heart in a single bullet volley.
-    if (who === state.player) { who.blood = who.maxBlood * 0.5; who.invuln = 1.5; }
+    // Hero blood is equal to his life — once blood finishes, he loses.
+    if (who === state.player) {
+      who.blood = 0;
+      state.lives = 0;
+    } else {
+      state.lives--;
+    }
     state.gateFlash = 0.35;
     audio.crack();
     particles.addShake(6);
     particles.poof(who.x, who.y, '#ff5d7a');
-    if (state.lives === 1) announcer.show(tr('g.lastGate'), tr('g.protectGate'), '#ff5c7a', 1.3);
-    if (state.lives <= 0 && state.dc) { dcFinish(false); return; } // Daily Challenge: straight to its results
-    if (state.lives <= 0) {
+    if (state.lives <= 0 && state.dc) { dcFinish(false); return; }
+    if (state.lives <= 0 || (who === state.player && who.blood <= 0)) {
       mode = 'GAMEOVER';
       audio.gameOver();
       persistCoins();
@@ -2170,17 +2200,28 @@ function drawObstacle(o, def) {
       ctx.strokeStyle = '#2a1048'; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
       break;
     }
-    case 'ice': { // clear ice boulder: facets inside, frosty rim
-      const pts = obOutline(o, r, 7, 0.12);
-      obPath(pts); ctx.fillStyle = 'rgba(150,215,245,0.92)'; ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(pts[0][0] * 0.3, pts[0][1] * 0.3);
-      for (const k of [2, 4, 6]) { ctx.lineTo(pts[k][0] * 0.95, pts[k][1] * 0.95); ctx.moveTo(pts[0][0] * 0.3, pts[0][1] * 0.3); }
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(40,110,160,0.35)';
-      ctx.beginPath(); ctx.moveTo(pts[3][0] * 0.9, pts[3][1] * 0.9); ctx.lineTo(pts[4][0] * 0.9, pts[4][1] * 0.9); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
-      obPath(pts); obShade(o.roll, r, 0.6, 0.35);
-      ctx.strokeStyle = '#1c3a4a'; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
+    case 'ice': { // High-definition rolling glacial rock / crystal
+      const choice = o.spriteChoice || 'ice_rocks_large';
+      const img = (typeof ICE_GLACIAL !== 'undefined' && ICE_GLACIAL[choice]) || (typeof ICE_GLACIAL !== 'undefined' && ICE_GLACIAL.ice_rocks_large);
+      if (img && (img.naturalWidth || img.width)) {
+        const dw = r * 2.3, dh = dw * (img.height / img.width);
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        // Dynamic crystalline glint
+        const spark = Math.sin(t * 6 + (o.seed || 0));
+        if (spark > 0.45) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(r * 0.35, -r * 0.35, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        const pts = obOutline(o, r, 7, 0.12);
+        obPath(pts); ctx.fillStyle = 'rgba(150,215,245,0.92)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(pts[0][0] * 0.3, pts[0][1] * 0.3);
+        for (const k of [2, 4, 6]) { ctx.lineTo(pts[k][0] * 0.95, pts[k][1] * 0.95); ctx.moveTo(pts[0][0] * 0.3, pts[0][1] * 0.3); }
+        ctx.stroke();
+      }
       break;
     }
     case 'geode': { // mossy rock with crystals breaking out of it
@@ -2251,7 +2292,13 @@ function drawMonster(m) {
   const batImg = m.type === 'imp' && BAT_FRAMES.length
     ? BAT_FRAMES[Math.floor(m.anim * 1.2 + m.seed) % BAT_FRAME_COUNT]
     : null;
-  drawCreature(ctx, m, tint, state ? state.levelTime : performance.now() / 1000, look, batImg);
+  const enemyImg = m.boss ? ENEMY_SPRITES.ogreBoss : (ENEMY_SPRITES[m.type] || (m.type === 'slimeSmall' ? ENEMY_SPRITES.slime : null));
+  // baked movement frames: pick by time, only once the image has loaded
+  const animKey = m.boss ? (m.skin || 'ogreBoss') : (m.skin || (m.type === 'slimeSmall' ? 'slime' : m.type));
+  const animSet = ANIM_FRAMES[animKey];
+  const animImg = animSet ? animSet[Math.floor((state ? state.levelTime : performance.now() / 1000) * 8 + (m.seed || 0)) % animSet.length] : null;
+  m.frameImg = animImg && animImg.complete && animImg.naturalWidth ? animImg : null;
+  drawCreature(ctx, m, tint, state ? state.levelTime : performance.now() / 1000, look, batImg, enemyImg);
   if (m.bzMini) bzDrawCrown(ctx, m, state ? state.levelTime : 0);
   // Blood-line: every enemy that takes more than one hit shows it, always
   // visible (not just after first damage) so toughness reads at a glance in
@@ -2260,23 +2307,22 @@ function drawMonster(m) {
   // slim bar so the row doesn't overflow the sprite.
   if (m.maxHp > 1 && !m.boss) {
     const py = m.y - m.r - 9;
-    if (m.maxHp <= 8) {
-      const pipW = 4, gap = 1.5;
-      const total = m.maxHp * pipW + (m.maxHp - 1) * gap;
-      let px = m.x - total / 2;
-      for (let i = 0; i < m.maxHp; i++) {
-        ctx.fillStyle = i < m.hp ? '#ff5d7a' : 'rgba(255,255,255,0.25)';
-        ctx.beginPath();
-        ctx.arc(px + pipW / 2, py, pipW / 2, 0, Math.PI * 2);
-        ctx.fill();
-        px += pipW + gap;
-      }
-    } else {
-      const w = m.r * 1.3;
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.fillRect(m.x - w / 2, py - 1.5, w, 3);
+    const w = Math.max(26, m.r * 1.4);
+    const h = 4;
+    // Dark slot background
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(m.x - w / 2, py - h / 2, w, h, 2);
+    else ctx.fillRect(m.x - w / 2, py - h / 2, w, h);
+    ctx.fill();
+    // Smooth blood line fill
+    const fillFrac = Math.max(0, Math.min(1, m.hp / m.maxHp));
+    if (fillFrac > 0) {
       ctx.fillStyle = '#ff5d7a';
-      ctx.fillRect(m.x - w / 2, py - 1.5, w * (m.hp / m.maxHp), 3);
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(m.x - w / 2, py - h / 2, w * fillFrac, h, 2);
+      else ctx.fillRect(m.x - w / 2, py - h / 2, w * fillFrac, h);
+      ctx.fill();
     }
   }
 }

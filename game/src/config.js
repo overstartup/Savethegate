@@ -8,7 +8,7 @@
 export const CONFIG = {
   // TESTING AID — keep false for release. When true, every stage on the
   // road map is playable regardless of progress.
-  devUnlockAllStages: false,
+  devUnlockAllStages: true,
 
   // Logical canvas (portrait). Everything is laid out in these units and
   // scaled to the device screen by main.js (see `quality.maxDpr`).

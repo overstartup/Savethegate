@@ -31,6 +31,6 @@ export const MONSTERS = {
     // erratic rather than heavy; a smaller amp at the same low freq now
     // reads as a slow, labored, weighty sway instead.
     movement: { amp: 1.15, freq: 0.5, bob: 0.14 } },             // heavy, labored lumbering sway
-  ogreBoss: { hp: 30, speed: 0.3, coins: 25, size: 92, color: '#7a3fa0', boss: true, sticker: 'Bruncle, the Gate-Breaker', shootInterval: 1.6, power: 900,
+  ogreBoss: { hp: 30, speed: 0.3, coins: 25, size: 76, color: '#7a3fa0', boss: true, sticker: 'Bruncle, the Gate-Breaker', shootInterval: 1.6, power: 900,
     movement: { amp: 1.0, freq: 1.0, bob: 0.08 } },              // keeps spawner's own big explicit weave as-is
 };

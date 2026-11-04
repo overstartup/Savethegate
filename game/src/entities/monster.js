@@ -260,6 +260,32 @@ export class Monster {
     return this.shootTimer < w ? 1 - this.shootTimer / w : 0;
   }
 
+  hitTest(sx, sy, sr = 0) {
+    if (this.boss) {
+      if (this.skin === 'kraken') {
+        // Only the central crowned head/mantle/torso counts as a hit, not the outer tentacles/legs
+        const mult = 1.85;
+        const h = this.r * mult;
+        const w = h * 1.46;
+        const bodyY = this.y - h * 0.15;
+        const rx = w * 0.17 + sr;
+        const ry = h * 0.28 + sr;
+        const dx = (sx - this.x) / rx;
+        const dy = (sy - bodyY) / ry;
+        return dx * dx + dy * dy <= 1.0;
+      }
+      // General boss body: tighter central core so limb sweeps don't catch bullets prematurely
+      const bodyY = this.y - this.r * 0.12;
+      const rx = this.r * 0.65 + sr;
+      const ry = this.r * 0.75 + sr;
+      const dx = (sx - this.x) / rx;
+      const dy = (sy - bodyY) / ry;
+      return dx * dx + dy * dy <= 1.0;
+    }
+    const dx = sx - this.x, dy = sy - this.y, rr = sr + this.r;
+    return dx * dx + dy * dy <= rr * rr;
+  }
+
   // kick scales the knock-back (a critical hit shoves twice as hard)
   onHit(damage, kick = 1) {
     if (this.bzIntroT > 0) return null; // stage boss is untouchable during its intro

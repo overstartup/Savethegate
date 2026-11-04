@@ -649,6 +649,9 @@ const CREATURE_DRAW = {
 
 // Draws the creature body (no shadow/aura) at its position — used for the
 // live monster, its afterimages and its knocked-away corpse.
+// Baked-frame sprites drawn facing right; mirrored when moving left so the head leads.
+const FACE_RIGHT = new Set(['goblin', 'lanternfin']);
+
 function crBody(ctx, m, tint, t, look, batImg, pal, extraRot = 0, extraScale = 1, enemyImg = null) {
   const sp = m.skin && SPECIES[m.skin];
   const r = m.r;
@@ -657,30 +660,156 @@ function crBody(ctx, m, tint, t, look, batImg, pal, extraRot = 0, extraScale = 1
   ctx.translate(m.x, m.y - (m.z || 0));
   // windup: trembling crouch that telegraphs the move
   if (ph === 'windup') ctx.translate((Math.random() - 0.5) * r * 0.08, 0);
+  if (m.frameImg && FACE_RIGHT.has(m.skin || m.type) && m.vx < -6) ctx.scale(-1, 1);
   ctx.rotate(crClamp(m.vx / 320, -0.4, 0.4) * (m.boss ? 0.25 : 1) + extraRot);
   // splits pop out fast; everything else grows in as it comes through its rift
   const pop = m.isChild ? crEaseOutBack(Math.min(1, m.spawnT / 0.3)) : m.boss ? 1 : crEaseOutBack(Math.min(1, m.spawnT / 0.45));
   const sq = m.squish * 0.2 + (ph === 'windup' && m.type !== 'imp' ? 0.12 : 0);
   ctx.scale(pop * (1 + sq) * extraScale, pop * (1 - sq) * extraScale);
-  if (sp && sp.sprite && sp.sprite.width) {
-    const img = sp.sprite;
-    const aspect = img.width / img.height;
-    const mult = m.boss ? 3.0 : (m.type === 'troll' ? 2.6 : (m.type === 'imp' ? 2.4 : 2.3));
+  // Real Graphic Sprites (AI/painted sprites + animated frames)
+  const seaSprite = (typeof SEA_SPRITES !== 'undefined' && m.skin && SEA_SPRITES[m.skin]) || (sp && sp.sprite);
+  const iceSprite = (typeof ICE_SPRITES !== 'undefined' && m.skin && ICE_SPRITES[m.skin]);
+  const spriteImg = m.frameImg || (seaSprite && (seaSprite.naturalWidth || seaSprite.width) ? seaSprite : null) || (iceSprite && (iceSprite.naturalWidth || iceSprite.width) ? iceSprite : null) || (enemyImg && (enemyImg.naturalWidth || enemyImg.width) ? enemyImg : null) || (sp && sp.sprite && sp.sprite.width ? sp.sprite : null);
+  if (spriteImg) {
+    const isSwimmer = m.skin === 'jelly' || m.skin === 'lanternfin' || m.skin === 'kraken' || m.skin === 'turtle';
+    const isFlyer = m.flying || m.type === 'imp' || m.skin === 'lanternfin';
+    const cadence = (ph === 'burst' ? 5.2 : 3.4);
+    const step = (m.anim || 0) * cadence;
+
+    // Baked-frame enemies (tools/make_enemy_frames.py) carry their own motion,
+    // so the procedural bob, waddle and limb overlays are skipped for them.
+    if (!m.frameImg) {
+    // 1. Organic movement: step bounce, waddle roll, stride squash & stretch, breathing
+    const bounce = isFlyer ? Math.sin(t * 4 + m.seed) * r * 0.12 : Math.abs(Math.cos(step)) * r * 0.14;
+    const waddle = isFlyer ? Math.sin(t * 3 + m.seed) * 0.08 : Math.sin(step) * 0.11;
+    const breathe = Math.sin(t * 3.5 + m.seed) * 0.04;
+    const strideSq = Math.sin(step * 2) * 0.06;
+
+    ctx.translate(0, -bounce);
+    ctx.rotate(waddle);
+    ctx.scale(1 + strideSq + breathe, 1 - strideSq + breathe);
+
+    // 2. Animated procedural appendages underneath the sprite body
+    if (m.skin === 'crab' || (!m.skin && (m.type === 'goblin' || m.type === 'troll'))) {
+      // 6 scuttling legs walking alongside the sprite
+      ctx.save();
+      ctx.strokeStyle = pal.shade || '#5a2010';
+      ctx.lineWidth = Math.max(2.5, r * 0.11);
+      ctx.lineCap = 'round';
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          const legPhase = Math.sin(step + i * 2.1 + (side > 0 ? Math.PI : 0));
+          const bx = side * r * 0.55, by = r * (0.05 + i * 0.18);
+          const kx = side * r * (0.95 + i * 0.05), ky = by - r * 0.12 + legPhase * r * 0.14;
+          const fx = side * r * (1.2 + i * 0.05), fy = by + r * 0.28 + legPhase * r * 0.2;
+          ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    } else if (m.skin === 'jelly' || m.type === 'slime' || m.type === 'slimeSmall') {
+      // Undulating tentacles / droplets trailing below
+      ctx.save();
+      ctx.strokeStyle = pal.glow || '#9ff4ff';
+      ctx.lineWidth = Math.max(2, r * 0.1);
+      ctx.lineCap = 'round';
+      for (let i = -2; i <= 2; i++) {
+        const ox = i * r * 0.22;
+        const wave = Math.sin(t * 6 + i * 1.3 + m.seed) * r * 0.22;
+        ctx.beginPath();
+        ctx.moveTo(ox, r * 0.2);
+        ctx.quadraticCurveTo(ox + wave, r * 0.7, ox + wave * 0.5, r * 1.25);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 2b. Flying wing flutter & swimming fins behind the body
+    if (isFlyer) {
+      ctx.save();
+      const wingFlap = Math.sin(t * 22 + m.seed);
+      for (const side of [-1, 1]) {
+        ctx.save();
+        ctx.translate(side * r * 0.65, -r * 0.15);
+        ctx.scale(side * (0.65 + wingFlap * 0.5), 1);
+        ctx.fillStyle = pal.glow || 'rgba(180, 230, 255, 0.65)';
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, r * 0.65, r * 0.32, -0.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    }
+
+    // 3. Draw the sprite body (with subtle head/body tracking tilt)
+    ctx.save();
+    if (look && typeof look.x === 'number') {
+      ctx.rotate(look.x * 0.08); // Head/torso tracks player direction
+    }
+    const aspect = spriteImg.width / spriteImg.height;
+    const mult = (m.boss && m.skin === 'kraken') ? 1.85 : (m.boss && m.skin === 'frostgiant') ? 2.1 : (m.boss ? 2.2 : (m.type === 'troll' ? 2.6 : (m.type === 'imp' ? 2.4 : 2.3)));
     const h = r * mult * (m.type === 'slimeSmall' ? 0.72 : 1);
     const w = h * aspect;
     if (ph === 'burst') ctx.rotate(Math.sign(m.pvx || 1) * 0.3);
-    const drawImg = (pal?.flashAmt && pal.flashAmt > 0.3) ? img : (tint?.primary ? tintedImage(img, tint.primary) : img);
+    let drawImg = spriteImg;
+    if (pal?.flashAmt && pal.flashAmt > 0.3) {
+      drawImg = tintedImage(spriteImg, '#ffffff');
+    } else if (!m.skin && tint?.primary) {
+      drawImg = tintedImage(spriteImg, tint.primary);
+    }
     ctx.drawImage(drawImg, -w / 2, -h / 2, w, h);
+    ctx.restore();
+
+    // 4. Hands & Claws animated micro-movements
+    if (m.skin === 'crab' && !m.frameImg) {
+      // Claws snapping open/closed in rhythm; wide open in attack windup
+      const snap = ph === 'windup' ? 1.0 : (Math.sin(t * 7 + m.seed) * 0.5 + 0.5) * 0.8;
+      for (const side of [-1, 1]) {
+        ctx.save();
+        const armLift = Math.sin(step + (side > 0 ? 0 : Math.PI)) * r * 0.08;
+        ctx.translate(side * r * 0.8, -r * 0.3 + armLift);
+        ctx.rotate(side * (0.45 + Math.sin(step * 0.7) * 0.12));
+        ctx.strokeStyle = pal.primary || '#d84a2a';
+        ctx.lineWidth = Math.max(2, r * 0.14);
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(0, r * 0.15); ctx.lineTo(side * r * 0.1, -r * 0.12); ctx.stroke();
+        ctx.translate(side * r * 0.1, -r * 0.15);
+        ctx.fillStyle = pal.shade || '#8a2010';
+        ctx.beginPath(); ctx.ellipse(0, 0, r * 0.22, r * 0.16, 0, 0, Math.PI * 2); ctx.fill();
+        // Snapping pincer notch
+        ctx.fillStyle = '#0a1018';
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.04, -r * 0.04);
+        ctx.lineTo(side * r * 0.22, -r * 0.07 - snap * r * 0.12);
+        ctx.lineTo(side * r * 0.22, -r * 0.01 + snap * r * 0.05);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (!m.skin && (m.type === 'goblin' || m.type === 'skeleton' || m.type === 'troll')) {
+      // Pumping hands / arms that swing with step rhythm
+      ctx.save();
+      for (const side of [-1, 1]) {
+        const armSwing = Math.sin(step + (side > 0 ? 0 : Math.PI)) * r * 0.18;
+        ctx.fillStyle = pal.shade || '#4a3020';
+        ctx.beginPath();
+        ctx.arc(side * r * 0.6, r * 0.15 + armSwing, r * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // 5. Head & eye movements: swaying stalks, tracking slit pupils, blinking
+    if (m.skin === 'crab') {
+      for (const side of [-1, 1]) {
+        const sway = Math.sin(t * 3.5 + side + m.seed) * r * 0.06;
+        const headNod = Math.sin(step * 1.5) * r * 0.04;
+        crEyes(ctx, side * r * 0.24 + sway, -r * 0.58 + headNod, r * 0.12, 0.0001, look, crBlink(m, t), '#1a1030', 0, pal.dark);
+      }
+    }
   } else if (sp) {
     sp.draw(ctx, m, pal, t, look);
-  } else if (enemyImg && enemyImg.width) {
-    const aspect = enemyImg.width / enemyImg.height;
-    const mult = m.boss ? 3.0 : (m.type === 'troll' ? 2.6 : (m.type === 'imp' ? 2.4 : 2.3));
-    const h = r * mult * (m.type === 'slimeSmall' ? 0.72 : 1);
-    const w = h * aspect;
-    if (ph === 'burst') ctx.rotate(Math.sign(m.pvx || 1) * 0.3);
-    const drawImg = (pal?.flashAmt && pal.flashAmt > 0.3) ? enemyImg : (tint?.primary ? tintedImage(enemyImg, tint.primary) : enemyImg);
-    ctx.drawImage(drawImg, -w / 2, -h / 2, w, h);
   } else if (batImg && m.type === 'imp') {
     const img = tintedImage(batImg, tint?.primary);
     const size = r * 2.5;
@@ -732,6 +861,56 @@ export function drawCreature(ctx, m, tint, t, look, batImg = null, enemyImg = nu
   ctx.ellipse(m.x, m.y + r * (m.flying ? 1.8 : 0.95), r * (m.flying ? 0.5 : 0.8) * (1 - lift * 0.35), r * 0.2, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  // 1. Dynamic movement ripples & footstep shockwaves
+  const runPhase = (m.anim || 0) * 3.5;
+  const ripT = (runPhase % Math.PI) / Math.PI;
+  const ripR = r * (0.35 + ripT * 0.85);
+  const ripAlpha = (1 - ripT) * (m.flying ? 0.15 : 0.38) * (1 - lift * 0.7);
+  ctx.save();
+  ctx.strokeStyle = pal.glow || 'rgba(127, 216, 255, 0.6)';
+  ctx.lineWidth = Math.max(1, 2 * (1 - ripT));
+  ctx.globalAlpha = ripAlpha;
+  ctx.beginPath();
+  ctx.ellipse(m.x, m.y + r * 0.82, ripR, ripR * 0.35, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // 2. Trailing motion wake lines
+  const spd = Math.hypot(m.vx || 0, m.pvy || m.speed || 80);
+  if (spd > 35 && CONFIG.quality.level >= 2) {
+    ctx.save();
+    ctx.strokeStyle = pal.glow || '#7fd8ff';
+    ctx.lineWidth = 1.4;
+    ctx.globalAlpha = 0.28 * (1 - lift * 0.5);
+    for (const side of [-0.5, 0.5]) {
+      const wx = m.x + side * r * 0.85;
+      const wy = m.y + r * 0.3;
+      const tLen = Math.min(24, spd * 0.15);
+      ctx.beginPath();
+      ctx.moveTo(wx, wy);
+      ctx.lineTo(wx - (m.vx || 0) * 0.04, wy - tLen);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 3. Fire embers, rising sparks & elemental motion particles
+  const isFireStage = m.skin === 'kobold' || m.skin === 'firebat' || m.skin === 'magma' || m.enraged;
+  if (CONFIG.quality.level >= 2 && (isFireStage || ph === 'burst' || m.elite || m.boss)) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const sparkT = (t * 5 + i * 2.2 + (m.seed || 0)) % 1;
+      const sx = m.x + Math.sin(t * 10 + i * 3) * r * 0.55;
+      const sy = m.y + r * 0.4 - sparkT * r * 1.6;
+      const sr = (1 - sparkT) * (isFireStage ? 4.5 : 3.0);
+      ctx.fillStyle = isFireStage ? '#ff6a1a' : pal.glow;
+      ctx.globalAlpha = (1 - sparkT) * 0.75;
+      ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
 
   // soft aura in the stage glow color — keeps every enemy readable on busy
   // backgrounds and makes the horde feel magical
@@ -790,15 +969,35 @@ export function drawCreature(ctx, m, tint, t, look, batImg = null, enemyImg = nu
 
   crBody(ctx, m, tint, t, look, batImg, pal, m.rot || 0, m.corpseScale || 1, enemyImg);
 
-  // charging-shot telegraph — a growing glow orb where the shot comes from
+  // 4. Charging-shot telegraph — swirling energy vortex + lens flare + intense glowing plasma core
   const w = m.windup;
   if (w > 0) {
-    const oy = m.y + r * (m.boss ? 0.4 : 0.55);
-    drawGlow(ctx, m.x, oy, 4 + w * r * (m.boss ? 0.9 : 0.6), m.enraged ? '#ff4d5a' : '#e07bff', 0.5 + w * 0.5);
+    const oy = m.y + r * (m.boss ? 0.35 : 0.55);
+    drawGlow(ctx, m.x, oy, 8 + w * r * (m.boss ? 1.4 : 1.0), m.enraged ? '#ff4d5a' : pal.glow, 0.85);
     ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Converging vortex sparks
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < 4; i++) {
+      const a = t * 12 + (i * Math.PI / 2);
+      const d = (1 - (w % 0.25) / 0.25) * r * 1.4;
+      ctx.beginPath();
+      ctx.moveTo(m.x + Math.cos(a) * d, oy + Math.sin(a) * d);
+      ctx.lineTo(m.x, oy);
+      ctx.stroke();
+    }
+    // Core burst
     ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = w;
-    ctx.beginPath(); ctx.arc(m.x, oy, 1.5 + w * 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(m.x, oy, 2 + w * 4.5, 0, Math.PI * 2); ctx.fill();
+    // Cross lens flare
+    ctx.strokeStyle = pal.glow || '#7fd8ff';
+    ctx.lineWidth = 2;
+    const flLen = w * r * 0.85;
+    ctx.beginPath();
+    ctx.moveTo(m.x - flLen, oy); ctx.lineTo(m.x + flLen, oy);
+    ctx.moveTo(m.x, oy - flLen); ctx.lineTo(m.x, oy + flLen);
+    ctx.stroke();
     ctx.restore();
   }
 }
