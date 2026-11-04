@@ -114,3 +114,4 @@ else:
 with open('game/src/main.js', 'w', encoding='utf-8') as f:
     f.write(main)
 print("Updated game/src/main.js successfully")
+

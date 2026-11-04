@@ -159,3 +159,4 @@ else:
 with open('game/src/ui/screens.js', 'w', encoding='utf-8') as f:
     f.write(screens)
 print("Updated game/src/ui/screens.js successfully")
+
