@@ -175,15 +175,47 @@ for (const n of iceNames) {
 }
 envData += iceSpriteData;
 
-// Baked enemy movement frames (tools/make_enemy_frames.py): 8 per enemy.
+let allStageSpriteData = 'const ALL_STAGE_SPRITES_DATA = {};\n';
+const stageSpriteDirs = {
+  sea: ['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken'],
+  ice: ['frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant'],
+  desert: ['scarab', 'dustdevil', 'vulture', 'mummy', 'scorpion', 'sphinx'],
+  crystal: ['shardfox', 'mushling', 'moth', 'treant', 'crystalgolem', 'eldertreant'],
+  fire: ['kobold', 'magma', 'firebat', 'emberknight', 'drake', 'dragon'],
+  aviary: ['finch', 'chick', 'toucan', 'owl', 'griffin', 'phoenix'],
+  gloom: ['gloomling', 'wisp', 'raven', 'witch', 'bramble', 'shadowstag'],
+  astral: ['starsprite', 'bloom', 'seedling', 'comet', 'astral', 'moongolem', 'seraph'],
+  clockwork: ['cogbot', 'gearball', 'drone', 'steamsoldier', 'juggernaut', 'chronos'],
+  jungle: ['shroomkin', 'sporeling', 'glowmoth', 'tiki', 'shroomgiant', 'serpent'],
+  mountain: ['ram', 'boulder', 'pebble', 'eagle', 'guard', 'ogre', 'mountainking'],
+  deepwood: ['boar', 'puff', 'spore', 'dragonfly', 'bonecrawler', 'mossbear', 'bonedragon'],
+  enemies: ['goblin', 'slime', 'imp', 'skeleton', 'troll', 'ogreBoss'],
+};
+for (const [folder, names] of Object.entries(stageSpriteDirs)) {
+  for (const n of names) {
+    try {
+      const webp = readFileSync(`assets/sprites/${folder}/${n}.webp`);
+      allStageSpriteData += `ALL_STAGE_SPRITES_DATA[${JSON.stringify(n)}] = "data:image/webp;base64,${webp.toString('base64')}";\n`;
+    } catch (e) {
+      console.warn(`Could not read assets/sprites/${folder}/${n}.webp:`, e.message);
+    }
+  }
+}
+envData += allStageSpriteData;
+
+// Baked enemy movement frames (tools/make_enemy_frames.py + normalize_anim_frames.py):
+// 16 frames for the sets in SIXTEEN, otherwise 8. Must match src/ui/screens.js.
+const SIXTEEN = new Set(["crab", "jelly", "urchin", "lanternfin", "pirate", "turtle", "kraken", "yeti", "snowblob", "frostling", "wraith", "frostgiant", "icebat"]);
 let animData = 'const ANIM_DATA = {};\n';
-for (const n of ['goblin', 'troll', 'skeleton', 'slime', 'ogreBoss', 'imp', 'crab', 'urchin', 'pirate', 'jelly', 'kraken', 'turtle', 'lanternfin', 'frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant', 'scarab', 'dustdevil', 'vulture', 'mummy', 'scorpion', 'sphinx', 'shardfox', 'mushling', 'moth', 'treant', 'crystalgolem', 'eldertreant', 'kobold', 'magma', 'firebat', 'emberknight', 'drake', 'dragon', 'finch', 'chick', 'toucan', 'owl', 'griffin', 'phoenix', 'gloomling', 'wisp', 'raven', 'witch', 'bramble', 'shadowstag', 'starsprite', 'bloom', 'seedling', 'comet', 'astral', 'moongolem', 'seraph', 'cogbot', 'gearball', 'drone', 'steamsoldier', 'juggernaut', 'chronos', 'shroomkin', 'sporeling', 'glowmoth', 'tiki', 'shroomgiant', 'serpent', 'ram', 'boulder', 'pebble', 'eagle', 'guard', 'ogre', 'mountainking', 'boar', 'puff', 'spore', 'dragonfly', 'bonecrawler', 'mossbear', 'bonedragon']) {
+for (const n of ["goblin", "troll", "skeleton", "slime", "ogreBoss", "imp", "crab", "urchin", "pirate", "jelly", "kraken", "turtle", "lanternfin", "frostling", "snowblob", "icebat", "wraith", "yeti", "frostgiant", "scarab", "dustdevil", "vulture", "mummy", "scorpion", "sphinx", "shardfox", "mushling", "moth", "treant", "crystalgolem", "eldertreant", "kobold", "magma", "firebat", "emberknight", "drake", "dragon", "finch", "chick", "toucan", "owl", "griffin", "phoenix", "gloomling", "wisp", "raven", "witch", "bramble", "shadowstag", "starsprite", "bloom", "seedling", "comet", "astral", "moongolem", "seraph", "cogbot", "gearball", "drone", "steamsoldier", "juggernaut", "chronos", "shroomkin", "sporeling", "glowmoth", "tiki", "shroomgiant", "serpent", "ram", "boulder", "pebble", "eagle", "guard", "ogre", "mountainking", "boar", "puff", "spore", "dragonfly", "bonecrawler", "mossbear", "bonedragon"]) {
   const frames = [];
-  for (let i = 0; i < 8; i++) {
+  const count = SIXTEEN.has(n) ? 16 : 8;
+  for (let i = 0; i < count; i++) {
     const webp = readFileSync(`assets/sprites/anim/${n}_${i}.webp`);
     frames.push(`"data:image/webp;base64,${webp.toString('base64')}"`);
   }
-  animData += `ANIM_DATA[${JSON.stringify(n)}] = [${frames.join(',')}];\n`;
+  animData += `ANIM_DATA[${JSON.stringify(n)}] = [${frames.join(',')}];
+`;
 }
 envData += animData;
 
@@ -199,6 +231,7 @@ code = code
   .replace('img.src = `assets/sprites/bat_ice/bat_${String(i).padStart(2, \'0\')}.png`;', 'img.src = BAT_DATA[i];')
   .replace('img.src = `assets/sprites/enemies/${name}.webp`;', 'img.src = ENEMY_SPRITE_DATA[name];')
   .replace('img.src = `assets/sprites/sea/${name}.webp`;', 'img.src = SEA_SPRITE_DATA[name];')
+  .replace('img.src = `assets/sprites/${folder}/${name}.webp`;', 'if (typeof ALL_STAGE_SPRITES_DATA !== "undefined" && ALL_STAGE_SPRITES_DATA[name]) img.src = ALL_STAGE_SPRITES_DATA[name];')
   .replace('img.src = `assets/sprites/anim/${name}_${i}.webp`;', 'img.src = ANIM_DATA[name][i];');
 
 // Inline the home-page shield emblem (src/ui/screens.js).

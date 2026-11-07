@@ -142,7 +142,7 @@ function checkLevelUp(run, player) {
 export function grantCatchUp(run, player, levelIndex) {
   if (levelIndex <= 0) return 0;
   const total = Math.min(14, Math.round(1 + 0.7 * levelIndex));
-  const manual = Math.min(1, total); // one hand-picked card, the rest auto-drafted
+  const manual = CONFIG.devUnlockAllStages ? 0 : Math.min(1, total); // one hand-picked card, the rest auto-drafted
   for (let i = 0; i < total - manual; i++) {
     const key = rollChoices(run, player).find((k) => k !== 'heal' && k !== 'treasure');
     if (key) run.picks[key] = runLevel(run, key) + 1;

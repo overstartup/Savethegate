@@ -1687,7 +1687,8 @@ function ssBuild(stage, th, k) {
   }
 
   if (th.landmark) ssLandmark(g, stage, th, k, acc);
-  ssRoad(g, th, r);
+  // ssRoad removed: battlefield designed naturally with ground and objects
+  // ssRoad(g, th, r);
 
   // props down both sides, painted far to near
   const bag = th.props.map(([name, wgt]) => [SS_PROPS[name], wgt]);

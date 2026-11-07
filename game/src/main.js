@@ -2080,6 +2080,90 @@ function obShade(roll, r, hi = 0.4, lo = 0.5) {
   ctx.fill();
 }
 
+
+function draw3DSandstoneBoulder(ctx, o, r, t) {
+  const pts = obOutline(o, r, 9, 0.16);
+  obPath(pts);
+  const sg = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.08, r * 0.1, r * 0.1, r * 1.25);
+  sg.addColorStop(0, '#fde6b0');
+  sg.addColorStop(0.35, '#d99748');
+  sg.addColorStop(0.7, '#8f4e18');
+  sg.addColorStop(1, '#442008');
+  ctx.fillStyle = sg;
+  ctx.fill();
+
+  ctx.save();
+  obPath(pts);
+  ctx.clip();
+  
+  const strataColors = ['#9e4e1a', '#e8b868', '#733710', '#f4cc85', '#b36125'];
+  for (let i = -2; i <= 2; i++) {
+    const bandY = i * r * 0.38;
+    const bandW = r * (0.12 + Math.abs(i) * 0.04);
+    ctx.strokeStyle = strataColors[(i + 2) % strataColors.length];
+    ctx.lineWidth = bandW;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.3, bandY - r * 0.1);
+    ctx.quadraticCurveTo(0, bandY + r * 0.22, r * 1.3, bandY - r * 0.1);
+    ctx.stroke();
+  }
+
+  const facets = [
+    [[-r*0.6, -r*0.5], [-r*0.1, -r*0.7], [-r*0.2, -r*0.1]],
+    [[r*0.1, -r*0.65], [r*0.65, -r*0.3], [r*0.2, -r*0.05]],
+    [[-r*0.7, 0.1], [-r*0.2, -r*0.05], [-r*0.4, r*0.6]],
+    [[r*0.2, -r*0.05], [r*0.7, 0.1], [r*0.45, r*0.65]],
+    [[-r*0.2, -r*0.1], [r*0.2, -r*0.05], [0, r*0.5]],
+    [[-r*0.4, r*0.6], [r*0.45, r*0.65], [0, r*0.85]],
+  ];
+  
+  const facetShades = [
+    'rgba(255, 245, 215, 0.35)',
+    'rgba(255, 235, 180, 0.22)',
+    'rgba(240, 200, 140, 0.18)',
+    'rgba(60, 25, 5, 0.3)',
+    'rgba(255, 230, 170, 0.15)',
+    'rgba(40, 15, 5, 0.45)',
+  ];
+
+  facets.forEach((f, idx) => {
+    ctx.fillStyle = facetShades[idx];
+    ctx.beginPath();
+    ctx.moveTo(f[0][0], f[0][1]);
+    ctx.lineTo(f[1][0], f[1][1]);
+    ctx.lineTo(f[2][0], f[2][1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = idx < 3 ? 'rgba(255, 250, 225, 0.4)' : 'rgba(40, 15, 5, 0.35)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  });
+
+  for (let s = 0; s < 7; s++) {
+    const a = s * 1.9 + (o.seed || 0);
+    const d = r * (0.2 + (s % 4) * 0.18);
+    ctx.fillStyle = s % 2 === 0 ? 'rgba(255, 255, 240, 0.45)' : 'rgba(60, 20, 5, 0.4)';
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 1.2 + (s % 2) * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  ctx.strokeStyle = '#3a1805';
+  ctx.lineWidth = 2.8;
+  obPath(pts);
+  ctx.stroke();
+  
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 248, 220, 0.65)';
+  ctx.lineWidth = 2.0;
+  ctx.beginPath();
+  ctx.arc(-r * 0.15, -r * 0.15, r * 0.82, Math.PI * 0.85, Math.PI * 1.45);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawObstacle(o, def) {
   const pal = def.groundPalette;
   const base = pal ? pal.bands[2] : '#6a6080';
@@ -2092,9 +2176,19 @@ function drawObstacle(o, def) {
   const bob = (kind === 'gear' || kind === 'orb' || kind === 'log' || kind === 'marble') ? 0 : Math.abs(Math.sin(o.roll * 2)) * r * 0.07;
   const x = o.x, y = o.y - bob;
 
-  // ground shadow (doesn't turn)
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.beginPath(); ctx.ellipse(o.x + r * 0.18, o.y + r * 0.86, r * 0.92, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  // Enhanced 3D ground contact shadow + penumbra
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath(); ctx.ellipse(o.x + r * 0.15, o.y + r * 0.88, r * 0.75, r * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(o.x + r * 0.22, o.y + r * 0.90, r * 1.05, r * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+  if (kind === 'sandstone') {
+    const dustPhase = (t * 8 + (o.seed || 0)) % (Math.PI * 2);
+    ctx.fillStyle = 'rgba(235, 195, 130, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(o.x - r * 0.6, o.y + r * 0.75, 5 + Math.sin(dustPhase) * 2, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(o.x + r * 0.65, o.y + r * 0.78, 6 + Math.cos(dustPhase) * 2, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // glowing kinds get a soft halo first
   const halo = kind === 'lava' ? '#ff7a2a' : kind === 'orb' ? light : kind === 'puffball' ? '#b48aff' : null;
@@ -2243,6 +2337,10 @@ function drawObstacle(o, def) {
       ctx.strokeStyle = dark; ctx.lineWidth = 2.5; obPath(pts); ctx.stroke();
       break;
     }
+    case 'sandstone': {
+      draw3DSandstoneBoulder(ctx, o, r, t);
+      break;
+    }
     default: { // rocks: sandstone, lava rock, granite
       const pts = obOutline(o, r, kind === 'lava' ? 8 : 9, kind === 'granite' ? 0.2 : 0.15);
       const fill = kind === 'lava' ? '#2a1a1c' : kind === 'sandstone' ? '#c8964e' : '#8a8a96';
@@ -2293,11 +2391,18 @@ function drawMonster(m) {
     ? BAT_FRAMES[Math.floor(m.anim * 1.2 + m.seed) % BAT_FRAME_COUNT]
     : null;
   const enemyImg = m.boss ? ENEMY_SPRITES.ogreBoss : (ENEMY_SPRITES[m.type] || (m.type === 'slimeSmall' ? ENEMY_SPRITES.slime : null));
-  // baked movement frames: pick by time, only once the image has loaded
+  // baked movement frames: pick by creature walk cycle (m.anim) for true cadence
   const animKey = m.boss ? (m.skin || 'ogreBoss') : (m.skin || (m.type === 'slimeSmall' ? 'slime' : m.type));
   const animSet = ANIM_FRAMES[animKey];
-  const animImg = animSet ? animSet[Math.floor((state ? state.levelTime : performance.now() / 1000) * 8 + (m.seed || 0)) % animSet.length] : null;
-  m.frameImg = animImg && animImg.complete && animImg.naturalWidth ? animImg : null;
+  let animImg = null;
+  if (animSet && animSet.length > 0) {
+    const frameIndex = Math.floor((m.anim || 0) * 1.5 + (m.seed || 0)) % animSet.length;
+    const candidate = animSet[frameIndex];
+    if (candidate && candidate.complete && candidate.naturalWidth) {
+      animImg = candidate;
+    }
+  }
+  m.frameImg = animImg;
   drawCreature(ctx, m, tint, state ? state.levelTime : performance.now() / 1000, look, batImg, enemyImg);
   if (m.bzMini) bzDrawCrown(ctx, m, state ? state.levelTime : 0);
   // Blood-line: every enemy that takes more than one hit shows it, always
@@ -3254,3 +3359,11 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+window.startStage = function(stageNum) {
+  const stageIdx = Math.max(1, Math.min(STAGE_COUNT, stageNum)) - 1;
+  continueDismissed = true;
+  newGame(stageIdx * STAGE_SIZE);
+  mode = 'PLAYING';
+  syncBanner();
+};

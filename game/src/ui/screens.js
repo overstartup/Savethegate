@@ -162,7 +162,9 @@ for (const name of ENEMY_SPRITE_NAMES) {
 // Baked movement frames (tools/make_enemy_frames.py): 8 looping frames per enemy.
 export const ANIM_FRAMES = {};
 for (const name of ['goblin', 'troll', 'skeleton', 'slime', 'ogreBoss', 'imp', 'crab', 'urchin', 'pirate', 'jelly', 'kraken', 'turtle', 'lanternfin', 'frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant', 'scarab', 'dustdevil', 'vulture', 'mummy', 'scorpion', 'sphinx', 'shardfox', 'mushling', 'moth', 'treant', 'crystalgolem', 'eldertreant', 'kobold', 'magma', 'firebat', 'emberknight', 'drake', 'dragon', 'finch', 'chick', 'toucan', 'owl', 'griffin', 'phoenix', 'gloomling', 'wisp', 'raven', 'witch', 'bramble', 'shadowstag', 'starsprite', 'bloom', 'seedling', 'comet', 'astral', 'moongolem', 'seraph', 'cogbot', 'gearball', 'drone', 'steamsoldier', 'juggernaut', 'chronos', 'shroomkin', 'sporeling', 'glowmoth', 'tiki', 'shroomgiant', 'serpent', 'ram', 'boulder', 'pebble', 'eagle', 'guard', 'ogre', 'mountainking', 'boar', 'puff', 'spore', 'dragonfly', 'bonecrawler', 'mossbear', 'bonedragon']) {
-  ANIM_FRAMES[name] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+  const frameCount = (new Set(['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken', 'yeti', 'snowblob', 'frostling', 'wraith', 'frostgiant', 'icebat'])).has(name) ? 16 : 8;
+  const frameIndices = Array.from({ length: frameCount }, (_, idx) => idx);
+  ANIM_FRAMES[name] = frameIndices.map((i) => {
     const img = new Image();
     img.src = `assets/sprites/anim/${name}_${i}.webp`;
     return img;
@@ -171,33 +173,45 @@ for (const name of ['goblin', 'troll', 'skeleton', 'slime', 'ogreBoss', 'imp', '
 
 export const SEA_SPRITE_NAMES = ['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken'];
 export const SEA_SPRITES = {};
-for (const name of SEA_SPRITE_NAMES) {
-  const img = new Image();
-  SEA_SPRITES[name] = img;
-  if (typeof SPECIES !== "undefined" && SPECIES[name]) SPECIES[name].sprite = img;
-  img.src = `assets/sprites/sea/${name}.webp`;
-  img.onload = () => {
-    SEA_SPRITES[name] = img;
-    if (typeof SPECIES !== 'undefined' && SPECIES[name]) {
-      SPECIES[name].sprite = img;
-    }
-  };
-}
-
-
 export const ICE_SPRITE_NAMES = ['frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant'];
 export const ICE_SPRITES = {};
-for (const name of ICE_SPRITE_NAMES) {
-  const img = new Image();
-  ICE_SPRITES[name] = img;
-  if (typeof SPECIES !== 'undefined' && SPECIES[name]) SPECIES[name].sprite = img;
-  img.src = `assets/sprites/ice/${name}.webp`;
-  img.onload = () => {
-    ICE_SPRITES[name] = img;
-    if (typeof SPECIES !== 'undefined' && SPECIES[name]) {
-      SPECIES[name].sprite = img;
-    }
-  };
+export const ALL_STAGE_SPRITES = {};
+
+export const STAGE_SPRITE_DIRS = {
+  sea: ['crab', 'jelly', 'urchin', 'lanternfin', 'pirate', 'turtle', 'kraken'],
+  ice: ['frostling', 'snowblob', 'icebat', 'wraith', 'yeti', 'frostgiant'],
+  desert: ['scarab', 'dustdevil', 'vulture', 'mummy', 'scorpion', 'sphinx'],
+  crystal: ['shardfox', 'mushling', 'moth', 'treant', 'crystalgolem', 'eldertreant'],
+  fire: ['kobold', 'magma', 'firebat', 'emberknight', 'drake', 'dragon'],
+  aviary: ['finch', 'chick', 'toucan', 'owl', 'griffin', 'phoenix'],
+  gloom: ['gloomling', 'wisp', 'raven', 'witch', 'bramble', 'shadowstag'],
+  astral: ['starsprite', 'bloom', 'seedling', 'comet', 'astral', 'moongolem', 'seraph'],
+  clockwork: ['cogbot', 'gearball', 'drone', 'steamsoldier', 'juggernaut', 'chronos'],
+  jungle: ['shroomkin', 'sporeling', 'glowmoth', 'tiki', 'shroomgiant', 'serpent'],
+  mountain: ['ram', 'boulder', 'pebble', 'eagle', 'guard', 'ogre', 'mountainking'],
+  deepwood: ['boar', 'puff', 'spore', 'dragonfly', 'bonecrawler', 'mossbear', 'bonedragon'],
+  enemies: ['goblin', 'slime', 'imp', 'skeleton', 'troll', 'ogreBoss'],
+};
+
+for (const [folder, names] of Object.entries(STAGE_SPRITE_DIRS)) {
+  for (const name of names) {
+    const img = new Image();
+    ALL_STAGE_SPRITES[name] = img;
+    if (folder === 'sea') SEA_SPRITES[name] = img;
+    if (folder === 'ice') ICE_SPRITES[name] = img;
+    if (folder === 'enemies') ENEMY_SPRITES[name] = img;
+    if (typeof SPECIES !== 'undefined' && SPECIES[name]) SPECIES[name].sprite = img;
+    img.src = `assets/sprites/${folder}/${name}.webp`;
+    img.onload = () => {
+      ALL_STAGE_SPRITES[name] = img;
+      if (folder === 'sea') SEA_SPRITES[name] = img;
+      if (folder === 'ice') ICE_SPRITES[name] = img;
+      if (folder === 'enemies') ENEMY_SPRITES[name] = img;
+      if (typeof SPECIES !== 'undefined' && SPECIES[name]) {
+        SPECIES[name].sprite = img;
+      }
+    };
+  }
 }
 function star(ctx, x, y, r, fill = '#ffd23d', rot = 0) {
   ctx.save();
@@ -484,7 +498,7 @@ export function navRects(activeKey) {
 
 // Which tab (key) a tap at (x, y) lands on, or null.
 export function navHit(activeKey, x, y) {
-  if (y < NAV_Y - 10) return null;
+  if (y < NAV_Y) return null;
   const r = navRects(activeKey);
   for (const k of NAV_KEYS) if (x >= r[k].x && x < r[k].x + r[k].w) return k;
   return null;
@@ -1861,7 +1875,7 @@ export const STAGE_PICK_BUTTONS = Array.from({ length: 12 }, (_, i) => {
   const startX = (W - totalW) / 2;
   return {
     x: startX + i * (btnW + gap),
-    y: NAV_Y - 34,
+    y: NAV_Y - 42,
     w: btnW,
     h: 28,
     stage: i + 1,

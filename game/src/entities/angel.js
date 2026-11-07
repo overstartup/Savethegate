@@ -75,16 +75,21 @@ export class Angel {
     }
     ctx.restore();
 
-    // blood-line pips (tiny hearts under the angel)
-    const pipW = 6, gap = 3;
-    const total = this.maxBlood * pipW + (this.maxBlood - 1) * gap;
-    let px = this.x - total / 2;
-    for (let i = 0; i < this.maxBlood; i++) {
-      ctx.fillStyle = i < this.blood ? '#ff5d7a' : 'rgba(255,255,255,0.25)';
+    // blood-line bar (solid line matching all units and enemies)
+    const barW = 28, barH = 3;
+    const bx = this.x - barW / 2, by = this.y + 14;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx, by, barW, barH, 2);
+    else ctx.fillRect(bx, by, barW, barH);
+    ctx.fill();
+    const fillFrac = Math.max(0, Math.min(1, this.blood / this.maxBlood));
+    if (fillFrac > 0) {
+      ctx.fillStyle = '#ff5d7a';
       ctx.beginPath();
-      ctx.arc(px + pipW / 2, this.y + 16, pipW / 2, 0, Math.PI * 2);
+      if (ctx.roundRect) ctx.roundRect(bx, by, barW * fillFrac, barH, 2);
+      else ctx.fillRect(bx, by, barW * fillFrac, barH);
       ctx.fill();
-      px += pipW + gap;
     }
   }
 }
