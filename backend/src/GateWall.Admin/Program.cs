@@ -14,8 +14,9 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Server=localhost;Port=3306;Database=gatewall;User=gatewall;Password=changeme;";
+var connectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("ConnectionStrings:Default is not set (use the ConnectionStrings__Default env var).");
 builder.Services.AddDbContext<GateWallDbContext>(opt =>
     opt.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
 
@@ -197,6 +198,7 @@ app.MapPut("/api/players/{id:int}/sync", async (int id, SyncRequest req, GateWal
 
 app.MapGet("/api/players/{id:int}", async (int id, GateWallDbContext db) =>
 {
+    // Public view: never the recovery code or email (those go only to the owner at register).
     var player = await db.Players.FindAsync(id);
     if (player is null) return Results.NotFound();
 
@@ -205,7 +207,7 @@ app.MapGet("/api/players/{id:int}", async (int id, GateWallDbContext db) =>
         .Select(s => (int?)s.Score)
         .FirstOrDefaultAsync() ?? 0;
 
-    return Results.Ok(new PlayerProfileDto(ToDto(player), bestScore, player.IsBanned));
+    return Results.Ok(new PublicProfileDto(player.Id, player.Name, bestScore, player.IsBanned));
 })
 .WithName("GetPlayer")
 .AllowAnonymous()
@@ -255,7 +257,7 @@ app.MapPost("/api/store/verify", async (StoreVerificationRequest req, GateWallDb
     }
 
     bool isValid = false;
-    var requireRealVerification = config.GetValue<bool>("Store:RequireRealVerification", false);
+    var requireRealVerification = config.GetValue<bool>("Store:RequireRealVerification", true);
 
     if (requireRealVerification)
     {
@@ -428,12 +430,15 @@ app.MapPost("/api/invite/collect", async (InviteCollectRequest req, GateWallDbCo
 {
     var player = await db.Players.FindAsync(req.PlayerId);
     if (player is null || player.IsBanned) return Results.NotFound();
-    var unpaid = await db.InviteClaims.Where(c => c.InviterId == player.Id && !c.InviterPaid).ToListAsync();
     var each = config.GetValue<int?>("Invite:YouGet") ?? 1000;
-    foreach (var c in unpaid) c.InviterPaid = true;
-    var coins = unpaid.Count * each;
-    player.Coins += coins;
-    await db.SaveChangesAsync();
+    // Flip the unpaid claims in one statement; only the rows this call flipped are paid.
+    var flipped = await db.InviteClaims
+        .Where(c => c.InviterId == player.Id && !c.InviterPaid)
+        .ExecuteUpdateAsync(s => s.SetProperty(c => c.InviterPaid, true));
+    var coins = flipped * each;
+    if (coins > 0)
+        await db.Players.Where(p => p.Id == player.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Coins, p => p.Coins + coins));
     return Results.Ok(new InviteGrant(coins, null));
 })
 .WithName("CollectInviteRewards")
@@ -460,21 +465,25 @@ app.MapGet("/api/leaderboard/top", async (int count, GateWallDbContext db) =>
 {
     var n = count <= 0 ? 20 : Math.Min(count, 100);
 
-    var candidates = await db.Scores
-        .Include(s => s.Player)
+    // Best score per player, then the top n of those.
+    var best = db.Scores
         .Where(s => s.Player != null && !s.Player.IsBanned && s.Player.Name.ToLower() != "admin")
-        .OrderByDescending(s => s.Score)
-        .Take(n * 10)
+        .GroupBy(s => s.PlayerId)
+        .Select(g => new { PlayerId = g.Key, Score = g.Max(x => x.Score) });
+
+    var top = await best
+        .OrderByDescending(b => b.Score)
+        .Take(n)
+        .Join(db.Scores, b => new { b.PlayerId, b.Score }, s => new { s.PlayerId, s.Score }, (b, s) => s)
+        .Include(s => s.Player)
         .ToListAsync();
 
-    var seenPlayers = new HashSet<int>();
-    var rows = new List<LeaderboardRow>();
-    foreach (var s in candidates)
-    {
-        if (!seenPlayers.Add(s.PlayerId)) continue;
-        rows.Add(new LeaderboardRow(rows.Count + 1, s.Player!.Name, s.Score, s.StageReached, s.CreatedAt));
-        if (rows.Count >= n) break;
-    }
+    var rows = top
+        .GroupBy(s => s.PlayerId)
+        .Select(g => g.OrderBy(s => s.CreatedAt).First())
+        .OrderByDescending(s => s.Score)
+        .Select((s, i) => new LeaderboardRow(i + 1, s.Player!.Name, s.Score, s.StageReached, s.CreatedAt))
+        .ToList();
     return Results.Ok(rows);
 })
 .WithName("GetTopLeaderboard")
@@ -546,6 +555,7 @@ app.Run();
 record RegisterRequest(string DeviceId, string? Name, string? Email);
 record PlayerDto(int Id, string Name, string? Email, string RecoveryCode, int Coins, int PowerLevel, int SpeedLevel, int FireRateLevel, int CurrentStage, string Stickers, bool AdsRemoved);
 record PlayerProfileDto(PlayerDto Player, int BestScore, bool IsBanned);
+record PublicProfileDto(int Id, string Name, int BestScore, bool IsBanned);
 record SyncRequest(string? Name, string? Email, int? Coins, int? PowerLevel, int? SpeedLevel, int? FireRateLevel, int? CurrentStage, string? Stickers);
 record RecoverRequest(string RecoveryCode, string DeviceId);
 record ScoreSubmission(int PlayerId, int Score, int StageReached);

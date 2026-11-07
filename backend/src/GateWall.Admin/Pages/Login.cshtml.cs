@@ -22,9 +22,10 @@ public class LoginModel(IConfiguration config) : PageModel
     public async Task<IActionResult> OnPostAsync()
     {
         var expectedUser = config["Admin:Username"] ?? "admin";
-        var expectedPass = config["Admin:Password"] ?? "ChangeMe123!";
+        var expectedPass = config["Admin:Password"];
 
-        if (Username == expectedUser && Password == expectedPass)
+        // No password configured means no login at all (never an empty or default password).
+        if (!string.IsNullOrEmpty(expectedPass) && Username == expectedUser && Password == expectedPass)
         {
             var claims = new List<Claim> { new(ClaimTypes.Name, Username) };
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
